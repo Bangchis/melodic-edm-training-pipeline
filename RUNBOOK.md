@@ -163,6 +163,18 @@ checkpoint. Generate the same fixed prompts for each. Publish the LoRA/config/co
 and permitted examples, never the copyrighted source dataset. Before stopping the
 instance, download the release into a clean directory and produce one valid WAV.
 
+`edm-train-main` resumes automatically from the newest complete epoch checkpoint.
+On success it writes `training_validation_report.json` and selects the three comparison
+adapters. `edm-evaluate-checkpoints` then generates the three prompts in
+`configs/inference_prompts.json` with identical seeds/settings for all adapters,
+for exactly nine validated WAV files.
+
+After evaluation passes, run `edm-package-release`, `edm-upload-model`, and
+`edm-verify-release` in that order. The package defaults to `best_val`, scans every
+release file for secrets, publishes only the adapter/config/code and three generated
+examples to the private model repo `Bangchis/melodic-edm-core-v1`, then redownloads
+it into a clean directory and requires one valid 48 kHz stereo WAV.
+
 ## Resume safety
 
 Long server jobs run through Supervisor and write checkpoints/manifests atomically.
