@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import subprocess
@@ -318,14 +319,20 @@ def generate_annotation(model: Any, processor: Any, preview: Path, prompt: str, 
             output_ids[:, inputs.input_ids.shape[-1]:], skip_special_tokens=True,
             clean_up_tokenization_spaces=False,
         )[0])
-    candidates.append(processor.batch_decode(
-        output_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False,
-    )[0])
+    else:
+        candidates.append(processor.batch_decode(
+            output_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False,
+        )[0])
     last_error: Exception | None = None
     for value in candidates:
         try:
             parsed = parse_json_content(value)
-            if not {"primary_genre", "canonical_caption"}.issubset(parsed):
+            if not (
+                isinstance(parsed.get("primary_genre"), str)
+                and isinstance(parsed.get("canonical_caption"), str)
+                and isinstance(parsed.get("caption_variants"), list)
+                and isinstance(parsed.get("main_instruments"), list)
+            ):
                 raise ValueError("parsed JSON is not a complete master annotation")
             return parsed
         except Exception as exc:
@@ -438,6 +445,66 @@ def main() -> int:
         atomic_json(root / "data" / "annotations" / f"{sid}.json", record)
         reconciled = True
     if reconciled:
+        atomic_jsonl(state_path, sorted(by_id.values(), key=lambda item: item["sample_id"]))
+    repaired_reviews = False
+    for row in source:
+        sid = row["sample_id"]
+        record = by_id.get(sid)
+        if (
+            not record
+            or record.get("annotation_status") == "accepted"
+            or not str(record.get("annotation_model", "")).startswith(MODEL_ID + "@")
+            or not isinstance(record.get("annotation"), dict)
+        ):
+            continue
+        annotation = copy.deepcopy(record["annotation"])
+        actions = sanitize_annotation(annotation)
+        mir = json.loads((root / "data" / "mir" / f"{sid}.json").read_text(encoding="utf-8"))
+        errors = validate_annotation(annotation, row, taxonomy, mir)
+        can_compile = (
+            isinstance(annotation.get("arrangement"), dict)
+            and isinstance(annotation.get("main_instruments"), list)
+            and all(isinstance(item, dict) for item in annotation.get("main_instruments", []))
+        )
+        if can_compile and any(error.startswith("section_captions_") for error in errors):
+            annotation["section_captions"] = compile_section_captions(annotation, mir)
+            actions.append({
+                "action": "compiled_section_captions_from_master_arrangement",
+                "section_count": len(annotation["section_captions"]),
+                "reason": "manual_review_repair",
+            })
+            errors = validate_annotation(annotation, row, taxonomy, mir)
+        if can_compile and errors and all(
+            error.startswith("canonical_caption_word_count:") or error == "keyscale_in_caption"
+            for error in errors
+        ):
+            previous = str(annotation.get("canonical_caption", ""))
+            compiled = compile_canonical_caption(annotation)
+            annotation["canonical_caption"] = compiled
+            for variant in annotation.get("caption_variants", []):
+                if isinstance(variant, dict) and variant.get("type") == "full":
+                    variant["text"] = compiled
+            actions.append({
+                "action": "compiled_canonical_caption_from_master_fields",
+                "previous_word_count": word_count(previous),
+                "compiled_word_count": word_count(compiled),
+                "reason": "manual_review_repair",
+            })
+            actions += sanitize_annotation(annotation)
+            errors = validate_annotation(annotation, row, taxonomy, mir)
+        if errors or safe_float(annotation.get("annotation_confidence")) < 0.70:
+            continue
+        record["annotation"] = annotation
+        record["annotation_status"] = "accepted"
+        record["annotation_error"] = None
+        record["annotation_sanitization"] = (record.get("annotation_sanitization") or []) + actions
+        record["annotation_caption_compiler_version"] = CAPTION_COMPILER_VERSION
+        record["annotation_repaired_at"] = datetime.now(timezone.utc).isoformat()
+        by_id[sid] = record
+        atomic_json(root / "data" / "annotations" / f"{sid}.json", record)
+        repaired_reviews = True
+        print(f"[repair] {sid} PASS", flush=True)
+    if repaired_reviews:
         atomic_jsonl(state_path, sorted(by_id.values(), key=lambda item: item["sample_id"]))
     pending = [row for row in source if by_id.get(row["sample_id"], {}).get("annotation_status") != "accepted"]
     if args.limit is not None:

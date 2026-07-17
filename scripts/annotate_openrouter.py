@@ -90,8 +90,15 @@ def parse_json_content(content: Any) -> dict[str, Any]:
                 candidates.append(candidate)
         if not candidates:
             raise original_error
-        annotation_keys = {"primary_genre", "canonical_caption", "caption_variants", "main_instruments"}
-        value = max(candidates, key=lambda candidate: len(annotation_keys.intersection(candidate)))
+        def annotation_score(candidate: dict[str, Any]) -> int:
+            return sum((
+                isinstance(candidate.get("primary_genre"), str),
+                isinstance(candidate.get("canonical_caption"), str),
+                isinstance(candidate.get("caption_variants"), list),
+                isinstance(candidate.get("main_instruments"), list),
+            ))
+
+        value = max(candidates, key=annotation_score)
     if not isinstance(value, dict):
         raise ValueError("annotation JSON root must be an object")
     return value
@@ -182,12 +189,24 @@ def sanitize_annotation(result: dict[str, Any]) -> list[dict[str, Any]]:
     instruments = result.get("main_instruments", [])
     kept = []
     removed = []
+    instrument_aliases = {"bass": "sub_bass", "drums": "electronic_drums"}
     role_aliases = {
         "harmony": "chordal_texture", "lead": "main_melody", "melody": "main_melody",
         "pad": "atmosphere", "percussion": "drums", "rhythm": "rhythmic_texture",
         "rhythmic_support": "rhythmic_texture", "unknown": "atmosphere",
     }
-    for instrument in instruments:
+    for instrument in instruments if isinstance(instruments, list) else []:
+        if not isinstance(instrument, dict):
+            removed.append({"action": "removed_malformed_instrument"})
+            continue
+        original_name = str(instrument.get("name", ""))
+        if original_name in instrument_aliases:
+            instrument["name"] = instrument_aliases[original_name]
+            removed.append({
+                "action": "normalized_instrument_name",
+                "from": original_name,
+                "to": instrument["name"],
+            })
         original_role = str(instrument.get("role", ""))
         if original_role in role_aliases:
             instrument["role"] = role_aliases[original_role]
@@ -205,16 +224,18 @@ def sanitize_annotation(result: dict[str, Any]) -> list[dict[str, Any]]:
             })
         else:
             kept.append(instrument)
-    if kept:
+    if isinstance(instruments, list):
         result["main_instruments"] = kept
     fields = [(result, "canonical_caption", "canonical_caption")]
+    variants = result.get("caption_variants", [])
+    sections = result.get("section_captions", [])
     fields.extend(
         (variant, "text", f"caption_variant:{variant.get('type', '')}")
-        for variant in result.get("caption_variants", [])
+        for variant in variants if isinstance(variant, dict)
     )
     fields.extend(
         (section, "caption", f"section_caption:{section.get('label', '')}")
-        for section in result.get("section_captions", [])
+        for section in sections if isinstance(section, dict)
     )
     for owner, key, field in fields:
         if key not in owner:
@@ -235,10 +256,17 @@ def validate_annotation(
         errors.append("invalid_primary_genre")
     for field in ("secondary_genres", "style_families", "moods"):
         allowed = taxonomy["primary_genres"] if field == "secondary_genres" else taxonomy[field]
-        if any(value not in allowed for value in result.get(field, [])):
+        values = result.get(field, [])
+        if not isinstance(values, list) or any(value not in allowed for value in values):
             errors.append(f"invalid_{field}")
     instruments = result.get("main_instruments", [])
+    if not isinstance(instruments, list) or not instruments:
+        errors.append("invalid_main_instruments")
+        instruments = []
     for instrument in instruments:
+        if not isinstance(instrument, dict):
+            errors.append("invalid_main_instruments")
+            continue
         if instrument.get("name") not in taxonomy["instruments"]:
             errors.append("invalid_instrument")
         if instrument.get("role") not in taxonomy["instrument_roles"]:
@@ -246,11 +274,21 @@ def validate_annotation(
         if instrument.get("name") != "unknown" and safe_float(instrument.get("confidence"), -1.0) < 0.55:
             errors.append("low_confidence_instrument")
 
-    canonical = str(result.get("canonical_caption", "")).strip()
+    canonical_value = result.get("canonical_caption", "")
+    if not isinstance(canonical_value, str):
+        errors.append("invalid_canonical_caption_type")
+        canonical_value = ""
+    canonical = canonical_value.strip()
     count = word_count(canonical)
     if not 40 <= count <= 80:
         errors.append(f"canonical_caption_word_count:{count}")
     variants = result.get("caption_variants", [])
+    if not isinstance(variants, list):
+        errors.append("caption_variant_types")
+        variants = []
+    if any(not isinstance(variant, dict) for variant in variants):
+        errors.append("caption_variant_types")
+        variants = [variant for variant in variants if isinstance(variant, dict)]
     types = [variant.get("type") for variant in variants]
     if sorted(types) != ["composition", "full", "production", "tags"]:
         errors.append("caption_variant_types")
@@ -263,6 +301,12 @@ def validate_annotation(
     if len(set(variant_texts)) != len(variant_texts):
         errors.append("caption_variants_must_differ")
     section_captions = result.get("section_captions", [])
+    if not isinstance(section_captions, list):
+        errors.append("section_captions_missing_or_duplicate_mir_labels")
+        section_captions = []
+    if any(not isinstance(item, dict) for item in section_captions):
+        errors.append("section_captions_missing_or_duplicate_mir_labels")
+        section_captions = [item for item in section_captions if isinstance(item, dict)]
     section_labels = [str(item.get("label", "")) for item in section_captions]
     supported_labels = {
         str(section.get("label", "")) for section in mir.get("sections", []) if section.get("label")

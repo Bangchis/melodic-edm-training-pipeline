@@ -132,6 +132,22 @@ class RecordPreservingTests(unittest.TestCase):
             "normalized_instrument_role", "normalized_instrument_role",
         ])
 
+    def test_common_instrument_name_aliases_are_normalized(self) -> None:
+        result = {
+            "main_instruments": [
+                {"name": "bass", "role": "bass", "confidence": 0.8},
+                {"name": "drums", "role": "drums", "confidence": 0.9},
+            ]
+        }
+        audit = sanitize_annotation(result)
+        self.assertEqual(
+            [item["name"] for item in result["main_instruments"]],
+            ["sub_bass", "electronic_drums"],
+        )
+        self.assertEqual([item["action"] for item in audit], [
+            "normalized_instrument_name", "normalized_instrument_name",
+        ])
+
     def test_non_audio_quality_and_use_case_phrases_are_removed(self) -> None:
         text = (
             "The production is polished and spacious, with bright synths, making it ideal for energetic gaming content."
