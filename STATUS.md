@@ -50,13 +50,22 @@ The five persistent-vocal rejects are:
 
 ## Active stage
 
-The next active server job is `edm-build-dataset`. It will build one 48 kHz stereo
-audio/JSON/lyrics triplet for each of the 231 accepted record IDs and create the
-grouped 85/15 train/validation split. Dataset build has not yet been marked complete.
+The next active server job is `edm-train-smoke`. It runs one epoch with two-GPU DDP
+and the fixed LoRA configuration. The main 150-epoch run remains gated on the smoke
+report and has not yet started.
 
-At the final annotation checkpoint the instance had about 228 GiB free. `/workspace`
-is not a persistent volume, so metadata is backed up to the private Hugging Face
-dataset at major gates before later destructive instance actions.
+Dataset construction and preprocessing are complete:
+
+- Final triplets: 231/231, all decodable 48 kHz stereo with matching JSON and
+  `.lyrics.txt` files.
+- Grouped split: 196 train and 35 validation; no test set and no shared-source leak.
+- Fifteen repeated catalog records were preserved rather than deduplicated.
+- Train preprocess shards: 98/98 and 98/98, balanced at about 5.57 hours each.
+- Deep tensor gate: 196 train + 35 validation = 231/231 readable tensors, 0 errors.
+
+At the final tensor checkpoint the instance had about 222 GiB free. `/workspace` is
+not a persistent volume, so metadata is backed up to the private Hugging Face dataset
+at major gates before later destructive instance actions.
 
 ## Completed infrastructure
 
@@ -76,14 +85,11 @@ dataset at major gates before later destructive instance actions.
 
 ## Remaining sequence
 
-1. Build and validate exactly 231 dataset triplets and the grouped 85/15 split.
-2. Preprocess train partitions on both GPUs, preprocess validation, merge tensors
-   and pass the exact 231-record tensor gate.
-3. Run one-epoch DDP smoke validation.
-4. Run the single fixed 150-epoch LoRA training configuration with validation,
+1. Run one-epoch DDP smoke validation.
+2. Run the single fixed 150-epoch LoRA training configuration with validation,
    best-checkpoint selection and early stopping.
-5. Compare middle, best-validation and final checkpoints with three fixed prompts.
-6. Package safe code/LoRA/config/examples, upload private artifacts, redownload into
+3. Compare middle, best-validation and final checkpoints with three fixed prompts.
+4. Package safe code/LoRA/config/examples, upload private artifacts, redownload into
    a clean directory and verify inference.
 
 Do not upload raw/separated audio, dataset tensors, cookies or secrets.
