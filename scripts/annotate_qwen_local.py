@@ -24,6 +24,7 @@ from annotate_openrouter import (
 
 
 MODEL_ID = "Qwen/Qwen2.5-Omni-7B"
+CAPTION_COMPILER_VERSION = 4
 
 
 def _sentence(value: str) -> str:
@@ -36,12 +37,13 @@ def _sentence(value: str) -> str:
 def _without_explicit_key(value: str) -> str:
     import re
 
-    return re.sub(
-        r"\b[A-G](?:[#♯b♭])?\s+(?:major|minor)(?:\s+(?:key|scale))?\b",
-        "a tonal center",
+    cleaned = re.sub(
+        r"\b[A-G](?:[#♯b♭])?\s+(?P<mode>major|minor)(?:\s+(?:key|scale))?\b",
+        lambda match: f"{match.group('mode').lower()} tonality",
         str(value),
         flags=re.IGNORECASE,
     )
+    return re.sub(r"\bthe\s+a\s+tonal center\b", "the tonal center", cleaned, flags=re.IGNORECASE)
 
 
 def compile_canonical_caption(annotation: dict[str, Any]) -> str:
@@ -283,6 +285,27 @@ def main() -> int:
     source = [row for row in read_jsonl(root / args.manifest) if row.get("quality_status") == "accepted"]
     state_path = root / "data" / "annotation_manifest.jsonl"
     by_id = {row["sample_id"]: row for row in read_jsonl(state_path)}
+    sanitized_existing = False
+    for row in source:
+        sid = row["sample_id"]
+        record = by_id.get(sid)
+        if not record or record.get("annotation_status") != "accepted" or not record.get("annotation"):
+            continue
+        annotation = record["annotation"]
+        actions = sanitize_annotation(annotation)
+        if not actions:
+            continue
+        mir = json.loads((root / "data" / "mir" / f"{sid}.json").read_text(encoding="utf-8"))
+        errors = validate_annotation(annotation, row, taxonomy, mir)
+        if errors:
+            raise RuntimeError(f"existing annotation sanitization failed for {sid}: {errors}")
+        record["annotation"] = annotation
+        record["annotation_sanitization"] = (record.get("annotation_sanitization") or []) + actions
+        by_id[sid] = record
+        atomic_json(root / "data" / "annotations" / f"{sid}.json", record)
+        sanitized_existing = True
+    if sanitized_existing:
+        atomic_jsonl(state_path, sorted(by_id.values(), key=lambda item: item["sample_id"]))
     reconciled = False
     for row in source:
         sid = row["sample_id"]
@@ -291,7 +314,7 @@ def main() -> int:
             continue
         actions = record.get("annotation_sanitization") or []
         was_compiled = any(action.get("action") == "compiled_canonical_caption_from_master_fields" for action in actions)
-        if not was_compiled or record.get("annotation_caption_compiler_version") == 3:
+        if not was_compiled or record.get("annotation_caption_compiler_version") == CAPTION_COMPILER_VERSION:
             continue
         annotation = record.get("annotation") or {}
         previous = str(annotation.get("canonical_caption", ""))
@@ -306,9 +329,9 @@ def main() -> int:
         if errors:
             raise RuntimeError(f"caption compiler reconciliation failed for {sid}: {errors}")
         record["annotation"] = annotation
-        record["annotation_caption_compiler_version"] = 3
+        record["annotation_caption_compiler_version"] = CAPTION_COMPILER_VERSION
         record["annotation_sanitization"] = actions + reconciliation_sanitization + [{
-            "action": "recompiled_canonical_caption_v3",
+            "action": f"recompiled_canonical_caption_v{CAPTION_COMPILER_VERSION}",
             "previous_word_count": word_count(previous),
             "compiled_word_count": word_count(compiled),
         }]
@@ -405,7 +428,7 @@ def main() -> int:
             "annotated_at": datetime.now(timezone.utc).isoformat(),
         }
         if any(action.get("action") == "compiled_canonical_caption_from_master_fields" for action in sanitization):
-            record["annotation_caption_compiler_version"] = 3
+            record["annotation_caption_compiler_version"] = CAPTION_COMPILER_VERSION
         if result is not None:
             record["annotation"] = result
         by_id[sid] = record

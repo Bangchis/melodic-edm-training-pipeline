@@ -103,7 +103,15 @@ class RecordPreservingTests(unittest.TestCase):
         self.assertEqual(cleaned, "The production is spacious, with bright synths.")
         self.assertEqual(
             sanitize_caption_text("A hook in F# minor scale with bright synths."),
-            "A hook in a tonal center with bright synths.",
+            "A hook in minor tonality with bright synths.",
+        )
+        self.assertEqual(
+            sanitize_caption_text("A strong emphasis on the F# minor key."),
+            "A strong emphasis on the minor tonality.",
+        )
+        self.assertEqual(
+            sanitize_caption_text("A strong emphasis on the a tonal center."),
+            "A strong emphasis on the tonal center.",
         )
 
     def test_annotation_json_parser_accepts_provider_code_fence(self) -> None:

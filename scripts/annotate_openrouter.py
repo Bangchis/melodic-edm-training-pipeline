@@ -140,11 +140,13 @@ def sanitize_caption_text(text: str) -> str:
     value = re.sub(r"\bpolished,\s*", "", value, flags=re.IGNORECASE)
     value = re.sub(r"\bpolished\b", "", value, flags=re.IGNORECASE)
     value = re.sub(
-        r"\b[A-G](?:[#♯b♭])?\s+(?:major|minor)(?:\s+(?:key|scale))?\b",
-        "a tonal center",
+        r"\b[A-G](?:[#♯b♭])?\s+(?P<mode>major|minor)(?:\s+(?:key|scale))?\b",
+        lambda match: f"{match.group('mode').lower()} tonality",
         value,
         flags=re.IGNORECASE,
     )
+    # Normalize text produced by the earlier sanitizer revision.
+    value = re.sub(r"\bthe\s+a\s+tonal center\b", "the tonal center", value, flags=re.IGNORECASE)
     value = re.sub(r"\s+", " ", value)
     value = re.sub(r"\s+([,.;:])", r"\1", value)
     value = re.sub(r",\s*,", ",", value)
