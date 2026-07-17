@@ -16,7 +16,9 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from analyze_mir import map_sections, normalize_edm_bpm, prepare_unique_inputs  # noqa: E402
 from annotate_openrouter import parse_json_content, sanitize_annotation, sanitize_caption_text, validate_annotation  # noqa: E402
 from build_acestep_dataset import choose_splits, choose_window, render_audio  # noqa: E402
+from merge_tensors import write_loader_manifest  # noqa: E402
 from validate_tensors import expected_by_split  # noqa: E402
+from validate_smoke import resolve_adapter_dir  # noqa: E402
 from validate_training import select_checkpoints  # noqa: E402
 from annotate_qwen_local import (  # noqa: E402
     compile_canonical_caption,
@@ -383,17 +385,48 @@ class RecordPreservingTests(unittest.TestCase):
                 {"sample_id": "catalog__001", "split": "validation"},
             ])
 
+    def test_tensor_loader_manifest_keeps_every_shard_record(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output = root / "data" / "tensors_all"
+            part0 = root / "data" / "tensors_part0" / "catalog__001.pt"
+            part1 = root / "data" / "tensors_part1" / "catalog__002.pt"
+            output.mkdir(parents=True)
+            part0.parent.mkdir(parents=True)
+            part1.parent.mkdir(parents=True)
+            part0.touch()
+            part1.touch()
+
+            manifest_path = write_loader_manifest(output, [part0, part1], root)
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+            self.assertEqual(
+                manifest["samples"],
+                ["data/tensors_part0/catalog__001.pt", "data/tensors_part1/catalog__002.pt"],
+            )
+
     def test_checkpoint_selection_uses_middle_best_and_final(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp)
             for epoch in (5, 10, 15, 20):
                 checkpoint = output / "checkpoints" / f"epoch_{epoch}_loss_1.0000"
                 checkpoint.mkdir(parents=True)
+                (checkpoint / "adapter").mkdir()
                 (checkpoint / "training_state.pt").touch()
+            (output / "checkpoints" / "best_val" / "adapter").mkdir(parents=True)
+            (output / "final" / "adapter").mkdir(parents=True)
             selected = select_checkpoints(output)
-            self.assertEqual(Path(selected["middle"]).name, "epoch_10_loss_1.0000")
-            self.assertEqual(Path(selected["best_val"]).name, "best_val")
-            self.assertEqual(Path(selected["last"]).name, "final")
+            self.assertEqual(Path(selected["middle"]).parent.name, "epoch_10_loss_1.0000")
+            self.assertEqual(Path(selected["best_val"]).parent.name, "best_val")
+            self.assertEqual(Path(selected["last"]).parent.name, "final")
+
+    def test_adapter_resolver_accepts_nested_and_legacy_layouts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            nested = root / "checkpoint" / "adapter"
+            nested.mkdir(parents=True)
+            self.assertEqual(resolve_adapter_dir(root / "checkpoint"), nested)
+            self.assertEqual(resolve_adapter_dir(root / "legacy"), root / "legacy")
 
     def test_full_audio_uses_unique_hard_link(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

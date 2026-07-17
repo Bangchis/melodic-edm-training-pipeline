@@ -19,9 +19,16 @@ def atomic_json(path: Path, value: Any) -> None:
     os.replace(tmp, path)
 
 
+def resolve_adapter_dir(path: Path) -> Path:
+    """Return the PEFT directory used by ACE-Step checkpoint layouts."""
+    nested = path / "adapter"
+    return nested if nested.is_dir() else path
+
+
 def inspect_adapter(path: Path) -> tuple[dict[str, Any], list[str]]:
     from safetensors import safe_open
 
+    path = resolve_adapter_dir(path)
     errors: list[str] = []
     config_path = path / "adapter_config.json"
     weights_path = path / "adapter_model.safetensors"
@@ -124,10 +131,10 @@ def main() -> int:
     if not validation or any(not math.isfinite(float(validation.get(key, math.nan))) for key in ("best_loss", "latest_loss")):
         errors.append("validation_state_missing_or_nonfinite")
 
-    final_adapter = output / "final"
+    final_adapter = resolve_adapter_dir(output / "final")
     adapter_summary, adapter_errors = inspect_adapter(final_adapter)
     errors.extend(adapter_errors)
-    best_adapter = output / "checkpoints" / "best_val"
+    best_adapter = resolve_adapter_dir(output / "checkpoints" / "best_val")
     _, best_errors = inspect_adapter(best_adapter)
     errors.extend(f"best_val:{value}" for value in best_errors)
     epoch_dirs = sorted((output / "checkpoints").glob("epoch_1_loss_*"))
@@ -135,7 +142,8 @@ def main() -> int:
         errors.append(f"epoch_checkpoint_count:{len(epoch_dirs)}")
         training_state = {}
     else:
-        _, epoch_errors = inspect_adapter(epoch_dirs[0])
+        epoch_adapter = resolve_adapter_dir(epoch_dirs[0])
+        _, epoch_errors = inspect_adapter(epoch_adapter)
         errors.extend(f"epoch_checkpoint:{value}" for value in epoch_errors)
         try:
             import torch

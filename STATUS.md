@@ -50,9 +50,8 @@ The five persistent-vocal rejects are:
 
 ## Active stage
 
-The next active server job is `edm-train-smoke`. It runs one epoch with two-GPU DDP
-and the fixed LoRA configuration. The main 150-epoch run remains gated on the smoke
-report and has not yet started.
+The next active server job is `edm-train-main`. The one-epoch two-GPU DDP smoke gate
+has passed, and the main output directory is still clean before its first start.
 
 Dataset construction and preprocessing are complete:
 
@@ -62,6 +61,8 @@ Dataset construction and preprocessing are complete:
 - Fifteen repeated catalog records were preserved rather than deduplicated.
 - Train preprocess shards: 98/98 and 98/98, balanced at about 5.57 hours each.
 - Deep tensor gate: 196 train + 35 validation = 231/231 readable tensors, 0 errors.
+- The merged train loader manifest resolves all 196 real shard tensors without
+  copying or deduplicating them.
 
 At the final tensor checkpoint the instance had about 222 GiB free. `/workspace` is
 not a persistent volume, so metadata is backed up to the private Hugging Face dataset
@@ -76,20 +77,22 @@ at major gates before later destructive instance actions.
   `6d467e4b5081ccb0abf1ec1bf4fdf9051a2d34b0`.
 - XL-Base, VAE, Qwen embedding checkpoints and the pinned Qwen2.5-Omni annotator are
   downloaded on the server only.
-- Focused pipeline tests: 22 passed locally and on Vast. Full ACE-Step training-v2
+- Focused pipeline tests: 24 passed locally and on Vast. Full ACE-Step training-v2
   tests: 37 passed.
 - The fixed training config is XL-Base LoRA rank 32 / alpha 64 / dropout 0.1,
   learning rate 1e-4, effective batch 16, CFG dropout 0.15 and two-GPU DDP.
+- Smoke passed after 13 optimizer steps: finite train loss 1.3718, validation loss
+  1.3535, both GPUs observed at 100% utilization, 512/512 nonzero adapter tensors,
+  and a successful clean XL-Base adapter reload.
 - Smoke and main training gates verify both GPUs, finite loss, readable/non-empty
-  adapters, resume state and clean XL-Base adapter reload.
+  adapters, resumable state and the real nested PEFT adapter layout.
 
 ## Remaining sequence
 
-1. Run one-epoch DDP smoke validation.
-2. Run the single fixed 150-epoch LoRA training configuration with validation,
+1. Run the single fixed 150-epoch LoRA training configuration with validation,
    best-checkpoint selection and early stopping.
-3. Compare middle, best-validation and final checkpoints with three fixed prompts.
-4. Package safe code/LoRA/config/examples, upload private artifacts, redownload into
+2. Compare middle, best-validation and final checkpoints with three fixed prompts.
+3. Package safe code/LoRA/config/examples, upload private artifacts, redownload into
    a clean directory and verify inference.
 
 Do not upload raw/separated audio, dataset tensors, cookies or secrets.

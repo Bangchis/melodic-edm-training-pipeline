@@ -167,6 +167,14 @@ and the final adapter loads back onto a clean XL-Base decoder. The job writes th
 machine-readable gate `outputs/smoke/smoke_validation_report.json`; the main run
 refuses to start until this report passes.
 
+`merge_tensors.py` keeps one tensor per catalog sample and performs no deduplication.
+It creates convenience symlinks plus `data/tensors_all/manifest.json` containing
+project-relative paths to the two real shards. The training wrappers start ACE-Step
+from the project root, so its path guard permits only project data/output paths while
+still rejecting paths outside the project. ACE-Step saves PEFT files one level below
+each checkpoint (`<checkpoint>/adapter/`); validation, evaluation and packaging use
+that actual adapter directory.
+
 ## 6. Release and backup
 
 Upload only adapter/config/inference code and examples. Do not upload source audio,

@@ -6,6 +6,8 @@ utils=/opt/supervisor-scripts/utils
 . "${utils}/environment.sh"
 
 export CUDA_VISIBLE_DEVICES=0,1
+project=/workspace/melodic_edm_training_pipeline
+ace="$project/vendor/ACE-Step-1.5"
 python3 - <<'PY'
 import json
 from pathlib import Path
@@ -13,8 +15,11 @@ report = Path('/workspace/melodic_edm_training_pipeline/data/tensor_validation_r
 if not report.is_file() or json.loads(report.read_text())['status'] != 'pass':
     raise SystemExit('tensor validation gate has not passed')
 PY
-cd /workspace/melodic_edm_training_pipeline/vendor/ACE-Step-1.5
-smoke=/workspace/melodic_edm_training_pipeline/outputs/smoke
+# ACE-Step initialises its path-safety root from the process working directory.
+# Start from the project root so dataset/output paths are allowed while paths
+# outside this project remain blocked.
+cd "$project"
+smoke="$project/outputs/smoke"
 mkdir -p "$smoke"
 # A smoke rerun must prove itself from fresh artifacts; never let a stale pass
 # report unlock the main training job.
@@ -31,7 +36,7 @@ monitor_pid=$!
 trap 'kill "$monitor_pid" 2>/dev/null || true' EXIT TERM INT
 
 set +e
-.venv/bin/python -u -m acestep.training_v2.cli.train_fixed --yes \
+"$ace/.venv/bin/python" -u -m acestep.training_v2.cli.train_fixed --yes \
   --dataset-dir /workspace/melodic_edm_training_pipeline/data/tensors_all \
   --validation-dataset-dir /workspace/melodic_edm_training_pipeline/data/tensors_validation \
   --output-dir /workspace/melodic_edm_training_pipeline/outputs/smoke \
@@ -54,7 +59,7 @@ if [ "$train_status" -ne 0 ]; then
   exit "$train_status"
 fi
 
-exec .venv/bin/python -u /workspace/melodic_edm_training_pipeline/scripts/validate_smoke.py \
+exec "$ace/.venv/bin/python" -u /workspace/melodic_edm_training_pipeline/scripts/validate_smoke.py \
   --project-root /workspace/melodic_edm_training_pipeline \
   --checkpoint-dir checkpoints \
   --reload-adapter

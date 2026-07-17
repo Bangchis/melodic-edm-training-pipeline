@@ -6,6 +6,8 @@ utils=/opt/supervisor-scripts/utils
 . "${utils}/environment.sh"
 
 export CUDA_VISIBLE_DEVICES=0,1
+project=/workspace/melodic_edm_training_pipeline
+ace="$project/vendor/ACE-Step-1.5"
 python3 - <<'PY'
 import json
 from pathlib import Path
@@ -13,8 +15,10 @@ smoke = Path('/workspace/melodic_edm_training_pipeline/outputs/smoke/smoke_valid
 if not smoke.is_file() or json.loads(smoke.read_text())['status'] != 'pass':
     raise SystemExit('smoke validation gate has not passed')
 PY
-cd /workspace/melodic_edm_training_pipeline/vendor/ACE-Step-1.5
-training=/workspace/melodic_edm_training_pipeline/outputs/training/melodic-edm-core-v1
+# Keep ACE-Step's path-safety boundary at the project root. This permits the
+# validated tensors and training outputs without allowing arbitrary host paths.
+cd "$project"
+training="$project/outputs/training/melodic-edm-core-v1"
 mkdir -p "$training"
 rm -f "$training/training_validation_report.json"
 : > "$training/gpu_metrics.csv"
@@ -36,7 +40,7 @@ if [ -n "$resume_path" ]; then
 fi
 
 set +e
-.venv/bin/python -u -m acestep.training_v2.cli.train_fixed --yes \
+"$ace/.venv/bin/python" -u -m acestep.training_v2.cli.train_fixed --yes \
   --dataset-dir /workspace/melodic_edm_training_pipeline/data/tensors_all \
   --validation-dataset-dir /workspace/melodic_edm_training_pipeline/data/tensors_validation \
   --output-dir /workspace/melodic_edm_training_pipeline/outputs/training/melodic-edm-core-v1 \
@@ -59,5 +63,5 @@ if [ "$train_status" -ne 0 ]; then
   exit "$train_status"
 fi
 
-exec .venv/bin/python -u /workspace/melodic_edm_training_pipeline/scripts/validate_training.py \
+exec "$ace/.venv/bin/python" -u /workspace/melodic_edm_training_pipeline/scripts/validate_training.py \
   --project-root /workspace/melodic_edm_training_pipeline

@@ -15,7 +15,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 from latest_checkpoint import epoch_checkpoints  # noqa: E402
-from validate_smoke import inspect_adapter, inspect_gpu_metrics  # noqa: E402
+from validate_smoke import inspect_adapter, inspect_gpu_metrics, resolve_adapter_dir  # noqa: E402
 
 
 def atomic_json(path: Path, value: Any) -> None:
@@ -32,9 +32,9 @@ def select_checkpoints(output: Path) -> dict[str, str]:
     last_epoch = checkpoints[-1][0]
     middle = min(checkpoints, key=lambda item: (abs(item[0] - last_epoch / 2), item[0]))
     return {
-        "middle": str(middle[1]),
-        "best_val": str(output / "checkpoints" / "best_val"),
-        "last": str(output / "final"),
+        "middle": str(resolve_adapter_dir(middle[1])),
+        "best_val": str(resolve_adapter_dir(output / "checkpoints" / "best_val")),
+        "last": str(resolve_adapter_dir(output / "final")),
     }
 
 
