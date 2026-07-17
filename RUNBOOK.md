@@ -57,6 +57,16 @@ starts appearing. A running Demucs child with GPU utilization is valid progress.
 Do not start annotation until there is one valid MIR JSON for every accepted row in
 `data/training_audio_manifest.jsonl`.
 
+Run the exact-coverage validator before annotation:
+
+```bash
+python3 scripts/validate_mir.py --project-root "$PWD"
+```
+
+It must report `status=pass`, `expected_records=231`, `mir_files=231` and
+`validated_records=231`. Low-confidence key or time-signature omissions are warnings;
+missing/invalid BPM, beats, downbeats or sections are hard errors.
+
 Annotation uses one master annotation plus exactly four prompt variants (`full`,
 `composition`, `production`, `tags`) for each record. The full variant equals the
 40–80 word canonical caption. BPM, key, time signature and artist names are excluded

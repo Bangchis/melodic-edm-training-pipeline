@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -15,6 +17,37 @@ from build_acestep_dataset import choose_splits, choose_window, render_audio  # 
 
 
 class RecordPreservingTests(unittest.TestCase):
+    def test_mir_validator_requires_exact_record_coverage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "data" / "mir").mkdir(parents=True)
+            manifest = {
+                "sample_id": "catalog__001",
+                "record_key": "catalog__001",
+                "quality_status": "accepted",
+                "duration": 120.0,
+            }
+            (root / "data" / "training_audio_manifest.jsonl").write_text(
+                json.dumps(manifest) + "\n", encoding="utf-8"
+            )
+            mir = {
+                "sample_id": "catalog__001",
+                "analysis_status": "complete",
+                "bpm": 128,
+                "keyscale": "F minor",
+                "key_confidence": 0.8,
+                "timesignature": "4",
+                "beats": [0, 1, 2, 3],
+                "downbeats": [0, 4, 8],
+                "sections": [{"label": "Drop", "start": 0, "end": 120}],
+            }
+            mir_path = root / "data" / "mir" / "catalog__001.json"
+            mir_path.write_text(json.dumps(mir), encoding="utf-8")
+            command = [sys.executable, str(ROOT / "scripts" / "validate_mir.py"), "--project-root", str(root)]
+            self.assertEqual(subprocess.run(command, capture_output=True, check=False).returncode, 0)
+            mir_path.unlink()
+            self.assertEqual(subprocess.run(command, capture_output=True, check=False).returncode, 1)
+
     def test_mir_inputs_keep_unique_sample_basenames(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
