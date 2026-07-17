@@ -80,6 +80,18 @@ class RecordPreservingTests(unittest.TestCase):
             for error in validate_annotation(result, row, taxonomy, mir)
         ))
         result["section_captions"][0]["caption"] = "Atmospheric electronic opening with airy pads."
+        result["section_captions"] = [
+            {"label": "Intro", "caption": "The intro section features soft and melodic."},
+            {"label": "Drop", "caption": "The drop section features soft and melodic."},
+        ]
+        self.assertIn(
+            "section_captions_semantic_duplicates",
+            validate_annotation(result, row, taxonomy, mir),
+        )
+        result["section_captions"] = [
+            {"label": "Intro", "caption": "Atmospheric electronic opening with airy pads."},
+            {"label": "Drop", "caption": "Energetic melodic drop with wide chords and punchy drums."},
+        ]
         result["section_captions"].append(
             {"label": "Break", "caption": "Quiet break with sparse plucks."}
         )
@@ -228,6 +240,17 @@ class RecordPreservingTests(unittest.TestCase):
             sections[1]["caption"],
             "The outro section features soft synth lead texture.",
         )
+
+    def test_local_section_compiler_replaces_adjective_only_fragments(self) -> None:
+        annotation = {
+            "arrangement": {"intro": "soft and melodic", "outro": "piano fades away"},
+            "main_instruments": [{"name": "piano"}, {"name": "synth_pluck"}],
+        }
+        sections = compile_section_captions(
+            annotation, {"sections": [{"label": "Intro"}, {"label": "Outro"}]}
+        )
+        self.assertIn("develops the opening texture", sections[0]["caption"])
+        self.assertEqual(sections[1]["caption"], "Piano fades away in the outro section.")
 
     def test_mir_validator_requires_exact_record_coverage(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

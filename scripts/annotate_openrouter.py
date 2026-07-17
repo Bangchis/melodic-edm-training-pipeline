@@ -270,6 +270,20 @@ def validate_annotation(
             errors.append(f"section_captions_word_count:{item.get('label', '')}:{count}")
     if len({text.lower() for text in section_texts}) != len(section_texts):
         errors.append("section_captions_must_differ")
+    semantic_cores = []
+    boilerplate = {
+        "the", "section", "intro", "outro", "main", "theme", "build", "drop", "break",
+        "final", "features",
+    }
+    for text in section_texts:
+        words = [
+            word.lower() for word in re.findall(r"\b[\w'-]+\b", text, flags=re.UNICODE)
+            if word.lower() not in boilerplate
+        ]
+        semantic_cores.append(" ".join(words))
+    nonempty_cores = [core for core in semantic_cores if core]
+    if len(set(nonempty_cores)) != len(nonempty_cores):
+        errors.append("section_captions_semantic_duplicates")
     texts = [canonical] + [str(variant.get("text", "")) for variant in variants] + section_texts
     combined = "\n".join(texts).lower()
     if any(phrase in combined for phrase in HYPE_PHRASES):

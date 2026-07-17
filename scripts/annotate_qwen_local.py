@@ -25,7 +25,7 @@ from annotate_openrouter import (
 
 
 MODEL_ID = "Qwen/Qwen2.5-Omni-7B"
-CAPTION_COMPILER_VERSION = 8
+CAPTION_COMPILER_VERSION = 9
 
 
 def _sentence(value: str) -> str:
@@ -203,7 +203,9 @@ def compile_section_captions(annotation: dict[str, Any], mir: dict[str, Any]) ->
     output = []
     for label in required:
         phrase = str(arrangement.get(mapping.get(label, ""), "develops")).strip()
-        if word_count(phrase) < 3:
+        phrase_words = [word.lower().strip(",.;:") for word in phrase.split()]
+        has_finite_verb = any(word in FINITE_SECTION_VERBS for word in phrase_words)
+        if word_count(phrase) < 3 or (word_count(phrase) == 3 and not has_finite_verb):
             phrase = f"{terse_defaults.get(label, 'develops the section')} with {instrument_text}"
         caption = _section_sentence(label, phrase)
         output.append({"label": label, "caption": caption})
@@ -349,7 +351,11 @@ def main() -> int:
         actions = sanitize_annotation(annotation)
         mir = json.loads((root / "data" / "mir" / f"{sid}.json").read_text(encoding="utf-8"))
         errors = validate_annotation(annotation, row, taxonomy, mir)
-        if any(error.startswith("section_captions_word_count:") for error in errors):
+        if any(
+            error.startswith("section_captions_word_count:")
+            or error == "section_captions_semantic_duplicates"
+            for error in errors
+        ):
             annotation["section_captions"] = compile_section_captions(annotation, mir)
             actions.append({
                 "action": "compiled_section_captions_from_master_arrangement",
