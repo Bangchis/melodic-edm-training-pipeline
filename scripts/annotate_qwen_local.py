@@ -308,7 +308,10 @@ def generate_annotation(model: Any, processor: Any, preview: Path, prompt: str, 
     last_error: Exception | None = None
     for value in candidates:
         try:
-            return parse_json_content(value)
+            parsed = parse_json_content(value)
+            if not {"primary_genre", "canonical_caption"}.issubset(parsed):
+                raise ValueError("parsed JSON is not a complete master annotation")
+            return parsed
         except Exception as exc:
             last_error = exc
     raise ValueError(f"local model did not return parseable JSON: {last_error}")
@@ -438,9 +441,20 @@ def main() -> int:
             base_prompt = build_prompt(request_row, mir, taxonomy, schema)
             correction = ""
             for attempt in range(2):
-                result = generate_annotation(
-                    model, processor, preview, base_prompt + correction, args.max_new_tokens
-                )
+                try:
+                    result = generate_annotation(
+                        model, processor, preview, base_prompt + correction, args.max_new_tokens
+                    )
+                except Exception as exc:
+                    last_error = f"{type(exc).__name__}:{exc}"
+                    if attempt == 0:
+                        correction = (
+                            "\nYour previous response was not one complete JSON master annotation. Return exactly one "
+                            "complete JSON object with every required schema field; do not emit separate objects, notes, "
+                            "or Markdown."
+                        )
+                        continue
+                    raise
                 sanitization = sanitize_annotation(result)
                 errors = validate_annotation(result, row, taxonomy, mir)
                 if float(result.get("annotation_confidence", 0)) < 0.70:

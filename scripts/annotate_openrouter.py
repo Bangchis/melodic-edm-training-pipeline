@@ -80,17 +80,18 @@ def parse_json_content(content: Any) -> dict[str, Any]:
         value = json.loads(text)
     except json.JSONDecodeError as original_error:
         decoder = json.JSONDecoder()
-        value = None
+        candidates = []
         for match in re.finditer(r"\{", text):
             try:
                 candidate, _ = decoder.raw_decode(text[match.start():])
             except json.JSONDecodeError:
                 continue
             if isinstance(candidate, dict):
-                value = candidate
-                break
-        if value is None:
+                candidates.append(candidate)
+        if not candidates:
             raise original_error
+        annotation_keys = {"primary_genre", "canonical_caption", "caption_variants", "main_instruments"}
+        value = max(candidates, key=lambda candidate: len(annotation_keys.intersection(candidate)))
     if not isinstance(value, dict):
         raise ValueError("annotation JSON root must be an object")
     return value

@@ -147,6 +147,13 @@ class RecordPreservingTests(unittest.TestCase):
             parse_json_content('{"status": "ok"}\n{"provider_note": "extra"}'),
             {"status": "ok"},
         )
+        self.assertEqual(
+            parse_json_content(
+                '{"confidence": 0.9, "name": "pipa"}\n'
+                '{"primary_genre": "melodic_edm", "canonical_caption": "Instrumental music"}'
+            )["primary_genre"],
+            "melodic_edm",
+        )
 
     def test_local_master_annotation_compiles_bounded_caption(self) -> None:
         annotation = {
