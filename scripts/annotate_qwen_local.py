@@ -40,7 +40,7 @@ def _without_explicit_key(value: str) -> str:
     import re
 
     cleaned = re.sub(
-        r"\b[A-G](?:[#♯b♭])?\s+(?P<mode>major|minor)(?:\s+(?:key|scale))?\b",
+        r"\b[A-G](?:[#♯b♭])?\s+(?P<mode>major|minor)(?:\s+(?:key|scale|tonality))?\b",
         lambda match: f"{match.group('mode').lower()} tonality",
         str(value),
         flags=re.IGNORECASE,

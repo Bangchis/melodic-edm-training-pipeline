@@ -163,13 +163,14 @@ def sanitize_caption_text(text: str) -> str:
     )
     value = re.sub(r"\bwell[- ]produced\s+", "", value, flags=re.IGNORECASE)
     value = re.sub(
-        r"\b[A-G](?:[#♯b♭])?\s+(?P<mode>major|minor)(?:\s+(?:key|scale))?\b",
+        r"\b[A-G](?:[#♯b♭])?\s+(?P<mode>major|minor)(?:\s+(?:key|scale|tonality))?\b",
         lambda match: f"{match.group('mode').lower()} tonality",
         value,
         flags=re.IGNORECASE,
     )
     # Normalize text produced by the earlier sanitizer revision.
     value = re.sub(r"\bthe\s+a\s+tonal center\b", "the tonal center", value, flags=re.IGNORECASE)
+    value = re.sub(r"\b(major|minor)\s+tonality\s+tonality\b", r"\1 tonality", value, flags=re.IGNORECASE)
     value = re.sub(r"\s+", " ", value)
     value = re.sub(r"\s+([,.;:])", r"\1", value)
     value = re.sub(r",\s*,", ",", value)
@@ -302,7 +303,7 @@ def validate_annotation(
             errors.append("artist_name_in_caption")
             break
     if re.search(
-        r"\b[A-G](?:[#♯b♭])?\s+(?:major|minor)(?:\s+(?:key|scale))?\b",
+        r"\b[A-G](?:[#♯b♭])?\s+(?:major|minor)(?:\s+(?:key|scale|tonality))?\b",
         combined,
         flags=re.IGNORECASE,
     ):

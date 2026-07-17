@@ -151,6 +151,14 @@ class RecordPreservingTests(unittest.TestCase):
             "A strong emphasis on the tonal center.",
         )
         self.assertEqual(
+            sanitize_caption_text("A melodic outro with F major tonality."),
+            "A melodic outro with major tonality.",
+        )
+        self.assertEqual(
+            sanitize_caption_text("A melodic outro with major tonality tonality."),
+            "A melodic outro with major tonality.",
+        )
+        self.assertEqual(
             sanitize_caption_text("A well-produced electronic track with a driving beat."),
             "An electronic track with a driving beat.",
         )
