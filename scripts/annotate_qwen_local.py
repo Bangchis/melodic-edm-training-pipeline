@@ -18,6 +18,7 @@ from annotate_openrouter import (
     read_jsonl,
     sanitize_annotation,
     sanitize_caption_text,
+    safe_float,
     validate_annotation,
     word_count,
     write_manual_review,
@@ -467,7 +468,7 @@ def main() -> int:
                     raise
                 sanitization = sanitize_annotation(result)
                 errors = validate_annotation(result, row, taxonomy, mir)
-                if float(result.get("annotation_confidence", 0)) < 0.70:
+                if safe_float(result.get("annotation_confidence")) < 0.70:
                     errors.append("low_confidence")
                 errors = sorted(set(errors))
                 if any(
@@ -511,7 +512,7 @@ def main() -> int:
         except Exception as exc:
             last_error = f"{type(exc).__name__}:{exc}"
 
-        accepted = result is not None and not errors and float(result.get("annotation_confidence", 0)) >= 0.70
+        accepted = result is not None and not errors and safe_float(result.get("annotation_confidence")) >= 0.70
         record = {
             **row,
             "annotation_status": "accepted" if accepted else "manual_review",

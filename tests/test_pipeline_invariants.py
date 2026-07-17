@@ -74,6 +74,9 @@ class RecordPreservingTests(unittest.TestCase):
         result["caption_variants"][2]["text"] = result["caption_variants"][1]["text"]
         self.assertIn("caption_variants_must_differ", validate_annotation(result, row, taxonomy, mir))
         result["caption_variants"][2]["text"] = production_text
+        result["annotation_confidence"] = {"unexpected": 0.9}
+        self.assertIn("invalid_annotation_confidence", validate_annotation(result, row, taxonomy, mir))
+        result["annotation_confidence"] = 0.9
         result["section_captions"][0]["caption"] = "Builds"
         self.assertTrue(any(
             error.startswith("section_captions_word_count:Intro:1")

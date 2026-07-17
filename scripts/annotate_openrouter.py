@@ -129,6 +129,13 @@ def word_count(text: str) -> int:
     return len(re.findall(r"\b[\w'-]+\b", text, flags=re.UNICODE))
 
 
+def safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def sanitize_caption_text(text: str) -> str:
     """Remove vague quality/use-case phrases while preserving musical content."""
     value = str(text)
@@ -189,7 +196,7 @@ def sanitize_annotation(result: dict[str, Any]) -> list[dict[str, Any]]:
                 "to": instrument["role"],
                 "instrument": instrument.get("name"),
             })
-        if instrument.get("name") != "unknown" and float(instrument.get("confidence", 0)) < 0.55:
+        if instrument.get("name") != "unknown" and safe_float(instrument.get("confidence"), -1.0) < 0.55:
             removed.append({
                 "action": "removed_low_confidence_instrument",
                 "name": instrument.get("name"),
@@ -235,7 +242,7 @@ def validate_annotation(
             errors.append("invalid_instrument")
         if instrument.get("role") not in taxonomy["instrument_roles"]:
             errors.append("invalid_instrument_role")
-        if instrument.get("name") != "unknown" and float(instrument.get("confidence", 0)) < 0.55:
+        if instrument.get("name") != "unknown" and safe_float(instrument.get("confidence"), -1.0) < 0.55:
             errors.append("low_confidence_instrument")
 
     canonical = str(result.get("canonical_caption", "")).strip()
@@ -302,7 +309,7 @@ def validate_annotation(
         errors.append("keyscale_in_caption")
     if not canonical.lower().startswith("instrumental"):
         errors.append("canonical_caption_not_instrumental")
-    confidence = float(result.get("annotation_confidence", 0))
+    confidence = safe_float(result.get("annotation_confidence"), -1.0)
     if not 0 <= confidence <= 1:
         errors.append("invalid_annotation_confidence")
     return sorted(set(errors))
@@ -440,7 +447,7 @@ def main() -> int:
         actions = sanitize_annotation(record["annotation"])
         validation_errors = validate_annotation(record["annotation"], row, taxonomy, mir)
         accepted = bool(
-            float(record["annotation"].get("annotation_confidence", 0)) >= 0.70
+            safe_float(record["annotation"].get("annotation_confidence")) >= 0.70
             and not validation_errors
         )
         if actions:
@@ -485,7 +492,7 @@ def main() -> int:
                 result = cached["annotation"]
                 sanitization = sanitize_annotation(result)
                 validation_errors = validate_annotation(result, row, taxonomy, mir)
-                if float(result.get("annotation_confidence", 0)) >= 0.70 and not validation_errors:
+                if safe_float(result.get("annotation_confidence")) >= 0.70 and not validation_errors:
                     usage = cached.get("annotation_usage", {})
                     effort_used = cached.get("annotation_reasoning_effort", "cached_revalidation")
                     last_error = ""
@@ -510,7 +517,7 @@ def main() -> int:
                             )
                             sanitization = sanitize_annotation(result)
                             validation_errors = validate_annotation(result, row, taxonomy, mir)
-                            if float(result.get("annotation_confidence", 0)) >= 0.70 and not validation_errors:
+                            if safe_float(result.get("annotation_confidence")) >= 0.70 and not validation_errors:
                                 last_error = ""
                                 break
                             last_error = "validation:" + ",".join(validation_errors or ["low_confidence"])
@@ -527,14 +534,14 @@ def main() -> int:
                             last_error = f"{type(exc).__name__}:{exc}"
                         if attempt < args.retries:
                             time.sleep(min(60.0, 2 ** attempt + random.random()))
-                    if result is not None and float(result.get("annotation_confidence", 0)) >= 0.70 and not validation_errors:
+                    if result is not None and safe_float(result.get("annotation_confidence")) >= 0.70 and not validation_errors:
                         break
         except Exception as exc:
             last_error = f"{type(exc).__name__}:{exc}"
 
         accepted = bool(
             result is not None
-            and float(result.get("annotation_confidence", 0)) >= 0.70
+            and safe_float(result.get("annotation_confidence")) >= 0.70
             and not validation_errors
         )
         record = {
@@ -557,7 +564,7 @@ def main() -> int:
         atomic_jsonl(state_path, sorted(by_id.values(), key=lambda item: item["sample_id"]))
         print(
             f"[{index}/{len(pending)}] {sid} {'PASS' if accepted else 'REVIEW'} "
-            f"confidence={float((result or {}).get('annotation_confidence', 0)):.2f} {last_error}",
+            f"confidence={safe_float((result or {}).get('annotation_confidence')):.2f} {last_error}",
             flush=True,
         )
 
