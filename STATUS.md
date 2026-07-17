@@ -43,6 +43,11 @@ was written: many separated files are named `instrumental.flac`. MIR inputs now 
 unique `<sample_id>.flac` hard links, so All-In-One cannot overwrite analysis files
 between records. The incomplete temporary pass was discarded and restarted.
 
+All 231 raw All-In-One results were then cached. A cache-only rerun exposed an
+All-In-One 1.1.0 cleanup bug (`demix_paths` is uninitialized when there is nothing
+new to analyze); the wrapper now retains temp files only for cache-only loading and
+deletes them after final MIR validation.
+
 ## Completed infrastructure
 
 - Pipeline code, tests, docs and the reproducible trainer patch are backed up in the

@@ -74,8 +74,13 @@ def main() -> int:
         bpm = row.get("bpm")
         if not isinstance(bpm, int) or isinstance(bpm, bool) or not 40 <= bpm <= 250:
             errors.append({"sample_id": sid, "reason": f"invalid_bpm:{bpm}"})
-        elif bpm <= 60 or bpm >= 200:
-            warnings.append({"sample_id": sid, "reason": f"bpm_outlier:{bpm}"})
+        elif bpm < 80 or bpm > 190:
+            warnings.append({"sample_id": sid, "reason": f"bpm_half_or_double_time_candidate:{bpm}"})
+        raw_bpm = row.get("bpm_raw")
+        normalization = row.get("bpm_normalization")
+        if isinstance(raw_bpm, int) and raw_bpm < 80:
+            if bpm != raw_bpm * 2 or normalization != "double_half_time_below_80":
+                errors.append({"sample_id": sid, "reason": "half_time_bpm_not_normalized"})
 
         duration = float(manifest_row.get("duration") or 0)
         for name in ("beats", "downbeats"):
@@ -127,6 +132,9 @@ def main() -> int:
         "bpm_max": max((row["bpm"] for row in rows if isinstance(row.get("bpm"), int)), default=None),
         "key_present": sum(bool(row.get("keyscale")) for row in rows),
         "timesignature_present": sum(bool(row.get("timesignature")) for row in rows),
+        "bpm_normalized_from_half_time": sum(
+            row.get("bpm_normalization") == "double_half_time_below_80" for row in rows
+        ),
         "section_label_counts": dict(Counter(
             section.get("label", "") for row in rows for section in row.get("sections", [])
         )),

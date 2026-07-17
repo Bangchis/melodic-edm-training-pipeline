@@ -6,18 +6,37 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from analyze_mir import prepare_unique_inputs  # noqa: E402
+from analyze_mir import map_sections, normalize_edm_bpm, prepare_unique_inputs  # noqa: E402
 from annotate_openrouter import validate_annotation  # noqa: E402
 from build_acestep_dataset import choose_splits, choose_window, render_audio  # noqa: E402
 
 
 class RecordPreservingTests(unittest.TestCase):
+    def test_only_clear_edm_half_time_bpm_is_doubled(self) -> None:
+        self.assertEqual(normalize_edm_bpm(75), (150, "double_half_time_below_80"))
+        self.assertEqual(normalize_edm_bpm(85), (85, None))
+        self.assertEqual(normalize_edm_bpm(128), (128, None))
+        self.assertEqual(normalize_edm_bpm(300), (None, None))
+
+    def test_prechorus_maps_to_build_and_last_chorus_to_final_drop(self) -> None:
+        segments = [
+            SimpleNamespace(label="intro", start=0, end=10),
+            SimpleNamespace(label="pre-chorus", start=10, end=20),
+            SimpleNamespace(label="chorus", start=20, end=40),
+            SimpleNamespace(label="chorus", start=40, end=60),
+        ]
+        self.assertEqual(
+            [section["label"] for section in map_sections(segments)],
+            ["Intro", "Build", "Drop", "Final Drop"],
+        )
+
     def test_annotation_sections_must_exactly_match_mir(self) -> None:
         taxonomy = json.loads((ROOT / "configs" / "taxonomy.json").read_text(encoding="utf-8"))
         caption = (

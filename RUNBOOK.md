@@ -100,6 +100,9 @@ that share audio are both retained, but cannot leak across train and validation.
 python3 scripts/build_acestep_dataset.py --project-root "$PWD"
 ```
 
+On Vast, run the equivalent long step through Supervisor as
+`edm-build-dataset`.
+
 Required gate: final triplet count equals accepted annotation count, every FLAC is
 48 kHz stereo and decodes, every JSON has a non-empty caption and four variants, and
 every audio has its matching `.json` and `.lyrics.txt`.

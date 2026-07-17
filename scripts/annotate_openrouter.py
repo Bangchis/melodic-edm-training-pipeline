@@ -316,6 +316,11 @@ def main() -> int:
                         if float(result.get("annotation_confidence", 0)) >= 0.70 and not validation_errors:
                             break
                         last_error = "validation:" + ",".join(validation_errors or ["low_confidence"])
+                        # Temperature is zero, so repeating the same semantic
+                        # request at the same reasoning level usually returns the
+                        # same validation failure. Escalate directly to `low`;
+                        # reserve retries for transport/provider exceptions.
+                        break
                     except urllib.error.HTTPError as exc:
                         last_error = f"http_{exc.code}"
                         if exc.code not in {408, 409, 429, 500, 502, 503, 504}:
