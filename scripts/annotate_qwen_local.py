@@ -25,7 +25,7 @@ from annotate_openrouter import (
 
 
 MODEL_ID = "Qwen/Qwen2.5-Omni-7B"
-CAPTION_COMPILER_VERSION = 5
+CAPTION_COMPILER_VERSION = 6
 
 
 def _sentence(value: str) -> str:
@@ -46,6 +46,39 @@ def _without_explicit_key(value: str) -> str:
     )
     cleaned = re.sub(r"\bthe\s+a\s+tonal center\b", "the tonal center", cleaned, flags=re.IGNORECASE)
     return sanitize_caption_text(cleaned)
+
+
+SECTION_DISPLAY = {
+    "Intro": "intro", "Theme": "main theme", "Build": "build", "Drop": "drop",
+    "Break": "break", "Final Drop": "final drop", "Outro": "outro",
+}
+FINITE_SECTION_VERBS = {
+    "adds", "begins", "build", "builds", "combines", "develops", "diminishes", "fades",
+    "features", "introduce", "introduces", "intensifies", "lead", "leads", "maintains",
+    "moves", "opens", "peaks", "presents", "provide", "provides", "reaches", "returns",
+    "shifts", "starts", "strips", "take", "takes", "transitions",
+}
+
+
+def _section_sentence(label: str, value: str) -> str:
+    import re
+
+    phrase = _without_explicit_key(value).strip(" .")
+    section_name = SECTION_DISPLAY.get(label, label.lower())
+    phrase = re.sub(r"^during\s+the\s+.+?\s+section,\s*", "", phrase, flags=re.IGNORECASE)
+    lowered = phrase.lower()
+    if lowered.startswith(f"the {section_name} section ") or lowered.startswith(f"the {section_name} "):
+        return _sentence(phrase)
+    phrase_words = phrase.split()
+    first_word = phrase_words[0].lower() if phrase_words else "develops"
+    later_finite_verb = any(
+        word.lower().strip(",.;:") in FINITE_SECTION_VERBS for word in phrase_words[1:]
+    )
+    if first_word in FINITE_SECTION_VERBS:
+        return _sentence(f"The {section_name} section {phrase[0].lower() + phrase[1:]}")
+    if later_finite_verb:
+        return _sentence(f"{phrase} in the {section_name} section")
+    return _sentence(f"The {section_name} section features {phrase[0].lower() + phrase[1:]}")
 
 
 def compile_canonical_caption(annotation: dict[str, Any]) -> str:
@@ -93,7 +126,7 @@ def compile_canonical_caption(annotation: dict[str, Any]) -> str:
     sections = {item.get("label"): item.get("caption") for item in annotation.get("section_captions", [])}
     for label in ("Intro", "Drop", "Final Drop", "Build"):
         if sections.get(label):
-            candidates.append(_sentence(_without_explicit_key(str(sections[label]))))
+            candidates.append(_section_sentence(label, str(sections[label])))
     production = annotation.get("production") or {}
     production_parts = []
     production_nouns = {
@@ -144,35 +177,16 @@ def compile_section_captions(annotation: dict[str, Any], mir: dict[str, Any]) ->
         "Intro": "intro", "Theme": "theme", "Build": "buildup", "Drop": "drop",
         "Break": "break", "Final Drop": "final_drop", "Outro": "outro",
     }
-    display = {
-        "Intro": "intro", "Theme": "main theme", "Build": "build", "Drop": "drop",
-        "Break": "break", "Final Drop": "final drop", "Outro": "outro",
-    }
     required = []
     for section in mir.get("sections", []):
         label = str(section.get("label", ""))
         if label and label not in required:
             required.append(label)
     arrangement = annotation.get("arrangement") or {}
-    finite_verbs = {
-        "adds", "begins", "builds", "combines", "develops", "diminishes", "fades",
-        "features", "introduce", "introduces", "intensifies", "lead", "leads", "maintains",
-        "moves", "opens", "peaks", "presents", "provide", "provides", "reaches", "returns",
-        "shifts", "starts", "strips", "take", "takes", "transitions",
-    }
     output = []
     for label in required:
-        phrase = _without_explicit_key(str(arrangement.get(mapping.get(label, ""), "develops"))).strip(" .")
-        phrase_words = phrase.split()
-        first_word = phrase_words[0].lower() if phrase_words else "develops"
-        later_finite_verb = any(word.lower().strip(",.;:") in finite_verbs for word in phrase_words[1:])
-        section_name = display.get(label, label.lower())
-        if first_word in finite_verbs:
-            caption = _sentence(f"The {section_name} section {phrase[0].lower() + phrase[1:]}")
-        elif later_finite_verb:
-            caption = _sentence(f"{phrase} in the {section_name} section")
-        else:
-            caption = _sentence(f"The {section_name} section features {phrase[0].lower() + phrase[1:]}")
+        phrase = str(arrangement.get(mapping.get(label, ""), "develops"))
+        caption = _section_sentence(label, phrase)
         output.append({"label": label, "caption": caption})
     return output
 
@@ -331,12 +345,22 @@ def main() -> int:
         if not record or not str(record.get("annotation_model", "")).startswith(MODEL_ID + "@"):
             continue
         actions = record.get("annotation_sanitization") or []
-        was_compiled = any(action.get("action") == "compiled_canonical_caption_from_master_fields" for action in actions)
+        was_compiled = any(action.get("action") in {
+            "compiled_canonical_caption_from_master_fields",
+            "compiled_section_captions_from_master_arrangement",
+        } for action in actions)
         if not was_compiled or record.get("annotation_caption_compiler_version") == CAPTION_COMPILER_VERSION:
             continue
         annotation = record.get("annotation") or {}
         previous = str(annotation.get("canonical_caption", ""))
         reconciliation_sanitization = sanitize_annotation(annotation)
+        if any(action.get("action") == "compiled_section_captions_from_master_arrangement" for action in actions):
+            mir = json.loads((root / "data" / "mir" / f"{sid}.json").read_text(encoding="utf-8"))
+            annotation["section_captions"] = compile_section_captions(annotation, mir)
+            reconciliation_sanitization.append({
+                "action": "recompiled_section_captions_from_master_arrangement",
+                "section_count": len(annotation["section_captions"]),
+            })
         compiled = compile_canonical_caption(annotation)
         annotation["canonical_caption"] = compiled
         for variant in annotation.get("caption_variants", []):
@@ -448,7 +472,10 @@ def main() -> int:
             "annotation_error": None if accepted else last_error,
             "annotated_at": datetime.now(timezone.utc).isoformat(),
         }
-        if any(action.get("action") == "compiled_canonical_caption_from_master_fields" for action in sanitization):
+        if any(action.get("action") in {
+            "compiled_canonical_caption_from_master_fields",
+            "compiled_section_captions_from_master_arrangement",
+        } for action in sanitization):
             record["annotation_caption_compiler_version"] = CAPTION_COMPILER_VERSION
         if result is not None:
             record["annotation"] = result

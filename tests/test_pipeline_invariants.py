@@ -157,6 +157,25 @@ class RecordPreservingTests(unittest.TestCase):
         self.assertEqual(sections[1]["caption"], "The drop section intensifies.")
         self.assertEqual(sections[2]["caption"], "Piano fades away in the outro section.")
 
+    def test_local_caption_compiler_repairs_section_fragments(self) -> None:
+        annotation = {
+            "primary_genre": "melodic_edm",
+            "moods": ["uplifting", "energetic"],
+            "main_instruments": [
+                {"name": "synth_lead", "role": "main_melody"},
+                {"name": "electronic_drums", "role": "drums"},
+            ],
+            "melody": {"description": "A repeated two-bar synth motif with altered endings"},
+            "section_captions": [{
+                "label": "Intro",
+                "caption": "During the intro section, builds up with synth plucks and electronic drums.",
+            }],
+            "production": {"bass": "deep and driving", "space": "wide and immersive"},
+        }
+        caption = compile_canonical_caption(annotation)
+        self.assertNotIn("During the intro section, builds", caption)
+        self.assertIn("The intro section builds", caption)
+
     def test_mir_validator_requires_exact_record_coverage(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
