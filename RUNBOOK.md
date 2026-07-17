@@ -78,6 +78,11 @@ python3 scripts/annotate_openrouter.py \
   --project-root "$PWD" --env-file /workspace/.env
 ```
 
+On a fresh provider/model combination, first run the Supervisor
+`edm-annotate-smoke` job. It annotates exactly one record through the same state file;
+verify the schema/caption gate, then start `edm-annotate`, which resumes with the
+remaining records.
+
 Only records with confidence at least 0.70 and a schema-valid annotation pass. Retry
 failures; resolve `data/manual_review.csv` before building the final dataset.
 

@@ -101,7 +101,9 @@ def word_count(text: str) -> int:
     return len(re.findall(r"\b[\w'-]+\b", text, flags=re.UNICODE))
 
 
-def validate_annotation(result: dict[str, Any], row: dict[str, Any], taxonomy: dict[str, Any]) -> list[str]:
+def validate_annotation(
+    result: dict[str, Any], row: dict[str, Any], taxonomy: dict[str, Any], mir: dict[str, Any]
+) -> list[str]:
     errors = []
     if result.get("primary_genre") not in taxonomy["primary_genres"]:
         errors.append("invalid_primary_genre")
@@ -129,7 +131,21 @@ def validate_annotation(result: dict[str, Any], row: dict[str, Any], taxonomy: d
     full_variant = next((variant.get("text", "").strip() for variant in variants if variant.get("type") == "full"), "")
     if full_variant != canonical:
         errors.append("full_variant_must_equal_canonical")
-    texts = [canonical] + [str(variant.get("text", "")) for variant in variants]
+    if any(not str(variant.get("text", "")).strip() for variant in variants):
+        errors.append("empty_caption_variant")
+    section_captions = result.get("section_captions", [])
+    section_labels = [str(item.get("label", "")) for item in section_captions]
+    supported_labels = {
+        str(section.get("label", "")) for section in mir.get("sections", []) if section.get("label")
+    }
+    if set(section_labels) != supported_labels or len(section_labels) != len(set(section_labels)):
+        errors.append("section_caption_labels_must_match_mir")
+    section_texts = [str(item.get("caption", "")).strip() for item in section_captions]
+    if any(not text for text in section_texts):
+        errors.append("empty_section_caption")
+    if len({text.lower() for text in section_texts}) != len(section_texts):
+        errors.append("section_captions_must_differ")
+    texts = [canonical] + [str(variant.get("text", "")) for variant in variants] + section_texts
     combined = "\n".join(texts).lower()
     if any(phrase in combined for phrase in HYPE_PHRASES):
         errors.append("banned_hype_or_style_phrase")
@@ -157,6 +173,9 @@ def request_annotation(
         "key_confidence": mir.get("key_confidence"),
         "timesignature": mir.get("timesignature"),
         "sections": mir.get("sections", []),
+        "required_section_caption_labels": sorted({
+            str(section.get("label")) for section in mir.get("sections", []) if section.get("label")
+        }),
     }
     metadata = {
         "title_for_identity_only": row.get("expected_title", ""),
@@ -178,8 +197,8 @@ def request_annotation(
         "facts. Never put artist/channel/title names, BPM, key, time signature, hype, quality claims, or 'in the style of' "
         "language in any caption. Return exactly four caption variants with unique types: full, composition, production, "
         "and tags. The full variant text must exactly equal canonical_caption; composition and production should emphasize their own "
-        "audible aspects; tags should be a concise comma-separated prompt. Section captions must differ and describe only "
-        "the sections supported by the supplied MIR structure. Keep BPM/key/time signature as metadata, not caption text. "
+        "audible aspects; tags should be a concise comma-separated prompt. Return exactly one distinct section caption for "
+        "every label in required_section_caption_labels, with no extra labels. Keep BPM/key/time signature as metadata, not caption text. "
         "Use 'unclear' for detailed free-text attributes that cannot be heard confidently.\n"
         "Metadata: " + json.dumps(metadata, ensure_ascii=False) + "\n"
         "MIR: " + json.dumps(compact_mir, ensure_ascii=False) + "\n"
@@ -293,7 +312,7 @@ def main() -> int:
                         result, usage = request_annotation(
                             request_row, mir, preview, taxonomy, schema, api_key, args.model, effort, args.timeout
                         )
-                        validation_errors = validate_annotation(result, row, taxonomy)
+                        validation_errors = validate_annotation(result, row, taxonomy, mir)
                         if float(result.get("annotation_confidence", 0)) >= 0.70 and not validation_errors:
                             break
                         last_error = "validation:" + ",".join(validation_errors or ["low_confidence"])

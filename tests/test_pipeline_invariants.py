@@ -13,10 +13,46 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from analyze_mir import prepare_unique_inputs  # noqa: E402
+from annotate_openrouter import validate_annotation  # noqa: E402
 from build_acestep_dataset import choose_splits, choose_window, render_audio  # noqa: E402
 
 
 class RecordPreservingTests(unittest.TestCase):
+    def test_annotation_sections_must_exactly_match_mir(self) -> None:
+        taxonomy = json.loads((ROOT / "configs" / "taxonomy.json").read_text(encoding="utf-8"))
+        caption = (
+            "Instrumental melodic EDM with an uplifting adventurous mood, led by a bright repeating synth pluck "
+            "hook and supported by wide supersaw chords, clean sub bass, punchy electronic drums, airy pads, short "
+            "rising transitions, an atmospheric opening, and a spacious energetic four-on-the-floor drop with clear "
+            "melodic call-and-response phrases."
+        )
+        result = {
+            "primary_genre": "melodic_edm",
+            "secondary_genres": ["electro_house"],
+            "style_families": ["gaming_melodic"],
+            "moods": ["uplifting"],
+            "main_instruments": [{"name": "synth_pluck", "role": "main_hook", "confidence": 0.9}],
+            "canonical_caption": caption,
+            "caption_variants": [
+                {"type": "full", "text": caption},
+                {"type": "composition", "text": "A repeating synth hook develops through varied endings."},
+                {"type": "production", "text": "Wide chords, clean sub bass and punchy drums."},
+                {"type": "tags", "text": "instrumental, melodic EDM, synth hook, uplifting drop"},
+            ],
+            "section_captions": [
+                {"label": "Intro", "caption": "Atmospheric electronic opening with airy pads."},
+                {"label": "Drop", "caption": "Energetic melodic drop with wide chords and punchy drums."},
+            ],
+            "annotation_confidence": 0.9,
+        }
+        row = {"expected_artist": "Example Artist"}
+        mir = {"sections": [{"label": "Intro"}, {"label": "Drop"}]}
+        self.assertEqual(validate_annotation(result, row, taxonomy, mir), [])
+        result["section_captions"].append(
+            {"label": "Break", "caption": "Quiet break with sparse plucks."}
+        )
+        self.assertIn("section_caption_labels_must_match_mir", validate_annotation(result, row, taxonomy, mir))
+
     def test_mir_validator_requires_exact_record_coverage(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

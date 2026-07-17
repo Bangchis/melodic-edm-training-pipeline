@@ -45,6 +45,9 @@ between records. The incomplete temporary pass was discarded and restarted.
 
 ## Completed infrastructure
 
+- Pipeline code, tests, docs and the reproducible trainer patch are backed up in the
+  private GitHub repository `Bangchis/melodic-edm-training-pipeline`. Initial commit:
+  `bc4256f`; ongoing completion work is in draft PR #1.
 - ACE-Step 1.5 repository pinned at commit
   `6d467e4b5081ccb0abf1ec1bf4fdf9051a2d34b0`.
 - XL-Base, VAE and Qwen embedding checkpoints downloaded on the server.
