@@ -23,7 +23,7 @@ DEFAULT_MODEL = "google/gemini-3.1-flash-lite"
 HYPE_PHRASES = (
     "masterpiece", "best song ever", "professional quality", "extremely beautiful",
     "exactly like", "in the style of", "style of", "polished", "suitable for",
-    "ideal for", "perfect for",
+    "ideal for", "perfect for", "well-produced", "well produced", "high-quality",
 )
 
 
@@ -139,6 +139,13 @@ def sanitize_caption_text(text: str) -> str:
     value = re.sub(r"\s+and\s+polished\b", "", value, flags=re.IGNORECASE)
     value = re.sub(r"\bpolished,\s*", "", value, flags=re.IGNORECASE)
     value = re.sub(r"\bpolished\b", "", value, flags=re.IGNORECASE)
+    value = re.sub(
+        r"\b(?:a|an)\s+well[- ]produced\b",
+        lambda match: "An" if match.group(0)[0].isupper() else "an",
+        value,
+        flags=re.IGNORECASE,
+    )
+    value = re.sub(r"\bwell[- ]produced\s+", "", value, flags=re.IGNORECASE)
     value = re.sub(
         r"\b[A-G](?:[#♯b♭])?\s+(?P<mode>major|minor)(?:\s+(?:key|scale))?\b",
         lambda match: f"{match.group('mode').lower()} tonality",

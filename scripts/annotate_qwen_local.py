@@ -17,6 +17,7 @@ from annotate_openrouter import (
     parse_json_content,
     read_jsonl,
     sanitize_annotation,
+    sanitize_caption_text,
     validate_annotation,
     word_count,
     write_manual_review,
@@ -24,7 +25,7 @@ from annotate_openrouter import (
 
 
 MODEL_ID = "Qwen/Qwen2.5-Omni-7B"
-CAPTION_COMPILER_VERSION = 4
+CAPTION_COMPILER_VERSION = 5
 
 
 def _sentence(value: str) -> str:
@@ -43,7 +44,8 @@ def _without_explicit_key(value: str) -> str:
         str(value),
         flags=re.IGNORECASE,
     )
-    return re.sub(r"\bthe\s+a\s+tonal center\b", "the tonal center", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\bthe\s+a\s+tonal center\b", "the tonal center", cleaned, flags=re.IGNORECASE)
+    return sanitize_caption_text(cleaned)
 
 
 def compile_canonical_caption(annotation: dict[str, Any]) -> str:
@@ -93,22 +95,38 @@ def compile_canonical_caption(annotation: dict[str, Any]) -> str:
         if sections.get(label):
             candidates.append(_sentence(_without_explicit_key(str(sections[label]))))
     production = annotation.get("production") or {}
+    production_parts = []
+    production_nouns = {
+        "bass": ("bass",), "chords": ("chord", "chords"),
+        "drums": ("drum", "drums", "percussion"),
+        "space": ("space", "stereo", "reverb", "ambience"),
+    }
+    production_suffix = {"bass": "bass", "chords": "chords", "drums": "drums", "space": "stereo space"}
+    for key in ("bass", "chords", "drums", "space"):
+        if not production.get(key):
+            continue
+        phrase = _without_explicit_key(str(production[key])).strip(" .")
+        if not any(noun in phrase.lower() for noun in production_nouns[key]):
+            phrase += " " + production_suffix[key]
+        production_parts.append(phrase)
+    if production_parts:
+        joined = ", ".join(production_parts[:-1])
+        if len(production_parts) > 1:
+            joined += ", and " + production_parts[-1]
+        else:
+            joined = production_parts[0]
+        candidates.append(_sentence("The production uses " + joined))
     if production.get("description"):
         candidates.append(_sentence(_without_explicit_key(str(production["description"]))))
-    for key in ("bass", "chords", "drums", "space"):
-        if production.get(key):
-            phrase = _without_explicit_key(str(production[key]))
-            if word_count(phrase) >= 4:
-                candidates.append(_sentence(phrase))
 
     result = base
     for candidate in candidates:
         if not candidate:
             continue
         proposed = result + " " + candidate
-        if word_count(proposed) <= 80:
+        if word_count(proposed) <= 65 or (word_count(result) < 50 and word_count(proposed) <= 80):
             result = proposed
-        if word_count(result) >= 68:
+        if word_count(result) >= 55:
             break
     # Continue filling to the hard minimum if earlier clauses were unusually short.
     if word_count(result) < 40:
@@ -136,25 +154,25 @@ def compile_section_captions(annotation: dict[str, Any], mir: dict[str, Any]) ->
         if label and label not in required:
             required.append(label)
     arrangement = annotation.get("arrangement") or {}
-    instruments = [
-        str(item.get("name", "")).replace("_", " ")
-        for item in annotation.get("main_instruments", [])
-        if item.get("name") and item.get("name") != "unknown"
-    ][:3]
-    if len(instruments) > 1:
-        instrument_text = ", ".join(instruments[:-1]) + " and " + instruments[-1]
-    elif instruments:
-        instrument_text = instruments[0]
-    else:
-        instrument_text = "electronic layers"
+    finite_verbs = {
+        "adds", "begins", "builds", "combines", "develops", "diminishes", "fades",
+        "features", "introduce", "introduces", "intensifies", "lead", "leads", "maintains",
+        "moves", "opens", "peaks", "presents", "provide", "provides", "reaches", "returns",
+        "shifts", "starts", "strips", "take", "takes", "transitions",
+    }
     output = []
     for label in required:
         phrase = _without_explicit_key(str(arrangement.get(mapping.get(label, ""), "develops"))).strip(" .")
-        if word_count(phrase) <= 3:
-            caption = f"The {display.get(label, label.lower())} section {phrase} with {instrument_text}."
+        phrase_words = phrase.split()
+        first_word = phrase_words[0].lower() if phrase_words else "develops"
+        later_finite_verb = any(word.lower().strip(",.;:") in finite_verbs for word in phrase_words[1:])
+        section_name = display.get(label, label.lower())
+        if first_word in finite_verbs:
+            caption = _sentence(f"The {section_name} section {phrase[0].lower() + phrase[1:]}")
+        elif later_finite_verb:
+            caption = _sentence(f"{phrase} in the {section_name} section")
         else:
-            clause = phrase[0].lower() + phrase[1:]
-            caption = f"During the {display.get(label, label.lower())} section, {clause}."
+            caption = _sentence(f"The {section_name} section features {phrase[0].lower() + phrase[1:]}")
         output.append({"label": label, "caption": caption})
     return output
 
@@ -324,6 +342,7 @@ def main() -> int:
         for variant in annotation.get("caption_variants", []):
             if variant.get("type") == "full":
                 variant["text"] = compiled
+        reconciliation_sanitization += sanitize_annotation(annotation)
         mir = json.loads((root / "data" / "mir" / f"{sid}.json").read_text(encoding="utf-8"))
         errors = validate_annotation(annotation, row, taxonomy, mir)
         if errors:
@@ -384,6 +403,7 @@ def main() -> int:
                         "action": "compiled_section_captions_from_master_arrangement",
                         "section_count": len(result["section_captions"]),
                     })
+                    sanitization += sanitize_annotation(result)
                     errors = validate_annotation(result, row, taxonomy, mir)
                 if errors and all(
                     error.startswith("canonical_caption_word_count:") or error == "keyscale_in_caption"
@@ -400,6 +420,7 @@ def main() -> int:
                         "previous_word_count": word_count(previous),
                         "compiled_word_count": word_count(compiled),
                     })
+                    sanitization += sanitize_annotation(result)
                     errors = validate_annotation(result, row, taxonomy, mir)
                 if not errors:
                     break

@@ -113,6 +113,10 @@ class RecordPreservingTests(unittest.TestCase):
             sanitize_caption_text("A strong emphasis on the a tonal center."),
             "A strong emphasis on the tonal center.",
         )
+        self.assertEqual(
+            sanitize_caption_text("A well-produced electronic track with a driving beat."),
+            "An electronic track with a driving beat.",
+        )
 
     def test_annotation_json_parser_accepts_provider_code_fence(self) -> None:
         self.assertEqual(parse_json_content("```json\n{\"status\": \"ok\"}\n```"), {"status": "ok"})
@@ -138,7 +142,7 @@ class RecordPreservingTests(unittest.TestCase):
         caption = compile_canonical_caption(annotation)
         self.assertTrue(caption.startswith("Instrumental"))
         self.assertGreaterEqual(len(caption.split()), 40)
-        self.assertLessEqual(len(caption.split()), 80)
+        self.assertLessEqual(len(caption.split()), 65)
 
     def test_local_section_compiler_covers_required_labels(self) -> None:
         annotation = {
@@ -149,6 +153,9 @@ class RecordPreservingTests(unittest.TestCase):
         sections = compile_section_captions(annotation, mir)
         self.assertEqual([item["label"] for item in sections], ["Intro", "Drop", "Outro"])
         self.assertEqual(len({item["caption"] for item in sections}), 3)
+        self.assertEqual(sections[0]["caption"], "The intro section builds up.")
+        self.assertEqual(sections[1]["caption"], "The drop section intensifies.")
+        self.assertEqual(sections[2]["caption"], "Piano fades away in the outro section.")
 
     def test_mir_validator_requires_exact_record_coverage(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
