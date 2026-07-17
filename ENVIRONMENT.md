@@ -60,6 +60,22 @@ Its `.venv` includes:
 - PEFT 0.18.1
 - Lightning 2.6.1
 - huggingface_hub 0.36.0
+- qwen-omni-utils 0.0.9
+
+The local audio annotator is `Qwen/Qwen2.5-Omni-7B`, pinned at immutable revision:
+
+```text
+ae9e1690543ffd5c0221dc27f79834d0294cba00
+```
+
+It is stored under `checkpoints/Qwen2.5-Omni-7B` on Vast with a
+`PINNED_REVISION` completion marker. The talker is disabled and the model is loaded
+with an automatic two-GPU device map using SDPA. No local workstation model download
+is required, and local annotation audio is not uploaded to another provider.
 
 Apply `patches/acestep-xl-validation-caption-variants.patch` to the pinned checkout.
 The authoritative patch checksum and apply commands are in `RUNBOOK.md`.
+
+`/workspace` is ordinary container storage on this instance, not a mounted persistent
+volume. Stop/start preserves it, but recycle/destroy does not; use the documented
+GitHub and private Hugging Face backups before recycling or destroying the instance.

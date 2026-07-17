@@ -92,13 +92,19 @@ a minimum paid balance even for free audio routes. If that blocks audio,
 validator result before starting `edm-annotate-qwen`. The local path has zero API
 cost and does not upload training audio to another annotation provider.
 
+If a long audio window repeatedly causes malformed schema output, use the separate
+Supervisor job `edm-annotate-qwen-fallback`. It keeps the same model, taxonomy and
+hard validator but uses a representative 90-second window selected from the MIR
+structure. Do not weaken the validator or overwrite accepted records to make a
+fallback pass.
+
 Only records with confidence at least 0.70 and a schema-valid annotation pass. Retry
 failures; resolve `data/manual_review.csv` before building the final dataset.
 
 After all records finish, run `scripts/validate_annotations.py`. The gate requires
-exactly 231 accepted files, four distinct variants per record and zero validation
-errors. Distribution summaries and any cross-audio identical-caption warning are
-written to `data/annotation_validation_report.json`.
+exactly 231 accepted files, four distinct variants per record, zero validation
+errors and no unresolved cross-audio identical-caption warning. Distribution
+summaries are written to `data/annotation_validation_report.json`.
 
 ## 4. ACE-Step dataset
 
