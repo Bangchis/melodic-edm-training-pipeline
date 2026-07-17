@@ -101,6 +101,22 @@ class RecordPreservingTests(unittest.TestCase):
         self.assertEqual([item["name"] for item in result["main_instruments"]], ["synth_lead"])
         self.assertEqual(audit[0]["action"], "removed_low_confidence_instrument")
 
+    def test_common_instrument_role_aliases_are_normalized(self) -> None:
+        result = {
+            "main_instruments": [
+                {"name": "taiko", "role": "percussion", "confidence": 0.8},
+                {"name": "unknown", "role": "unknown", "confidence": 0.2},
+            ]
+        }
+        audit = sanitize_annotation(result)
+        self.assertEqual(
+            [item["role"] for item in result["main_instruments"]],
+            ["drums", "atmosphere"],
+        )
+        self.assertEqual([item["action"] for item in audit], [
+            "normalized_instrument_role", "normalized_instrument_role",
+        ])
+
     def test_non_audio_quality_and_use_case_phrases_are_removed(self) -> None:
         text = (
             "The production is polished and spacious, with bright synths, making it ideal for energetic gaming content."

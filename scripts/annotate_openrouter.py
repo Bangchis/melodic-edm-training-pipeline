@@ -165,7 +165,21 @@ def sanitize_annotation(result: dict[str, Any]) -> list[dict[str, Any]]:
     instruments = result.get("main_instruments", [])
     kept = []
     removed = []
+    role_aliases = {
+        "harmony": "chordal_texture", "lead": "main_melody", "melody": "main_melody",
+        "pad": "atmosphere", "percussion": "drums", "rhythm": "rhythmic_texture",
+        "rhythmic_support": "rhythmic_texture", "unknown": "atmosphere",
+    }
     for instrument in instruments:
+        original_role = str(instrument.get("role", ""))
+        if original_role in role_aliases:
+            instrument["role"] = role_aliases[original_role]
+            removed.append({
+                "action": "normalized_instrument_role",
+                "from": original_role,
+                "to": instrument["role"],
+                "instrument": instrument.get("name"),
+            })
         if instrument.get("name") != "unknown" and float(instrument.get("confidence", 0)) < 0.55:
             removed.append({
                 "action": "removed_low_confidence_instrument",
