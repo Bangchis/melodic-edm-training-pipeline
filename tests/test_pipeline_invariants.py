@@ -18,7 +18,7 @@ from annotate_openrouter import parse_json_content, sanitize_annotation, sanitiz
 from build_acestep_dataset import choose_splits, choose_window, render_audio  # noqa: E402
 from validate_tensors import expected_by_split  # noqa: E402
 from validate_training import select_checkpoints  # noqa: E402
-from annotate_qwen_local import compile_canonical_caption  # noqa: E402
+from annotate_qwen_local import compile_canonical_caption, compile_section_captions  # noqa: E402
 
 
 class RecordPreservingTests(unittest.TestCase):
@@ -101,6 +101,10 @@ class RecordPreservingTests(unittest.TestCase):
         )
         cleaned = sanitize_caption_text(text)
         self.assertEqual(cleaned, "The production is spacious, with bright synths.")
+        self.assertEqual(
+            sanitize_caption_text("A hook in F# minor scale with bright synths."),
+            "A hook in a tonal center with bright synths.",
+        )
 
     def test_annotation_json_parser_accepts_provider_code_fence(self) -> None:
         self.assertEqual(parse_json_content("```json\n{\"status\": \"ok\"}\n```"), {"status": "ok"})
@@ -127,6 +131,16 @@ class RecordPreservingTests(unittest.TestCase):
         self.assertTrue(caption.startswith("Instrumental"))
         self.assertGreaterEqual(len(caption.split()), 40)
         self.assertLessEqual(len(caption.split()), 80)
+
+    def test_local_section_compiler_covers_required_labels(self) -> None:
+        annotation = {
+            "arrangement": {"intro": "builds up", "drop": "intensifies", "outro": "piano fades away"},
+            "main_instruments": [{"name": "piano"}, {"name": "synth_pluck"}],
+        }
+        mir = {"sections": [{"label": "Intro"}, {"label": "Drop"}, {"label": "Outro"}]}
+        sections = compile_section_captions(annotation, mir)
+        self.assertEqual([item["label"] for item in sections], ["Intro", "Drop", "Outro"])
+        self.assertEqual(len({item["caption"] for item in sections}), 3)
 
     def test_mir_validator_requires_exact_record_coverage(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

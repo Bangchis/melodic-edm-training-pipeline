@@ -33,6 +33,17 @@ def _sentence(value: str) -> str:
     return text[0].upper() + text[1:] + "."
 
 
+def _without_explicit_key(value: str) -> str:
+    import re
+
+    return re.sub(
+        r"\b[A-G](?:[#♯b♭])?\s+(?:major|minor)(?:\s+(?:key|scale))?\b",
+        "a tonal center",
+        str(value),
+        flags=re.IGNORECASE,
+    )
+
+
 def compile_canonical_caption(annotation: dict[str, Any]) -> str:
     """Compile a 40-80 word caption using only master-annotation evidence."""
     genre_key = str(annotation.get("primary_genre", "melodic_edm"))
@@ -74,15 +85,19 @@ def compile_canonical_caption(annotation: dict[str, Any]) -> str:
         candidates.append(_sentence("The instrumentation uses " + ", ".join(instruments)))
     melody = annotation.get("melody") or {}
     if melody.get("description"):
-        candidates.append(_sentence(str(melody["description"])))
-    arrangement = annotation.get("arrangement") or {}
-    for key in ("intro", "drop", "final_drop", "buildup"):
-        if arrangement.get(key):
-            candidates.append(_sentence(str(arrangement[key])))
+        candidates.append(_sentence(_without_explicit_key(str(melody["description"]))))
+    sections = {item.get("label"): item.get("caption") for item in annotation.get("section_captions", [])}
+    for label in ("Intro", "Drop", "Final Drop", "Build"):
+        if sections.get(label):
+            candidates.append(_sentence(_without_explicit_key(str(sections[label]))))
     production = annotation.get("production") or {}
+    if production.get("description"):
+        candidates.append(_sentence(_without_explicit_key(str(production["description"]))))
     for key in ("bass", "chords", "drums", "space"):
         if production.get(key):
-            candidates.append(_sentence(str(production[key])))
+            phrase = _without_explicit_key(str(production[key]))
+            if word_count(phrase) >= 4:
+                candidates.append(_sentence(phrase))
 
     result = base
     for candidate in candidates:
@@ -101,6 +116,45 @@ def compile_canonical_caption(annotation: dict[str, Any]) -> str:
             if word_count(result) >= 40:
                 break
     return result
+
+
+def compile_section_captions(annotation: dict[str, Any], mir: dict[str, Any]) -> list[dict[str, str]]:
+    """Create one grounded, distinct caption for every MIR-required section label."""
+    mapping = {
+        "Intro": "intro", "Theme": "theme", "Build": "buildup", "Drop": "drop",
+        "Break": "break", "Final Drop": "final_drop", "Outro": "outro",
+    }
+    display = {
+        "Intro": "intro", "Theme": "main theme", "Build": "build", "Drop": "drop",
+        "Break": "break", "Final Drop": "final drop", "Outro": "outro",
+    }
+    required = []
+    for section in mir.get("sections", []):
+        label = str(section.get("label", ""))
+        if label and label not in required:
+            required.append(label)
+    arrangement = annotation.get("arrangement") or {}
+    instruments = [
+        str(item.get("name", "")).replace("_", " ")
+        for item in annotation.get("main_instruments", [])
+        if item.get("name") and item.get("name") != "unknown"
+    ][:3]
+    if len(instruments) > 1:
+        instrument_text = ", ".join(instruments[:-1]) + " and " + instruments[-1]
+    elif instruments:
+        instrument_text = instruments[0]
+    else:
+        instrument_text = "electronic layers"
+    output = []
+    for label in required:
+        phrase = _without_explicit_key(str(arrangement.get(mapping.get(label, ""), "develops"))).strip(" .")
+        if word_count(phrase) <= 3:
+            caption = f"The {display.get(label, label.lower())} section {phrase} with {instrument_text}."
+        else:
+            clause = phrase[0].lower() + phrase[1:]
+            caption = f"During the {display.get(label, label.lower())} section, {clause}."
+        output.append({"label": label, "caption": caption})
+    return output
 
 
 def build_prompt(
@@ -237,10 +291,11 @@ def main() -> int:
             continue
         actions = record.get("annotation_sanitization") or []
         was_compiled = any(action.get("action") == "compiled_canonical_caption_from_master_fields" for action in actions)
-        if not was_compiled or record.get("annotation_caption_compiler_version") == 2:
+        if not was_compiled or record.get("annotation_caption_compiler_version") == 3:
             continue
         annotation = record.get("annotation") or {}
         previous = str(annotation.get("canonical_caption", ""))
+        reconciliation_sanitization = sanitize_annotation(annotation)
         compiled = compile_canonical_caption(annotation)
         annotation["canonical_caption"] = compiled
         for variant in annotation.get("caption_variants", []):
@@ -251,9 +306,9 @@ def main() -> int:
         if errors:
             raise RuntimeError(f"caption compiler reconciliation failed for {sid}: {errors}")
         record["annotation"] = annotation
-        record["annotation_caption_compiler_version"] = 2
-        record["annotation_sanitization"] = actions + [{
-            "action": "recompiled_canonical_caption_v2",
+        record["annotation_caption_compiler_version"] = 3
+        record["annotation_sanitization"] = actions + reconciliation_sanitization + [{
+            "action": "recompiled_canonical_caption_v3",
             "previous_word_count": word_count(previous),
             "compiled_word_count": word_count(compiled),
         }]
@@ -297,7 +352,20 @@ def main() -> int:
                 if float(result.get("annotation_confidence", 0)) < 0.70:
                     errors.append("low_confidence")
                 errors = sorted(set(errors))
-                if len(errors) == 1 and errors[0].startswith("canonical_caption_word_count:"):
+                if any(
+                    error.startswith("section_captions_") or error == "empty_section_caption"
+                    for error in errors
+                ):
+                    result["section_captions"] = compile_section_captions(result, mir)
+                    sanitization.append({
+                        "action": "compiled_section_captions_from_master_arrangement",
+                        "section_count": len(result["section_captions"]),
+                    })
+                    errors = validate_annotation(result, row, taxonomy, mir)
+                if errors and all(
+                    error.startswith("canonical_caption_word_count:") or error == "keyscale_in_caption"
+                    for error in errors
+                ):
                     previous = str(result.get("canonical_caption", ""))
                     compiled = compile_canonical_caption(result)
                     result["canonical_caption"] = compiled
@@ -337,7 +405,7 @@ def main() -> int:
             "annotated_at": datetime.now(timezone.utc).isoformat(),
         }
         if any(action.get("action") == "compiled_canonical_caption_from_master_fields" for action in sanitization):
-            record["annotation_caption_compiler_version"] = 2
+            record["annotation_caption_compiler_version"] = 3
         if result is not None:
             record["annotation"] = result
         by_id[sid] = record

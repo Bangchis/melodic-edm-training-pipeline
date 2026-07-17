@@ -139,6 +139,12 @@ def sanitize_caption_text(text: str) -> str:
     value = re.sub(r"\s+and\s+polished\b", "", value, flags=re.IGNORECASE)
     value = re.sub(r"\bpolished,\s*", "", value, flags=re.IGNORECASE)
     value = re.sub(r"\bpolished\b", "", value, flags=re.IGNORECASE)
+    value = re.sub(
+        r"\b[A-G](?:[#♯b♭])?\s+(?:major|minor)(?:\s+(?:key|scale))?\b",
+        "a tonal center",
+        value,
+        flags=re.IGNORECASE,
+    )
     value = re.sub(r"\s+", " ", value)
     value = re.sub(r"\s+([,.;:])", r"\1", value)
     value = re.sub(r",\s*,", ",", value)
@@ -238,6 +244,12 @@ def validate_annotation(
         if artist in combined:
             errors.append("artist_name_in_caption")
             break
+    if re.search(
+        r"\b[A-G](?:[#♯b♭])?\s+(?:major|minor)(?:\s+(?:key|scale))?\b",
+        combined,
+        flags=re.IGNORECASE,
+    ):
+        errors.append("keyscale_in_caption")
     if not canonical.lower().startswith("instrumental"):
         errors.append("canonical_caption_not_instrumental")
     confidence = float(result.get("annotation_confidence", 0))
