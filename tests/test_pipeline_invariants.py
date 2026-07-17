@@ -143,6 +143,10 @@ class RecordPreservingTests(unittest.TestCase):
     def test_annotation_json_parser_accepts_provider_code_fence(self) -> None:
         self.assertEqual(parse_json_content("```json\n{\"status\": \"ok\"}\n```"), {"status": "ok"})
         self.assertEqual(parse_json_content("Result:\n{\"status\": \"ok\"}"), {"status": "ok"})
+        self.assertEqual(
+            parse_json_content('{"status": "ok"}\n{"provider_note": "extra"}'),
+            {"status": "ok"},
+        )
 
     def test_local_master_annotation_compiles_bounded_caption(self) -> None:
         annotation = {

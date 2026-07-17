@@ -78,11 +78,19 @@ def parse_json_content(content: Any) -> dict[str, Any]:
         text = re.sub(r"\s*```$", "", text, count=1)
     try:
         value = json.loads(text)
-    except json.JSONDecodeError:
-        start, end = text.find("{"), text.rfind("}")
-        if start < 0 or end <= start:
-            raise
-        value = json.loads(text[start:end + 1])
+    except json.JSONDecodeError as original_error:
+        decoder = json.JSONDecoder()
+        value = None
+        for match in re.finditer(r"\{", text):
+            try:
+                candidate, _ = decoder.raw_decode(text[match.start():])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(candidate, dict):
+                value = candidate
+                break
+        if value is None:
+            raise original_error
     if not isinstance(value, dict):
         raise ValueError("annotation JSON root must be an object")
     return value
