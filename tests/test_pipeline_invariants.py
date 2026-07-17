@@ -74,6 +74,12 @@ class RecordPreservingTests(unittest.TestCase):
         result["caption_variants"][2]["text"] = result["caption_variants"][1]["text"]
         self.assertIn("caption_variants_must_differ", validate_annotation(result, row, taxonomy, mir))
         result["caption_variants"][2]["text"] = production_text
+        result["section_captions"][0]["caption"] = "Builds"
+        self.assertTrue(any(
+            error.startswith("section_captions_word_count:Intro:1")
+            for error in validate_annotation(result, row, taxonomy, mir)
+        ))
+        result["section_captions"][0]["caption"] = "Atmospheric electronic opening with airy pads."
         result["section_captions"].append(
             {"label": "Break", "caption": "Quiet break with sparse plucks."}
         )
@@ -153,8 +159,14 @@ class RecordPreservingTests(unittest.TestCase):
         sections = compile_section_captions(annotation, mir)
         self.assertEqual([item["label"] for item in sections], ["Intro", "Drop", "Outro"])
         self.assertEqual(len({item["caption"] for item in sections}), 3)
-        self.assertEqual(sections[0]["caption"], "The intro section builds up.")
-        self.assertEqual(sections[1]["caption"], "The drop section intensifies.")
+        self.assertEqual(
+            sections[0]["caption"],
+            "The intro section develops the opening texture with piano and synth pluck.",
+        )
+        self.assertEqual(
+            sections[1]["caption"],
+            "The drop section intensifies the rhythmic and melodic drive with piano and synth pluck.",
+        )
         self.assertEqual(sections[2]["caption"], "Piano fades away in the outro section.")
 
     def test_local_caption_compiler_repairs_section_fragments(self) -> None:

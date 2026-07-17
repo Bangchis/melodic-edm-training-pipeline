@@ -241,6 +241,10 @@ def validate_annotation(
     section_texts = [str(item.get("caption", "")).strip() for item in section_captions]
     if any(not text for text in section_texts):
         errors.append("empty_section_caption")
+    for item, text in zip(section_captions, section_texts):
+        count = word_count(text)
+        if text and not 5 <= count <= 40:
+            errors.append(f"section_captions_word_count:{item.get('label', '')}:{count}")
     if len({text.lower() for text in section_texts}) != len(section_texts):
         errors.append("section_captions_must_differ")
     texts = [canonical] + [str(variant.get("text", "")) for variant in variants] + section_texts

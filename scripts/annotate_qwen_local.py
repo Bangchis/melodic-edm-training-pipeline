@@ -25,7 +25,7 @@ from annotate_openrouter import (
 
 
 MODEL_ID = "Qwen/Qwen2.5-Omni-7B"
-CAPTION_COMPILER_VERSION = 6
+CAPTION_COMPILER_VERSION = 7
 
 
 def _sentence(value: str) -> str:
@@ -177,15 +177,34 @@ def compile_section_captions(annotation: dict[str, Any], mir: dict[str, Any]) ->
         "Intro": "intro", "Theme": "theme", "Build": "buildup", "Drop": "drop",
         "Break": "break", "Final Drop": "final_drop", "Outro": "outro",
     }
+    terse_defaults = {
+        "Intro": "develops the opening texture", "Theme": "presents the main melodic motif",
+        "Build": "increases tension toward the drop", "Drop": "intensifies the rhythmic and melodic drive",
+        "Break": "reduces the arrangement density", "Final Drop": "returns at peak melodic intensity",
+        "Outro": "winds down the arrangement",
+    }
     required = []
     for section in mir.get("sections", []):
         label = str(section.get("label", ""))
         if label and label not in required:
             required.append(label)
     arrangement = annotation.get("arrangement") or {}
+    instruments = [
+        str(item.get("name", "")).replace("_", " ")
+        for item in annotation.get("main_instruments", [])
+        if item.get("name") and item.get("name") != "unknown"
+    ][:3]
+    if len(instruments) > 1:
+        instrument_text = ", ".join(instruments[:-1]) + " and " + instruments[-1]
+    elif instruments:
+        instrument_text = instruments[0]
+    else:
+        instrument_text = "audible electronic layers"
     output = []
     for label in required:
-        phrase = str(arrangement.get(mapping.get(label, ""), "develops"))
+        phrase = str(arrangement.get(mapping.get(label, ""), "develops")).strip()
+        if word_count(phrase) < 3:
+            phrase = f"{terse_defaults.get(label, 'develops the section')} with {instrument_text}"
         caption = _section_sentence(label, phrase)
         output.append({"label": label, "caption": caption})
     return output
@@ -223,8 +242,8 @@ def build_prompt(
         "50-65 words (count the words before returning), and keep the most important genre, mood, melody, arrangement, instrumentation and production "
         "facts. Never put artist/channel/title names, BPM, key, time signature, hype, quality claims, or 'in the style of' "
         "language in any caption. Return exactly four caption variants with unique types: full, composition, production, "
-        "and tags. The full variant text must exactly equal canonical_caption. Return one distinct section caption for every "
-        "label in required_section_caption_labels. Extra section labels are allowed only when clearly audible. Do not include "
+        "and tags. The full variant text must exactly equal canonical_caption. Return one distinct section caption of 6-30 "
+        "words for every label in required_section_caption_labels. Extra section labels are allowed only when clearly audible. Do not include "
         "use cases, audiences, content/media suitability, or vague quality words such as polished. Use 'unclear' for detailed "
         "free-text attributes that cannot be heard confidently. Do not wrap the JSON in Markdown.\n"
         "Metadata: " + json.dumps(metadata, ensure_ascii=False) + "\n"
@@ -317,7 +336,7 @@ def main() -> int:
     source = [row for row in read_jsonl(root / args.manifest) if row.get("quality_status") == "accepted"]
     state_path = root / "data" / "annotation_manifest.jsonl"
     by_id = {row["sample_id"]: row for row in read_jsonl(state_path)}
-    sanitized_existing = False
+    migrated_existing = False
     for row in source:
         sid = row["sample_id"]
         record = by_id.get(sid)
@@ -325,18 +344,27 @@ def main() -> int:
             continue
         annotation = record["annotation"]
         actions = sanitize_annotation(annotation)
-        if not actions:
-            continue
         mir = json.loads((root / "data" / "mir" / f"{sid}.json").read_text(encoding="utf-8"))
         errors = validate_annotation(annotation, row, taxonomy, mir)
+        if any(error.startswith("section_captions_word_count:") for error in errors):
+            annotation["section_captions"] = compile_section_captions(annotation, mir)
+            actions.append({
+                "action": "compiled_section_captions_from_master_arrangement",
+                "section_count": len(annotation["section_captions"]),
+                "reason": "section_caption_too_terse_or_long",
+            })
+            record["annotation_caption_compiler_version"] = CAPTION_COMPILER_VERSION
+            errors = validate_annotation(annotation, row, taxonomy, mir)
         if errors:
-            raise RuntimeError(f"existing annotation sanitization failed for {sid}: {errors}")
+            raise RuntimeError(f"existing annotation migration failed for {sid}: {errors}")
+        if not actions:
+            continue
         record["annotation"] = annotation
         record["annotation_sanitization"] = (record.get("annotation_sanitization") or []) + actions
         by_id[sid] = record
         atomic_json(root / "data" / "annotations" / f"{sid}.json", record)
-        sanitized_existing = True
-    if sanitized_existing:
+        migrated_existing = True
+    if migrated_existing:
         atomic_jsonl(state_path, sorted(by_id.values(), key=lambda item: item["sample_id"]))
     reconciled = False
     for row in source:
