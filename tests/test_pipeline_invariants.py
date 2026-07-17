@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from analyze_mir import map_sections, normalize_edm_bpm, prepare_unique_inputs  # noqa: E402
-from annotate_openrouter import validate_annotation  # noqa: E402
+from annotate_openrouter import sanitize_annotation, validate_annotation  # noqa: E402
 from build_acestep_dataset import choose_splits, choose_window, render_audio  # noqa: E402
 
 
@@ -70,7 +70,23 @@ class RecordPreservingTests(unittest.TestCase):
         result["section_captions"].append(
             {"label": "Break", "caption": "Quiet break with sparse plucks."}
         )
-        self.assertIn("section_caption_labels_must_match_mir", validate_annotation(result, row, taxonomy, mir))
+        self.assertEqual(validate_annotation(result, row, taxonomy, mir), [])
+        result["section_captions"] = [item for item in result["section_captions"] if item["label"] != "Drop"]
+        self.assertIn(
+            "section_captions_missing_or_duplicate_mir_labels",
+            validate_annotation(result, row, taxonomy, mir),
+        )
+
+    def test_low_confidence_instrument_is_sanitized_not_rejected(self) -> None:
+        result = {
+            "main_instruments": [
+                {"name": "synth_lead", "role": "main_melody", "confidence": 0.9},
+                {"name": "choir_texture", "role": "atmosphere", "confidence": 0.5},
+            ]
+        }
+        audit = sanitize_annotation(result)
+        self.assertEqual([item["name"] for item in result["main_instruments"]], ["synth_lead"])
+        self.assertEqual(audit[0]["action"], "removed_low_confidence_instrument")
 
     def test_mir_validator_requires_exact_record_coverage(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -101,6 +101,25 @@ def word_count(text: str) -> int:
     return len(re.findall(r"\b[\w'-]+\b", text, flags=re.UNICODE))
 
 
+def sanitize_annotation(result: dict[str, Any]) -> list[dict[str, Any]]:
+    """Remove low-confidence instrument guesses without rejecting good captions."""
+    instruments = result.get("main_instruments", [])
+    kept = []
+    removed = []
+    for instrument in instruments:
+        if instrument.get("name") != "unknown" and float(instrument.get("confidence", 0)) < 0.55:
+            removed.append({
+                "action": "removed_low_confidence_instrument",
+                "name": instrument.get("name"),
+                "confidence": instrument.get("confidence"),
+            })
+        else:
+            kept.append(instrument)
+    if kept:
+        result["main_instruments"] = kept
+    return removed
+
+
 def validate_annotation(
     result: dict[str, Any], row: dict[str, Any], taxonomy: dict[str, Any], mir: dict[str, Any]
 ) -> list[str]:
@@ -138,8 +157,8 @@ def validate_annotation(
     supported_labels = {
         str(section.get("label", "")) for section in mir.get("sections", []) if section.get("label")
     }
-    if set(section_labels) != supported_labels or len(section_labels) != len(set(section_labels)):
-        errors.append("section_caption_labels_must_match_mir")
+    if not supported_labels.issubset(set(section_labels)) or len(section_labels) != len(set(section_labels)):
+        errors.append("section_captions_missing_or_duplicate_mir_labels")
     section_texts = [str(item.get("caption", "")).strip() for item in section_captions]
     if any(not text for text in section_texts):
         errors.append("empty_section_caption")
@@ -197,8 +216,9 @@ def request_annotation(
         "facts. Never put artist/channel/title names, BPM, key, time signature, hype, quality claims, or 'in the style of' "
         "language in any caption. Return exactly four caption variants with unique types: full, composition, production, "
         "and tags. The full variant text must exactly equal canonical_caption; composition and production should emphasize their own "
-        "audible aspects; tags should be a concise comma-separated prompt. Return exactly one distinct section caption for "
-        "every label in required_section_caption_labels, with no extra labels. Keep BPM/key/time signature as metadata, not caption text. "
+        "audible aspects; tags should be a concise comma-separated prompt. Return one distinct section caption for every "
+        "label in required_section_caption_labels. An extra taxonomy label is allowed only when it is clearly audible in the audio. "
+        "Keep BPM/key/time signature as metadata, not caption text. "
         "Use 'unclear' for detailed free-text attributes that cannot be heard confidently.\n"
         "Metadata: " + json.dumps(metadata, ensure_ascii=False) + "\n"
         "MIR: " + json.dumps(compact_mir, ensure_ascii=False) + "\n"
@@ -287,6 +307,7 @@ def main() -> int:
         usage: dict[str, Any] = {}
         validation_errors: list[str] = []
         effort_used = "minimal"
+        sanitization: list[dict[str, Any]] = []
         annotation_start = 0.0
         annotation_end = float(row.get("duration") or 0)
         try:
@@ -298,39 +319,54 @@ def main() -> int:
             from build_acestep_dataset import choose_window
 
             annotation_start, annotation_end = choose_window(float(row["duration"]), mir, 240.0)
-            preview = root / "data" / "training_preview" / f"{sid}_{int(annotation_start * 1000)}_{int(annotation_end * 1000)}.mp3"
-            ensure_preview(audio, preview, annotation_start, annotation_end)
-            request_row = {
-                **row,
-                "annotation_window_start": annotation_start,
-                "annotation_window_end": annotation_end,
-            }
-            for effort in ("minimal", "low"):
-                effort_used = effort
-                for attempt in range(1, args.retries + 1):
-                    try:
-                        result, usage = request_annotation(
-                            request_row, mir, preview, taxonomy, schema, api_key, args.model, effort, args.timeout
-                        )
-                        validation_errors = validate_annotation(result, row, taxonomy, mir)
-                        if float(result.get("annotation_confidence", 0)) >= 0.70 and not validation_errors:
+            cached = by_id.get(sid, {})
+            if isinstance(cached.get("annotation"), dict):
+                result = cached["annotation"]
+                sanitization = sanitize_annotation(result)
+                validation_errors = validate_annotation(result, row, taxonomy, mir)
+                if float(result.get("annotation_confidence", 0)) >= 0.70 and not validation_errors:
+                    usage = cached.get("annotation_usage", {})
+                    effort_used = cached.get("annotation_reasoning_effort", "cached_revalidation")
+                    last_error = ""
+                else:
+                    result = None
+
+            if result is None:
+                preview = root / "data" / "training_preview" / f"{sid}_{int(annotation_start * 1000)}_{int(annotation_end * 1000)}.mp3"
+                ensure_preview(audio, preview, annotation_start, annotation_end)
+                request_row = {
+                    **row,
+                    "annotation_window_start": annotation_start,
+                    "annotation_window_end": annotation_end,
+                }
+                for effort in ("minimal", "low"):
+                    effort_used = effort
+                    for attempt in range(1, args.retries + 1):
+                        try:
+                            result, usage = request_annotation(
+                                request_row, mir, preview, taxonomy, schema, api_key, args.model, effort, args.timeout
+                            )
+                            sanitization = sanitize_annotation(result)
+                            validation_errors = validate_annotation(result, row, taxonomy, mir)
+                            if float(result.get("annotation_confidence", 0)) >= 0.70 and not validation_errors:
+                                last_error = ""
+                                break
+                            last_error = "validation:" + ",".join(validation_errors or ["low_confidence"])
+                            # Temperature is zero, so repeating the same semantic
+                            # request at the same reasoning level usually returns the
+                            # same validation failure. Escalate directly to `low`;
+                            # reserve retries for transport/provider exceptions.
                             break
-                        last_error = "validation:" + ",".join(validation_errors or ["low_confidence"])
-                        # Temperature is zero, so repeating the same semantic
-                        # request at the same reasoning level usually returns the
-                        # same validation failure. Escalate directly to `low`;
-                        # reserve retries for transport/provider exceptions.
+                        except urllib.error.HTTPError as exc:
+                            last_error = f"http_{exc.code}"
+                            if exc.code not in {408, 409, 429, 500, 502, 503, 504}:
+                                break
+                        except Exception as exc:
+                            last_error = f"{type(exc).__name__}:{exc}"
+                        if attempt < args.retries:
+                            time.sleep(min(60.0, 2 ** attempt + random.random()))
+                    if result is not None and float(result.get("annotation_confidence", 0)) >= 0.70 and not validation_errors:
                         break
-                    except urllib.error.HTTPError as exc:
-                        last_error = f"http_{exc.code}"
-                        if exc.code not in {408, 409, 429, 500, 502, 503, 504}:
-                            break
-                    except Exception as exc:
-                        last_error = f"{type(exc).__name__}:{exc}"
-                    if attempt < args.retries:
-                        time.sleep(min(60.0, 2 ** attempt + random.random()))
-                if result is not None and float(result.get("annotation_confidence", 0)) >= 0.70 and not validation_errors:
-                    break
         except Exception as exc:
             last_error = f"{type(exc).__name__}:{exc}"
 
@@ -345,6 +381,7 @@ def main() -> int:
             "annotation_model": args.model,
             "annotation_reasoning_effort": effort_used,
             "annotation_usage": usage,
+            "annotation_sanitization": sanitization,
             "annotation_window_start": annotation_start,
             "annotation_window_end": annotation_end,
             "annotation_error": None if accepted else last_error,

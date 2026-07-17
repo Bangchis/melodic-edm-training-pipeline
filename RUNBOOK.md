@@ -159,3 +159,6 @@ Long server jobs run through Supervisor and write checkpoints/manifests atomical
 After a reconnect, use `supervisorctl status`, then rerun the current script; completed
 records are skipped. `/workspace` on this instance is not assumed persistent, so the
 release, logs, manifests and training state must be uploaded before instance removal.
+Run `edm-backup-metadata` at major gates to update the private Hugging Face dataset
+`Bangchis/melodic-edm-training-metadata`. The uploader uses an explicit text-file
+allowlist and fails closed if its secret scan finds a token or private key.

@@ -44,6 +44,14 @@ print(json.dumps({
     "mir_status": dict(Counter(r.get("analysis_status", "") for r in mir)),
     "annotation_state_records": len(annotation_state),
     "annotation_status": dict(Counter(r.get("annotation_status", "") for r in annotation_state)),
+    "annotation_cost_usd": round(sum(
+        float((r.get("annotation_usage") or {}).get("cost") or 0) for r in annotation_state
+    ), 6),
+    "annotation_sanitization_actions": dict(Counter(
+        action.get("action", "")
+        for row in annotation_state
+        for action in (row.get("annotation_sanitization") or [])
+    )),
     "annotation_files": len(annotations),
     "final_audio": len(final_audio),
     "tensors": len(tensors),
