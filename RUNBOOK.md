@@ -83,6 +83,15 @@ On a fresh provider/model combination, first run the Supervisor
 verify the schema/caption gate, then start `edm-annotate`, which resumes with the
 remaining records.
 
+If the primary route returns a non-retryable payment error, stop it rather than
+marking the rest of the catalog as content failures. OpenRouter currently requires
+a minimum paid balance even for free audio routes. If that blocks audio,
+`edm-setup-qwen-annotator` downloads the official
+`Qwen/Qwen2.5-Omni-7B` at a recorded immutable revision on Vast. Run
+`edm-annotate-qwen-smoke` for exactly one pending record and inspect the same strict
+validator result before starting `edm-annotate-qwen`. The local path has zero API
+cost and does not upload training audio to another annotation provider.
+
 Only records with confidence at least 0.70 and a schema-valid annotation pass. Retry
 failures; resolve `data/manual_review.csv` before building the final dataset.
 

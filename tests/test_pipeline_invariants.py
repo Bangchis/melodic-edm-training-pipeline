@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from analyze_mir import map_sections, normalize_edm_bpm, prepare_unique_inputs  # noqa: E402
-from annotate_openrouter import sanitize_annotation, sanitize_caption_text, validate_annotation  # noqa: E402
+from annotate_openrouter import parse_json_content, sanitize_annotation, sanitize_caption_text, validate_annotation  # noqa: E402
 from build_acestep_dataset import choose_splits, choose_window, render_audio  # noqa: E402
 from validate_tensors import expected_by_split  # noqa: E402
 from validate_training import select_checkpoints  # noqa: E402
@@ -100,6 +100,10 @@ class RecordPreservingTests(unittest.TestCase):
         )
         cleaned = sanitize_caption_text(text)
         self.assertEqual(cleaned, "The production is spacious, with bright synths.")
+
+    def test_annotation_json_parser_accepts_provider_code_fence(self) -> None:
+        self.assertEqual(parse_json_content("```json\n{\"status\": \"ok\"}\n```"), {"status": "ok"})
+        self.assertEqual(parse_json_content("Result:\n{\"status\": \"ok\"}"), {"status": "ok"})
 
     def test_mir_validator_requires_exact_record_coverage(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

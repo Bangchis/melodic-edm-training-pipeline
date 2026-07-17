@@ -70,6 +70,24 @@ def content_text(content: Any) -> str:
     raise ValueError("unsupported message content")
 
 
+def parse_json_content(content: Any) -> dict[str, Any]:
+    """Parse strict JSON, tolerating a provider-added Markdown code fence."""
+    text = content_text(content).strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text, count=1, flags=re.IGNORECASE)
+        text = re.sub(r"\s*```$", "", text, count=1)
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError:
+        start, end = text.find("{"), text.rfind("}")
+        if start < 0 or end <= start:
+            raise
+        value = json.loads(text[start:end + 1])
+    if not isinstance(value, dict):
+        raise ValueError("annotation JSON root must be an object")
+    return value
+
+
 def ensure_preview(audio: Path, preview: Path, start: float, end: float) -> None:
     if preview.is_file():
         return
@@ -231,6 +249,7 @@ def validate_annotation(
 def request_annotation(
     row: dict[str, Any], mir: dict[str, Any], preview: Path, taxonomy: dict[str, Any],
     schema: dict[str, Any], api_key: str, model: str, effort: str, timeout: int,
+    structured_output: bool = True,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     compact_mir = {
         "bpm": mir.get("bpm"),
@@ -284,9 +303,10 @@ def request_annotation(
         "temperature": 0,
         "max_tokens": 3000,
         "reasoning": {"effort": effort, "exclude": True},
-        "response_format": {"type": "json_schema", "json_schema": schema},
-        "provider": {"require_parameters": True},
     }
+    if structured_output:
+        payload["response_format"] = {"type": "json_schema", "json_schema": schema}
+        payload["provider"] = {"require_parameters": True}
     request = urllib.request.Request(
         API_URL,
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
@@ -301,7 +321,7 @@ def request_annotation(
         body = json.load(response)
     if not body.get("choices"):
         raise ValueError("OpenRouter response has no choices")
-    result = json.loads(content_text(body["choices"][0]["message"]["content"]))
+    result = parse_json_content(body["choices"][0]["message"]["content"])
     return result, body.get("usage") or {}
 
 
@@ -328,6 +348,10 @@ def main() -> int:
     parser.add_argument("--limit", type=int)
     parser.add_argument("--retries", type=int, default=5)
     parser.add_argument("--timeout", type=int, default=900)
+    parser.add_argument(
+        "--unstructured-json", action="store_true",
+        help="Rely on the JSON-only prompt when the provider does not support response_format.",
+    )
     args = parser.parse_args()
 
     root = Path(args.project_root).resolve()
@@ -419,7 +443,8 @@ def main() -> int:
                     for attempt in range(1, args.retries + 1):
                         try:
                             result, usage = request_annotation(
-                                request_row, mir, preview, taxonomy, schema, api_key, args.model, effort, args.timeout
+                                request_row, mir, preview, taxonomy, schema, api_key, args.model, effort,
+                                args.timeout, structured_output=not args.unstructured_json,
                             )
                             sanitization = sanitize_annotation(result)
                             validation_errors = validate_annotation(result, row, taxonomy, mir)

@@ -15,6 +15,15 @@ def read_jsonl(path: Path):
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
+def report_status(path: Path):
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8")).get("status", "unknown")
+    except Exception:
+        return "invalid_json"
+
+
 audio = read_jsonl(ROOT / "data" / "audio_manifest.jsonl")
 vocal = read_jsonl(ROOT / "data" / "vocal_manifest.jsonl")
 training = read_jsonl(ROOT / "data" / "training_audio_manifest.jsonl")
@@ -55,4 +64,15 @@ print(json.dumps({
     "annotation_files": len(annotations),
     "final_audio": len(final_audio),
     "tensors": len(tensors),
+    "gates": {
+        "mir": report_status(ROOT / "data" / "mir_validation_report.json"),
+        "annotations": report_status(ROOT / "data" / "annotation_validation_report.json"),
+        "dataset": report_status(ROOT / "data" / "final_validation_report.json"),
+        "tensors": report_status(ROOT / "data" / "tensor_validation_report.json"),
+        "smoke": report_status(ROOT / "outputs" / "smoke" / "smoke_validation_report.json"),
+        "training": report_status(ROOT / "outputs" / "training" / "melodic-edm-core-v1" / "training_validation_report.json"),
+        "evaluation": report_status(ROOT / "outputs" / "inference" / "checkpoint_comparison" / "evaluation_report.json"),
+        "release": report_status(ROOT / "outputs" / "release" / "melodic-edm-core-v1" / "release_report.json"),
+        "release_verify": report_status(ROOT / "outputs" / "release_verify" / "generated" / "inference_report.json"),
+    },
 }, ensure_ascii=False, indent=2))
