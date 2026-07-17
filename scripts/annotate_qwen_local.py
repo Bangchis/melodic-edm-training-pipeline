@@ -379,7 +379,11 @@ def main() -> int:
     for row in source:
         sid = row["sample_id"]
         record = by_id.get(sid)
-        if not record or not str(record.get("annotation_model", "")).startswith(MODEL_ID + "@"):
+        if (
+            not record
+            or record.get("annotation_status") != "accepted"
+            or not str(record.get("annotation_model", "")).startswith(MODEL_ID + "@")
+        ):
             continue
         actions = record.get("annotation_sanitization") or []
         was_compiled = any(action.get("action") in {
