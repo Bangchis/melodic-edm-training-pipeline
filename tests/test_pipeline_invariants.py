@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from analyze_mir import map_sections, normalize_edm_bpm, prepare_unique_inputs  # noqa: E402
-from annotate_openrouter import sanitize_annotation, validate_annotation  # noqa: E402
+from annotate_openrouter import sanitize_annotation, sanitize_caption_text, validate_annotation  # noqa: E402
 from build_acestep_dataset import choose_splits, choose_window, render_audio  # noqa: E402
 
 
@@ -67,6 +67,10 @@ class RecordPreservingTests(unittest.TestCase):
         row = {"expected_artist": "Example Artist"}
         mir = {"sections": [{"label": "Intro"}, {"label": "Drop"}]}
         self.assertEqual(validate_annotation(result, row, taxonomy, mir), [])
+        production_text = result["caption_variants"][2]["text"]
+        result["caption_variants"][2]["text"] = result["caption_variants"][1]["text"]
+        self.assertIn("caption_variants_must_differ", validate_annotation(result, row, taxonomy, mir))
+        result["caption_variants"][2]["text"] = production_text
         result["section_captions"].append(
             {"label": "Break", "caption": "Quiet break with sparse plucks."}
         )
@@ -87,6 +91,13 @@ class RecordPreservingTests(unittest.TestCase):
         audit = sanitize_annotation(result)
         self.assertEqual([item["name"] for item in result["main_instruments"]], ["synth_lead"])
         self.assertEqual(audit[0]["action"], "removed_low_confidence_instrument")
+
+    def test_non_audio_quality_and_use_case_phrases_are_removed(self) -> None:
+        text = (
+            "The production is polished and spacious, with bright synths, making it ideal for energetic gaming content."
+        )
+        cleaned = sanitize_caption_text(text)
+        self.assertEqual(cleaned, "The production is spacious, with bright synths.")
 
     def test_mir_validator_requires_exact_record_coverage(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

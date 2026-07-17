@@ -40,7 +40,7 @@ def atomic_json(path: Path, value: Any) -> None:
 
 def selected_files(root: Path) -> list[Path]:
     files: set[Path] = set()
-    for name in ("README.md", "RUNBOOK.md", "STATUS.md"):
+    for name in ("README.md", "RUNBOOK.md", "STATUS.md", "HF_DATASET_CARD.md"):
         path = root / name
         if path.is_file():
             files.add(path)
@@ -57,6 +57,15 @@ def selected_files(root: Path) -> list[Path]:
     ):
         files.update(path for path in root.glob(pattern) if path.is_file())
     return sorted(files)
+
+
+def path_in_repo(path: Path, root: Path) -> str:
+    relative = str(path.relative_to(root))
+    if relative == "HF_DATASET_CARD.md":
+        return "README.md"
+    if relative == "README.md":
+        return "docs/PIPELINE_README.md"
+    return relative
 
 
 def main() -> int:
@@ -87,7 +96,7 @@ def main() -> int:
     api = HfApi(token=token)
     api.create_repo(repo_id=args.repo_id, repo_type="dataset", private=True, exist_ok=True)
     operations = [
-        CommitOperationAdd(path_in_repo=str(path.relative_to(root)), path_or_fileobj=str(path))
+        CommitOperationAdd(path_in_repo=path_in_repo(path, root), path_or_fileobj=str(path))
         for path in files
     ]
     annotation_count = len(list((root / "data" / "annotations").glob("*.json")))

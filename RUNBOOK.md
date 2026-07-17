@@ -86,6 +86,11 @@ remaining records.
 Only records with confidence at least 0.70 and a schema-valid annotation pass. Retry
 failures; resolve `data/manual_review.csv` before building the final dataset.
 
+After all records finish, run `scripts/validate_annotations.py`. The gate requires
+exactly 231 accepted files, four distinct variants per record and zero validation
+errors. Distribution summaries and any cross-audio identical-caption warning are
+written to `data/annotation_validation_report.json`.
+
 ## 4. ACE-Step dataset
 
 Build one audio/JSON/lyrics triplet per accepted catalog `sample_id`. Do not collapse

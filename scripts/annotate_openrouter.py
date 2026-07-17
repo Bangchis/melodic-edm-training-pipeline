@@ -22,7 +22,8 @@ API_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_MODEL = "google/gemini-3.1-flash-lite"
 HYPE_PHRASES = (
     "masterpiece", "best song ever", "professional quality", "extremely beautiful",
-    "exactly like", "in the style of", "style of",
+    "exactly like", "in the style of", "style of", "polished", "suitable for",
+    "ideal for", "perfect for",
 )
 
 
@@ -101,6 +102,31 @@ def word_count(text: str) -> int:
     return len(re.findall(r"\b[\w'-]+\b", text, flags=re.UNICODE))
 
 
+def sanitize_caption_text(text: str) -> str:
+    """Remove vague quality/use-case phrases while preserving musical content."""
+    value = str(text)
+    value = re.sub(
+        r",?\s+(?:making|rendering)\s+it\s+(?:ideal|suitable|perfect)\s+for[^.]*",
+        "",
+        value,
+        flags=re.IGNORECASE,
+    )
+    value = re.sub(
+        r"\s+(?:ideal|suitable|perfect)\s+for[^.]*",
+        "",
+        value,
+        flags=re.IGNORECASE,
+    )
+    value = re.sub(r"\bpolished\s+and\s+", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s+and\s+polished\b", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\bpolished,\s*", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\bpolished\b", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s+", " ", value)
+    value = re.sub(r"\s+([,.;:])", r"\1", value)
+    value = re.sub(r",\s*,", ",", value)
+    return value.strip()
+
+
 def sanitize_annotation(result: dict[str, Any]) -> list[dict[str, Any]]:
     """Remove low-confidence instrument guesses without rejecting good captions."""
     instruments = result.get("main_instruments", [])
@@ -117,6 +143,23 @@ def sanitize_annotation(result: dict[str, Any]) -> list[dict[str, Any]]:
             kept.append(instrument)
     if kept:
         result["main_instruments"] = kept
+    fields = [(result, "canonical_caption", "canonical_caption")]
+    fields.extend(
+        (variant, "text", f"caption_variant:{variant.get('type', '')}")
+        for variant in result.get("caption_variants", [])
+    )
+    fields.extend(
+        (section, "caption", f"section_caption:{section.get('label', '')}")
+        for section in result.get("section_captions", [])
+    )
+    for owner, key, field in fields:
+        if key not in owner:
+            continue
+        original = str(owner[key])
+        cleaned = sanitize_caption_text(original)
+        if cleaned != original:
+            owner[key] = cleaned
+            removed.append({"action": "sanitized_non_audio_caption_phrase", "field": field})
     return removed
 
 
@@ -152,6 +195,9 @@ def validate_annotation(
         errors.append("full_variant_must_equal_canonical")
     if any(not str(variant.get("text", "")).strip() for variant in variants):
         errors.append("empty_caption_variant")
+    variant_texts = [str(variant.get("text", "")).strip().lower() for variant in variants]
+    if len(set(variant_texts)) != len(variant_texts):
+        errors.append("caption_variants_must_differ")
     section_captions = result.get("section_captions", [])
     section_labels = [str(item.get("label", "")) for item in section_captions]
     supported_labels = {
@@ -219,6 +265,7 @@ def request_annotation(
         "audible aspects; tags should be a concise comma-separated prompt. Return one distinct section caption for every "
         "label in required_section_caption_labels. An extra taxonomy label is allowed only when it is clearly audible in the audio. "
         "Keep BPM/key/time signature as metadata, not caption text. "
+        "Do not include use cases, audiences, content/media suitability, or vague quality words such as polished. "
         "Use 'unclear' for detailed free-text attributes that cannot be heard confidently.\n"
         "Metadata: " + json.dumps(metadata, ensure_ascii=False) + "\n"
         "MIR: " + json.dumps(compact_mir, ensure_ascii=False) + "\n"
@@ -294,6 +341,34 @@ def main() -> int:
     state_path = root / "data" / "annotation_manifest.jsonl"
     existing = read_jsonl(state_path)
     by_id = {r["sample_id"]: r for r in existing}
+    reconciled = False
+    for row in source:
+        sid = row["sample_id"]
+        record = by_id.get(sid)
+        if not record or not isinstance(record.get("annotation"), dict):
+            continue
+        mir_path = root / "data" / "mir" / f"{sid}.json"
+        if not mir_path.is_file():
+            continue
+        mir = json.loads(mir_path.read_text(encoding="utf-8"))
+        actions = sanitize_annotation(record["annotation"])
+        validation_errors = validate_annotation(record["annotation"], row, taxonomy, mir)
+        accepted = bool(
+            float(record["annotation"].get("annotation_confidence", 0)) >= 0.70
+            and not validation_errors
+        )
+        if actions:
+            record["annotation_sanitization"] = (record.get("annotation_sanitization") or []) + actions
+        record["annotation_status"] = "accepted" if accepted else "manual_review"
+        record["annotation_error"] = None if accepted else "revalidation:" + ",".join(validation_errors)
+        if accepted:
+            atomic_json(root / "data" / "annotations" / f"{sid}.json", record)
+        else:
+            (root / "data" / "annotations" / f"{sid}.json").unlink(missing_ok=True)
+        by_id[sid] = record
+        reconciled = reconciled or bool(actions) or not accepted
+    if reconciled:
+        atomic_jsonl(state_path, sorted(by_id.values(), key=lambda item: item["sample_id"]))
     pending = [r for r in source if by_id.get(r["sample_id"], {}).get("annotation_status") != "accepted"]
     if args.limit is not None:
         pending = pending[:max(0, args.limit)]
