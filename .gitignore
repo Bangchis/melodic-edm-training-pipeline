@@ -1,0 +1,10 @@
+.env
+data/
+outputs/
+logs/
+checkpoints/
+vendor/
+venvs/
+__pycache__/
+*.pyc
+*.log

@@ -1,0 +1,70 @@
+{
+  "primary_genres": [
+    "melodic_edm",
+    "progressive_house",
+    "electro_house",
+    "glitch_hop",
+    "future_bass",
+    "drumstep",
+    "cinematic_electronic"
+  ],
+  "style_families": [
+    "china_melodic",
+    "gaming_melodic",
+    "east_asian_fantasy",
+    "kawaii_edm",
+    "heroic_cinematic"
+  ],
+  "moods": [
+    "uplifting",
+    "adventurous",
+    "energetic",
+    "emotional",
+    "dreamy",
+    "heroic",
+    "playful",
+    "mysterious",
+    "melancholic",
+    "peaceful",
+    "dark",
+    "cinematic",
+    "fantasy",
+    "nostalgic",
+    "tense"
+  ],
+  "instruments": [
+    "pipa",
+    "guzheng",
+    "dizi",
+    "erhu",
+    "xiao",
+    "taiko",
+    "piano",
+    "acoustic_guitar",
+    "orchestral_strings",
+    "brass",
+    "choir_texture",
+    "synth_pluck",
+    "synth_lead",
+    "supersaw",
+    "electronic_drums",
+    "sub_bass",
+    "bass_guitar",
+    "percussion",
+    "bells",
+    "unknown"
+  ],
+  "instrument_roles": [
+    "main_melody",
+    "main_hook",
+    "counter_melody",
+    "call_and_response",
+    "melody_doubling",
+    "chordal_texture",
+    "rhythmic_texture",
+    "bass",
+    "drums",
+    "accents",
+    "atmosphere"
+  ]
+}

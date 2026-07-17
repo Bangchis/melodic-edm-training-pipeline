@@ -1,0 +1,815 @@
+diff --git a/acestep/training/data_module.py b/acestep/training/data_module.py
+index 68e0b23..c4520c3 100644
+--- a/acestep/training/data_module.py
++++ b/acestep/training/data_module.py
+@@ -17,6 +17,8 @@ import torch
+ import torchaudio
+ from torch.utils.data import Dataset, DataLoader
+ 
++from acestep.training_v2.caption_variants import select_encoded_variant
++
+ try:
+     from lightning.pytorch import LightningDataModule
+     LIGHTNING_AVAILABLE = True
+@@ -45,7 +47,7 @@ class PreprocessedTensorDataset(Dataset):
+     No VAE/text encoder needed during training - just load tensors directly!
+     """
+     
+-    def __init__(self, tensor_dir: str):
++    def __init__(self, tensor_dir: str, random_caption: bool = True):
+         """Initialize from a directory of preprocessed .pt files.
+         
+         Args:
+@@ -58,6 +60,7 @@ class PreprocessedTensorDataset(Dataset):
+         if not os.path.isdir(validated_dir):
+             raise ValueError(f"Not an existing directory: {tensor_dir}")
+         self.tensor_dir = validated_dir
++        self.random_caption = random_caption
+         self.sample_paths: List[str] = []
+         
+         # Load manifest if exists
+@@ -138,14 +141,18 @@ class PreprocessedTensorDataset(Dataset):
+         """
+         tensor_path = self.valid_paths[idx]
+         data = torch.load(tensor_path, map_location='cpu', weights_only=True)
++        variant = None if self.random_caption else 0
++        encoder_states, encoder_mask, variant_index = select_encoded_variant(data, variant)
++        metadata = dict(data.get("metadata", {}))
++        metadata["selected_caption_variant"] = variant_index
+         
+         return {
+             "target_latents": data["target_latents"],  # [T, 64]
+             "attention_mask": data["attention_mask"],  # [T]
+-            "encoder_hidden_states": data["encoder_hidden_states"],  # [L, D]
+-            "encoder_attention_mask": data["encoder_attention_mask"],  # [L]
++            "encoder_hidden_states": encoder_states,  # [L, D]
++            "encoder_attention_mask": encoder_mask,  # [L]
+             "context_latents": data["context_latents"],  # [T, 65]
+-            "metadata": data.get("metadata", {}),
++            "metadata": metadata,
+         }
+ 
+ 
+@@ -234,6 +241,7 @@ class PreprocessedDataModule(LightningDataModule if LIGHTNING_AVAILABLE else obj
+         persistent_workers: bool = True,
+         pin_memory_device: str = "",
+         val_split: float = 0.0,
++        val_tensor_dir: Optional[str] = None,
+     ):
+         """Initialize the data module.
+         
+@@ -255,6 +263,7 @@ class PreprocessedDataModule(LightningDataModule if LIGHTNING_AVAILABLE else obj
+         self.persistent_workers = persistent_workers
+         self.pin_memory_device = pin_memory_device
+         self.val_split = val_split
++        self.val_tensor_dir = val_tensor_dir
+         
+         self.train_dataset = None
+         self.val_dataset = None
+@@ -263,7 +272,14 @@ class PreprocessedDataModule(LightningDataModule if LIGHTNING_AVAILABLE else obj
+         """Setup datasets."""
+         if stage == 'fit' or stage is None:
+             # Create full dataset
+-            full_dataset = PreprocessedTensorDataset(self.tensor_dir)
++            full_dataset = PreprocessedTensorDataset(self.tensor_dir, random_caption=True)
++
++            if self.val_tensor_dir:
++                self.train_dataset = full_dataset
++                self.val_dataset = PreprocessedTensorDataset(
++                    self.val_tensor_dir, random_caption=False
++                )
++                return
+             
+             # Split if validation requested
+             if self.val_split > 0 and len(full_dataset) > 1:
+diff --git a/acestep/training_v2/caption_variants.py b/acestep/training_v2/caption_variants.py
+new file mode 100644
+index 0000000..23f4dd4
+--- /dev/null
++++ b/acestep/training_v2/caption_variants.py
+@@ -0,0 +1,60 @@
++"""Helpers for encoding and selecting multiple captions per audio sample."""
++
++from __future__ import annotations
++
++import random
++from typing import Any, Callable, Dict, List, Tuple
++
++import torch
++
++from acestep.training_v2.preprocess_prompt import build_simple_prompt
++
++
++def build_prompt_variants(
++    metadata: Dict[str, Any],
++    tag_position: str,
++    use_genre: bool,
++) -> List[str]:
++    """Build one formatted prompt per caption without duplicating a sample."""
++    raw = metadata.get("caption_variants")
++    captions = [value.strip() for value in raw or [] if isinstance(value, str) and value.strip()]
++    if not captions:
++        return [build_simple_prompt(metadata, tag_position=tag_position, use_genre=use_genre)]
++
++    prompts = []
++    for caption in captions:
++        variant_meta = dict(metadata)
++        variant_meta["caption"] = caption
++        variant_meta["prompt_override"] = "caption"
++        prompts.append(build_simple_prompt(variant_meta, tag_position=tag_position, use_genre=False))
++    return prompts
++
++
++def encode_prompt_variants(
++    prompts: List[str],
++    encode: Callable[[str], Tuple[torch.Tensor, torch.Tensor]],
++) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
++    """Encode each prompt and return parallel hidden-state and mask lists."""
++    states = []
++    masks = []
++    for prompt in prompts:
++        hidden, mask = encode(prompt)
++        states.append(hidden.cpu())
++        masks.append(mask.cpu())
++    return states, masks
++
++
++def select_encoded_variant(
++    data: Dict[str, Any], index: int | None = None
++) -> Tuple[torch.Tensor, torch.Tensor, int]:
++    """Randomly select one encoded caption, with legacy single-caption fallback."""
++    states = data.get("encoder_hidden_states_variants")
++    masks = data.get("encoder_attention_mask_variants")
++    if not states or not masks:
++        return data["encoder_hidden_states"], data["encoder_attention_mask"], 0
++    if len(states) != len(masks):
++        raise ValueError("caption variant state/mask counts differ")
++    index = random.randrange(len(states)) if index is None else index
++    if not 0 <= index < len(states):
++        raise IndexError("caption variant index is out of range")
++    return states[index], masks[index], index
+diff --git a/acestep/training_v2/caption_variants_test.py b/acestep/training_v2/caption_variants_test.py
+new file mode 100644
+index 0000000..545f17d
+--- /dev/null
++++ b/acestep/training_v2/caption_variants_test.py
+@@ -0,0 +1,53 @@
++"""Tests for random caption variants without sample duplication."""
++
++from __future__ import annotations
++
++import unittest
++from unittest.mock import patch
++
++import torch
++
++from acestep.training_v2.caption_variants import build_prompt_variants, select_encoded_variant
++
++
++class CaptionVariantsTest(unittest.TestCase):
++    """Cover multi-caption and backward-compatible single-caption behavior."""
++
++    def test_builds_one_prompt_per_caption(self) -> None:
++        metadata = {
++            "caption": "primary",
++            "caption_variants": ["full caption", "composition caption", "production caption", "tag caption"],
++            "duration": 120,
++        }
++        prompts = build_prompt_variants(metadata, tag_position="prepend", use_genre=False)
++        self.assertEqual(4, len(prompts))
++        self.assertIn("full caption", prompts[0])
++        self.assertIn("tag caption", prompts[-1])
++
++    def test_selects_requested_variant(self) -> None:
++        states = [torch.full((2, 3), value) for value in (1.0, 2.0, 3.0, 4.0)]
++        masks = [torch.full((2,), value) for value in (1.0, 2.0, 3.0, 4.0)]
++        data = {
++            "encoder_hidden_states_variants": states,
++            "encoder_attention_mask_variants": masks,
++        }
++        with patch("acestep.training_v2.caption_variants.random.randrange", return_value=2):
++            state, mask, index = select_encoded_variant(data)
++        self.assertEqual(2, index)
++        self.assertTrue(torch.equal(states[2], state))
++        self.assertTrue(torch.equal(masks[2], mask))
++
++    def test_legacy_tensor_falls_back_to_single_caption(self) -> None:
++        state = torch.ones(2, 3)
++        mask = torch.ones(2)
++        selected_state, selected_mask, index = select_encoded_variant({
++            "encoder_hidden_states": state,
++            "encoder_attention_mask": mask,
++        })
++        self.assertEqual(0, index)
++        self.assertIs(state, selected_state)
++        self.assertIs(mask, selected_mask)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/acestep/training_v2/cli/args.py b/acestep/training_v2/cli/args.py
+index 988ff2a..17586a1 100644
+--- a/acestep/training_v2/cli/args.py
++++ b/acestep/training_v2/cli/args.py
+@@ -19,6 +19,9 @@ VARIANT_DIR_MAP = {
+     "turbo": "acestep-v15-turbo",
+     "base": "acestep-v15-base",
+     "sft": "acestep-v15-sft",
++    "xl_turbo": "acestep-v15-xl-turbo",
++    "xl_base": "acestep-v15-xl-base",
++    "xl_sft": "acestep-v15-xl-sft",
+ }
+ 
+ 
+@@ -235,6 +238,24 @@ def _add_common_training_args(
+         required=require_training_paths,
+         help="Directory containing preprocessed .pt files",
+     )
++    g_data.add_argument(
++        "--validation-dataset-dir",
++        type=str,
++        default=None,
++        help="Directory containing separately preprocessed validation tensors",
++    )
++    g_data.add_argument(
++        "--validate-every",
++        type=int,
++        default=5,
++        help="Run validation every N epochs (default: 5)",
++    )
++    g_data.add_argument(
++        "--early-stopping-patience",
++        type=int,
++        default=5,
++        help="Validation checks without improvement before stopping; 0 disables",
++    )
+     g_data.add_argument(
+         "--num-workers",
+         type=int,
+diff --git a/acestep/training_v2/cli/config_builder.py b/acestep/training_v2/cli/config_builder.py
+index 5c3436a..053ca24 100644
+--- a/acestep/training_v2/cli/config_builder.py
++++ b/acestep/training_v2/cli/config_builder.py
+@@ -164,6 +164,9 @@ def build_configs(args: argparse.Namespace) -> Tuple[AdapterConfig, TrainingConf
+         model_variant=args.model_variant,
+         checkpoint_dir=args.checkpoint_dir,
+         dataset_dir=args.dataset_dir,
++        validation_dataset_dir=getattr(args, "validation_dataset_dir", None),
++        validate_every_n_epochs=getattr(args, "validate_every", 5),
++        early_stopping_patience=getattr(args, "early_stopping_patience", 5),
+         device=gpu_info.device,
+         precision=gpu_info.precision,
+         num_devices=getattr(args, "num_devices", 1),
+diff --git a/acestep/training_v2/cli/validation.py b/acestep/training_v2/cli/validation.py
+index dd22cfe..3fd77a1 100644
+--- a/acestep/training_v2/cli/validation.py
++++ b/acestep/training_v2/cli/validation.py
+@@ -49,6 +49,17 @@ def validate_paths(args: argparse.Namespace) -> bool:
+         print(f"[FAIL] Dataset directory not found: {ds_dir}", file=sys.stderr)
+         return False
+ 
++    val_dir = getattr(args, "validation_dataset_dir", None)
++    if val_dir is not None and not Path(val_dir).is_dir():
++        print(f"[FAIL] Validation dataset directory not found: {val_dir}", file=sys.stderr)
++        return False
++    if getattr(args, "validate_every", 1) <= 0:
++        print("[FAIL] --validate-every must be positive", file=sys.stderr)
++        return False
++    if getattr(args, "early_stopping_patience", 0) < 0:
++        print("[FAIL] --early-stopping-patience cannot be negative", file=sys.stderr)
++        return False
++
+     # Resume path
+     resume = getattr(args, "resume_from", None)
+     if resume is not None and not Path(resume).exists():
+diff --git a/acestep/training_v2/cli/validation_xl_test.py b/acestep/training_v2/cli/validation_xl_test.py
+new file mode 100644
+index 0000000..48536a4
+--- /dev/null
++++ b/acestep/training_v2/cli/validation_xl_test.py
+@@ -0,0 +1,35 @@
++"""Regression tests for XL checkpoint alias validation."""
++
++from __future__ import annotations
++
++import argparse
++import tempfile
++import unittest
++from pathlib import Path
++
++from acestep.training_v2.cli.validation import validate_paths
++
++
++class ValidationXLTest(unittest.TestCase):
++    """Ensure xl_base resolves to its official checkpoint folder."""
++
++    def test_xl_base_alias_resolves(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            root = Path(tmp)
++            expected = root / "acestep-v15-xl-base"
++            expected.mkdir()
++            args = argparse.Namespace(
++                checkpoint_dir=str(root),
++                model_variant="xl_base",
++                dataset_dir=None,
++                validation_dataset_dir=None,
++                validate_every=5,
++                early_stopping_patience=5,
++                resume_from=None,
++            )
++            self.assertTrue(validate_paths(args))
++            self.assertEqual(expected, args.model_dir)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/acestep/training_v2/configs.py b/acestep/training_v2/configs.py
+index 1f9680a..93de121 100644
+--- a/acestep/training_v2/configs.py
++++ b/acestep/training_v2/configs.py
+@@ -165,6 +165,15 @@ class TrainingConfigV2(TrainingConfig):
+     dataset_dir: str = ""
+     """Directory containing preprocessed .pt tensor files."""
+ 
++    validation_dataset_dir: Optional[str] = None
++    """Optional directory containing a separately preprocessed validation split."""
++
++    validate_every_n_epochs: int = 5
++    """Run validation every N epochs when a validation dataset is provided."""
++
++    early_stopping_patience: int = 5
++    """Stop after this many validation checks without improvement; 0 disables."""
++
+     # --- Device / precision -------------------------------------------------
+     device: str = "auto"
+     """Device selection: 'auto', 'cuda', 'cuda:0', 'mps', 'xpu', 'cpu'."""
+@@ -265,6 +274,9 @@ class TrainingConfigV2(TrainingConfig):
+                 "model_variant": self.model_variant,
+                 "checkpoint_dir": self.checkpoint_dir,
+                 "dataset_dir": self.dataset_dir,
++                "validation_dataset_dir": self.validation_dataset_dir,
++                "validate_every_n_epochs": self.validate_every_n_epochs,
++                "early_stopping_patience": self.early_stopping_patience,
+                 "device": self.device,
+                 "precision": self.precision,
+                 "num_devices": self.num_devices,
+diff --git a/acestep/training_v2/fixed_lora_module.py b/acestep/training_v2/fixed_lora_module.py
+index cad0c65..2f928a6 100644
+--- a/acestep/training_v2/fixed_lora_module.py
++++ b/acestep/training_v2/fixed_lora_module.py
+@@ -269,7 +269,12 @@ class FixedLoRAModule(nn.Module):
+     # Training step
+     # -----------------------------------------------------------------------
+ 
+-    def training_step(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
++    def training_step(
++        self,
++        batch: Dict[str, torch.Tensor],
++        apply_dropout: bool = True,
++        record_loss: bool = True,
++    ) -> torch.Tensor:
+         """Single training step with corrected timestep sampling + CFG dropout.
+ 
+         Args:
+@@ -310,7 +315,7 @@ class FixedLoRAModule(nn.Module):
+             bsz = target_latents.shape[0]
+ 
+             # ---- CFG dropout (CORRECTED -- missing in original trainer) ----
+-            if self._null_cond_emb is not None and self._cfg_ratio > 0.0:
++            if apply_dropout and self._null_cond_emb is not None and self._cfg_ratio > 0.0:
+                 encoder_hidden_states = apply_cfg_dropout(
+                     encoder_hidden_states,
+                     self._null_cond_emb,
+@@ -355,5 +360,6 @@ class FixedLoRAModule(nn.Module):
+ 
+         # fp32 for stable backward
+         diffusion_loss = diffusion_loss.float()
+-        self.training_losses.append(diffusion_loss.item())
++        if record_loss:
++            self.training_losses.append(diffusion_loss.item())
+         return diffusion_loss
+diff --git a/acestep/training_v2/preprocess.py b/acestep/training_v2/preprocess.py
+index 8cc3bcc..4688b64 100644
+--- a/acestep/training_v2/preprocess.py
++++ b/acestep/training_v2/preprocess.py
+@@ -28,8 +28,9 @@ from acestep.training_v2.preprocess_discovery import (
+     load_sample_metadata as _load_sample_metadata,
+     select_genre_indices as _select_genre_indices,
+ )
+-from acestep.training_v2.preprocess_prompt import (
+-    build_simple_prompt as _build_simple_prompt,
++from acestep.training_v2.caption_variants import (
++    build_prompt_variants as _build_prompt_variants,
++    encode_prompt_variants as _encode_prompt_variants,
+ )
+ from acestep.training_v2.preprocess_vae import (
+     TARGET_SR as _TARGET_SR,
+@@ -261,15 +262,18 @@ def _pass1_light(
+                 caption = sm.get("caption", af.stem)
+                 lyrics = sm.get("lyrics", "[Instrumental]")
+ 
+-                # Build text prompt using dataset-level tag_position and genre_ratio
++                # Build one prompt per caption variant without duplicating audio.
+                 use_genre = i in genre_indices
+-                text_prompt = _build_simple_prompt(
++                text_prompts = _build_prompt_variants(
+                     sm, tag_position=tag_position, use_genre=use_genre
+                 )
+ 
+                 with torch.no_grad():
+-                    text_hs, text_mask = encode_text(
+-                        text_enc, tokenizer, text_prompt, device, dtype
++                    text_states, text_masks = _encode_prompt_variants(
++                        text_prompts,
++                        lambda prompt: encode_text(
++                            text_enc, tokenizer, prompt, device, dtype
++                        ),
+                     )
+                     lyric_hs, lyric_mask = encode_lyrics(
+                         text_enc, tokenizer, lyrics, device, dtype
+@@ -281,8 +285,10 @@ def _pass1_light(
+                     {
+                         "target_latents": target_latents.squeeze(0).cpu(),
+                         "attention_mask": attention_mask.squeeze(0).cpu(),
+-                        "text_hidden_states": text_hs.cpu(),
+-                        "text_attention_mask": text_mask.cpu(),
++                        "text_hidden_states": text_states[0],
++                        "text_attention_mask": text_masks[0],
++                        "text_hidden_states_variants": text_states,
++                        "text_attention_mask_variants": text_masks,
+                         "lyric_hidden_states": lyric_hs.cpu(),
+                         "lyric_attention_mask": lyric_mask.cpu(),
+                         "silence_latent": silence_latent.cpu(),
+@@ -291,6 +297,7 @@ def _pass1_light(
+                             "audio_path": str(af),
+                             "filename": af.name,
+                             "caption": caption,
++                            "caption_variants": sm.get("caption_variants", [caption]),
+                             "lyrics": lyrics,
+                             "duration": sm.get("duration", 0),
+                             "bpm": sm.get("bpm"),
+@@ -306,7 +313,7 @@ def _pass1_light(
+                 )
+ 
+                 # Free GPU tensors from this iteration before the next one
+-                del target_latents, attention_mask, text_hs, text_mask
++                del target_latents, attention_mask, text_states, text_masks
+                 del lyric_hs, lyric_mask
+                 if torch.cuda.is_available():
+                     torch.cuda.empty_cache()
+@@ -386,9 +393,11 @@ def _pass2_heavy(
+                 model_device = next(model.parameters()).device
+                 model_dtype = next(model.parameters()).dtype
+ 
+-                text_hs = data["text_hidden_states"].to(model_device, dtype=model_dtype)
+-                text_mask = data["text_attention_mask"].to(
+-                    model_device, dtype=model_dtype
++                text_states = data.get(
++                    "text_hidden_states_variants", [data["text_hidden_states"]]
++                )
++                text_masks = data.get(
++                    "text_attention_mask_variants", [data["text_attention_mask"]]
+                 )
+                 lyric_hs = data["lyric_hidden_states"].to(
+                     model_device, dtype=model_dtype
+@@ -403,18 +412,26 @@ def _pass2_heavy(
+ 
+                 # DIT encoder pass (adapter-agnostic: same tensors for
+                 # LoRA and LoKR -- only the adapter injection differs).
+-                encoder_hs, encoder_mask = run_encoder(
+-                    model,
+-                    text_hidden_states=text_hs,
+-                    text_attention_mask=text_mask,
+-                    lyric_hidden_states=lyric_hs,
+-                    lyric_attention_mask=lyric_mask,
+-                    device=str(model_device),
+-                    dtype=model_dtype,
+-                )
++                encoder_states = []
++                encoder_masks = []
++                for text_hs_cpu, text_mask_cpu in zip(text_states, text_masks):
++                    text_hs = text_hs_cpu.to(model_device, dtype=model_dtype)
++                    text_mask = text_mask_cpu.to(model_device, dtype=model_dtype)
++                    encoder_hs, encoder_mask = run_encoder(
++                        model,
++                        text_hidden_states=text_hs,
++                        text_attention_mask=text_mask,
++                        lyric_hidden_states=lyric_hs,
++                        lyric_attention_mask=lyric_mask,
++                        device=str(model_device),
++                        dtype=model_dtype,
++                    )
++                    encoder_states.append(encoder_hs.squeeze(0).cpu())
++                    encoder_masks.append(encoder_mask.squeeze(0).cpu())
++                    del text_hs, text_mask, encoder_hs, encoder_mask
+ 
+                 # Free encoder inputs immediately after use
+-                del text_hs, text_mask, lyric_hs, lyric_mask
++                del text_states, text_masks, lyric_hs, lyric_mask
+ 
+                 # Build context latents (silence-based, standard text2music)
+                 if silence_latent.dim() == 2:
+@@ -436,8 +453,10 @@ def _pass2_heavy(
+                     {
+                         "target_latents": data["target_latents"],
+                         "attention_mask": data["attention_mask"],
+-                        "encoder_hidden_states": encoder_hs.squeeze(0).cpu(),
+-                        "encoder_attention_mask": encoder_mask.squeeze(0).cpu(),
++                        "encoder_hidden_states": encoder_states[0],
++                        "encoder_attention_mask": encoder_masks[0],
++                        "encoder_hidden_states_variants": encoder_states,
++                        "encoder_attention_mask_variants": encoder_masks,
+                         "context_latents": context_latents.squeeze(0).cpu(),
+                         "metadata": meta,
+                     },
+@@ -445,7 +464,7 @@ def _pass2_heavy(
+                 )
+ 
+                 # Free all GPU tensors and the loaded data dict before next iter
+-                del encoder_hs, encoder_mask, context_latents, data
++                del encoder_states, encoder_masks, context_latents, data
+                 if torch.cuda.is_available():
+                     torch.cuda.empty_cache()
+ 
+diff --git a/acestep/training_v2/tensorboard_utils.py b/acestep/training_v2/tensorboard_utils.py
+index 64705cc..b7147ec 100644
+--- a/acestep/training_v2/tensorboard_utils.py
++++ b/acestep/training_v2/tensorboard_utils.py
+@@ -72,6 +72,10 @@ class TrainingLogger:
+     def log_epoch_loss(self, loss: float, epoch: int) -> None:
+         self.log_scalar("train/epoch_loss", loss, epoch)
+ 
++    def log_validation_loss(self, loss: float, epoch: int) -> None:
++        """Log validation loss by epoch."""
++        self.log_scalar("validation/loss", loss, epoch)
++
+     def log_grad_norm(self, norm: float, step: int) -> None:
+         self.log_scalar("train/grad_norm", norm, step)
+ 
+diff --git a/acestep/training_v2/trainer_fixed.py b/acestep/training_v2/trainer_fixed.py
+index 9de3c55..023e167 100644
+--- a/acestep/training_v2/trainer_fixed.py
++++ b/acestep/training_v2/trainer_fixed.py
+@@ -51,6 +51,11 @@ from acestep.training_v2.trainer_helpers import (
+     verify_saved_adapter,
+ )
+ from acestep.training_v2.trainer_basic_loop import run_basic_training_loop
++from acestep.training_v2.validation_loop import (
++    load_validation_state,
++    run_fabric_validation,
++    save_validation_state,
++)
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -152,6 +157,7 @@ class FixedLoRATrainer:
+                 prefetch_factor=cfg.prefetch_factor if num_workers > 0 else None,
+                 persistent_workers=cfg.persistent_workers if num_workers > 0 else False,
+                 pin_memory_device=cfg.pin_memory_device,
++                val_tensor_dir=getattr(cfg, "validation_dataset_dir", None),
+             )
+             data_module.setup("fit")
+ 
+@@ -160,6 +166,13 @@ class FixedLoRATrainer:
+                 return
+ 
+             yield TrainingUpdate(0, 0.0, f"[OK] Loaded {len(data_module.train_dataset)} preprocessed samples", kind="info")
++            if data_module.val_dataset is not None:
++                yield TrainingUpdate(
++                    0,
++                    0.0,
++                    f"[OK] Loaded {len(data_module.val_dataset)} validation samples",
++                    kind="info",
++                )
+ 
+             # -- Dispatch to Fabric or basic loop ---------------------------
+             if _FABRIC_AVAILABLE:
+@@ -298,6 +311,9 @@ class FixedLoRATrainer:
+         # -- Dataloader -----------------------------------------------------
+         train_loader = data_module.train_dataloader()
+         train_loader = self.fabric.setup_dataloaders(train_loader)
++        val_loader = data_module.val_dataloader()
++        if val_loader is not None:
++            val_loader = self.fabric.setup_dataloaders(val_loader)
+ 
+         # -- Trainable params / optimizer -----------------------------------
+         trainable_params = [p for p in self.module.model.parameters() if p.requires_grad]
+@@ -397,6 +413,14 @@ class FixedLoRATrainer:
+                 start_epoch = 0
+                 global_step = 0
+ 
++        best_val_loss = float("inf")
++        best_val_epoch = 0
++        stale_validation_checks = 0
++        if cfg.resume_from:
++            best_val_loss, best_val_epoch, stale_validation_checks = load_validation_state(
++                output_dir
++            )
++
+         # -- Training loop --------------------------------------------------
+         accumulation_step = 0
+         accumulated_loss = 0.0
+@@ -511,6 +535,50 @@ class FixedLoRATrainer:
+                     kind="epoch", epoch=epoch + 1, max_epochs=cfg.max_epochs, epoch_time=epoch_time,
+                 )
+ 
++            should_stop_early = False
++            validate_every = max(1, getattr(cfg, "validate_every_n_epochs", 5))
++            if val_loader is not None and (epoch + 1) % validate_every == 0:
++                val_loss = run_fabric_validation(
++                    self.module,
++                    val_loader,
++                    self.fabric,
++                    cfg.seed + epoch + 1,
++                )
++                improved = val_loss < best_val_loss - 1e-8
++                if improved:
++                    best_val_loss = val_loss
++                    best_val_epoch = epoch + 1
++                    stale_validation_checks = 0
++                    if is_main:
++                        best_dir = str(output_dir / "checkpoints" / "best_val")
++                        self._save_checkpoint(
++                            optimizer, scheduler, epoch + 1, global_step, best_dir
++                        )
++                else:
++                    stale_validation_checks += 1
++                if is_main:
++                    tb.log_validation_loss(val_loss, epoch + 1)
++                    save_validation_state(
++                        output_dir,
++                        best_val_loss,
++                        best_val_epoch,
++                        stale_validation_checks,
++                        val_loss,
++                    )
++                    yield TrainingUpdate(
++                        step=global_step,
++                        loss=val_loss,
++                        msg=(
++                            f"[OK] Validation epoch {epoch + 1}: {val_loss:.4f}; "
++                            f"best {best_val_loss:.4f} at epoch {best_val_epoch}"
++                        ),
++                        kind="info",
++                        epoch=epoch + 1,
++                        max_epochs=cfg.max_epochs,
++                    )
++                patience = max(0, getattr(cfg, "early_stopping_patience", 5))
++                should_stop_early = patience > 0 and stale_validation_checks >= patience
++
+             # Checkpoint (only rank 0)
+             if is_main and (epoch + 1) % cfg.save_every_n_epochs == 0:
+                 ckpt_dir = str(output_dir / "checkpoints" / f"epoch_{epoch + 1}_loss_{avg_epoch_loss:.4f}")
+@@ -526,6 +594,21 @@ class FixedLoRATrainer:
+             if world_size > 1:
+                 self.fabric.barrier()
+ 
++            if should_stop_early:
++                if is_main:
++                    yield TrainingUpdate(
++                        step=global_step,
++                        loss=best_val_loss,
++                        msg=(
++                            f"[OK] Early stopping after {stale_validation_checks} "
++                            f"validation checks without improvement"
++                        ),
++                        kind="complete",
++                        epoch=epoch + 1,
++                        max_epochs=cfg.max_epochs,
++                    )
++                break
++
+             # Clear CUDA cache AFTER checkpoint save so serialization
+             # temporaries are also freed.
+             if torch.cuda.is_available():
+diff --git a/acestep/training_v2/validation_loop.py b/acestep/training_v2/validation_loop.py
+new file mode 100644
+index 0000000..ba48991
+--- /dev/null
++++ b/acestep/training_v2/validation_loop.py
+@@ -0,0 +1,61 @@
++"""Deterministic validation helpers for fixed ACE-Step training."""
++
++from __future__ import annotations
++
++import json
++from contextlib import nullcontext
++from pathlib import Path
++from typing import Any
++
++import torch
++
++
++def run_fabric_validation(module: Any, loader: Any, fabric: Any, seed: int) -> float:
++    """Return globally averaged validation loss across all Fabric ranks."""
++    decoder = module.model.decoder
++    decoder.eval()
++    device_index = fabric.device.index
++    devices = [device_index] if fabric.device.type == "cuda" and device_index is not None else []
++    local = torch.zeros(2, device=fabric.device, dtype=torch.float64)
++    rng_context = torch.random.fork_rng(devices=devices) if devices else nullcontext()
++    try:
++        with rng_context, torch.no_grad():
++            torch.manual_seed(seed)
++            for batch in loader:
++                loss = module.training_step(batch, apply_dropout=False, record_loss=False)
++                local[0] += loss.detach().double()
++                local[1] += 1
++    finally:
++        decoder.train()
++    totals = fabric.all_reduce(local, reduce_op="sum")
++    if totals[1].item() == 0:
++        raise RuntimeError("validation loader produced zero batches")
++    return float((totals[0] / totals[1]).item())
++
++
++def load_validation_state(output_dir: Path) -> tuple[float, int, int]:
++    """Load best loss, best epoch, and stale-check count for resume."""
++    path = output_dir / "validation_state.json"
++    if not path.is_file():
++        return float("inf"), 0, 0
++    data = json.loads(path.read_text(encoding="utf-8"))
++    return float(data["best_loss"]), int(data["best_epoch"]), int(data["stale_checks"])
++
++
++def save_validation_state(
++    output_dir: Path,
++    best_loss: float,
++    best_epoch: int,
++    stale_checks: int,
++    latest_loss: float,
++) -> None:
++    """Atomically save validation state used for resume and checkpoint choice."""
++    path = output_dir / "validation_state.json"
++    tmp = path.with_suffix(".json.tmp")
++    tmp.write_text(json.dumps({
++        "best_loss": best_loss,
++        "best_epoch": best_epoch,
++        "stale_checks": stale_checks,
++        "latest_loss": latest_loss,
++    }, indent=2) + "\n", encoding="utf-8")
++    tmp.replace(path)
+diff --git a/acestep/training_v2/validation_loop_test.py b/acestep/training_v2/validation_loop_test.py
+new file mode 100644
+index 0000000..47ca9c1
+--- /dev/null
++++ b/acestep/training_v2/validation_loop_test.py
+@@ -0,0 +1,58 @@
++"""Tests for validation-state persistence."""
++
++from __future__ import annotations
++
++import tempfile
++import unittest
++from pathlib import Path
++from types import SimpleNamespace
++
++import torch
++
++from acestep.training_v2.validation_loop import load_validation_state, save_validation_state
++
++
++class ValidationStateTest(unittest.TestCase):
++    """Verify fresh and resumed validation state."""
++
++    def test_missing_state_uses_fresh_defaults(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            loss, epoch, stale = load_validation_state(Path(tmp))
++        self.assertEqual(float("inf"), loss)
++        self.assertEqual((0, 0), (epoch, stale))
++
++    def test_state_round_trip(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            path = Path(tmp)
++            save_validation_state(path, 0.25, 10, 2, 0.3)
++            self.assertEqual((0.25, 10, 2), load_validation_state(path))
++
++    def test_validation_averages_batches_without_cfg_dropout(self) -> None:
++        calls = []
++
++        class Module:
++            model = SimpleNamespace(decoder=torch.nn.Linear(1, 1))
++
++            @staticmethod
++            def training_step(batch, apply_dropout=True, record_loss=True):
++                calls.append((apply_dropout, record_loss))
++                return batch["loss"]
++
++        fabric = SimpleNamespace(
++            device=torch.device("cpu"),
++            all_reduce=lambda value, reduce_op: value,
++        )
++        from acestep.training_v2.validation_loop import run_fabric_validation
++
++        loss = run_fabric_validation(
++            Module(),
++            [{"loss": torch.tensor(1.0)}, {"loss": torch.tensor(3.0)}],
++            fabric,
++            seed=42,
++        )
++        self.assertEqual(2.0, loss)
++        self.assertEqual([(False, False), (False, False)], calls)
++
++
++if __name__ == "__main__":
++    unittest.main()

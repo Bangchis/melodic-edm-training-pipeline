@@ -1,0 +1,356 @@
+#!/usr/bin/env python3
+"""Create detailed, resumable audio annotations with strict OpenRouter JSON."""
+from __future__ import annotations
+
+import argparse
+import base64
+import csv
+import json
+import os
+import random
+import re
+import subprocess
+import time
+import urllib.error
+import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+
+API_URL = "https://openrouter.ai/api/v1/chat/completions"
+DEFAULT_MODEL = "google/gemini-3.1-flash-lite"
+HYPE_PHRASES = (
+    "masterpiece", "best song ever", "professional quality", "extremely beautiful",
+    "exactly like", "in the style of", "style of",
+)
+
+
+def read_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def atomic_json(path: Path, value: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def atomic_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+    os.replace(tmp, path)
+
+
+def load_env_file(path: Path) -> None:
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line or line.lstrip().startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip())
+
+
+def content_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            item.get("text", "") for item in content
+            if isinstance(item, dict) and item.get("type") in {"text", "output_text"}
+        )
+    raise ValueError("unsupported message content")
+
+
+def ensure_preview(audio: Path, preview: Path, start: float, end: float) -> None:
+    if preview.is_file():
+        return
+    preview.parent.mkdir(parents=True, exist_ok=True)
+    tmp = preview.with_suffix(".tmp.mp3")
+    result = subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-v", "error", "-y", "-ss", f"{start:.3f}",
+            "-i", str(audio), "-t", f"{end - start:.3f}",
+            "-ac", "2", "-ar", "44100", "-c:a", "libmp3lame", "-b:a", "128k", str(tmp),
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=900,
+        check=False,
+    )
+    if result.returncode or not tmp.is_file():
+        tmp.unlink(missing_ok=True)
+        raise RuntimeError("preview_failed:" + result.stderr[-500:].replace("\n", " "))
+    os.replace(tmp, preview)
+
+
+def artist_names(value: str) -> list[str]:
+    parts = re.split(r"\b(?:feat\.?|ft\.?|and)\b|[&,/+|]", value, flags=re.IGNORECASE)
+    return [re.sub(r"\s+", " ", part).strip().lower() for part in parts if len(part.strip()) >= 4]
+
+
+def word_count(text: str) -> int:
+    return len(re.findall(r"\b[\w'-]+\b", text, flags=re.UNICODE))
+
+
+def validate_annotation(result: dict[str, Any], row: dict[str, Any], taxonomy: dict[str, Any]) -> list[str]:
+    errors = []
+    if result.get("primary_genre") not in taxonomy["primary_genres"]:
+        errors.append("invalid_primary_genre")
+    for field in ("secondary_genres", "style_families", "moods"):
+        allowed = taxonomy["primary_genres"] if field == "secondary_genres" else taxonomy[field]
+        if any(value not in allowed for value in result.get(field, [])):
+            errors.append(f"invalid_{field}")
+    instruments = result.get("main_instruments", [])
+    for instrument in instruments:
+        if instrument.get("name") not in taxonomy["instruments"]:
+            errors.append("invalid_instrument")
+        if instrument.get("role") not in taxonomy["instrument_roles"]:
+            errors.append("invalid_instrument_role")
+        if instrument.get("name") != "unknown" and float(instrument.get("confidence", 0)) < 0.55:
+            errors.append("low_confidence_instrument")
+
+    canonical = str(result.get("canonical_caption", "")).strip()
+    count = word_count(canonical)
+    if not 40 <= count <= 80:
+        errors.append(f"canonical_caption_word_count:{count}")
+    variants = result.get("caption_variants", [])
+    types = [variant.get("type") for variant in variants]
+    if sorted(types) != ["composition", "full", "production", "tags"]:
+        errors.append("caption_variant_types")
+    full_variant = next((variant.get("text", "").strip() for variant in variants if variant.get("type") == "full"), "")
+    if full_variant != canonical:
+        errors.append("full_variant_must_equal_canonical")
+    texts = [canonical] + [str(variant.get("text", "")) for variant in variants]
+    combined = "\n".join(texts).lower()
+    if any(phrase in combined for phrase in HYPE_PHRASES):
+        errors.append("banned_hype_or_style_phrase")
+    if re.search(r"\b\d{2,3}\s*bpm\b", combined):
+        errors.append("bpm_leaked_into_caption")
+    for artist in artist_names(str(row.get("expected_artist", ""))):
+        if artist in combined:
+            errors.append("artist_name_in_caption")
+            break
+    if not canonical.lower().startswith("instrumental"):
+        errors.append("canonical_caption_not_instrumental")
+    confidence = float(result.get("annotation_confidence", 0))
+    if not 0 <= confidence <= 1:
+        errors.append("invalid_annotation_confidence")
+    return sorted(set(errors))
+
+
+def request_annotation(
+    row: dict[str, Any], mir: dict[str, Any], preview: Path, taxonomy: dict[str, Any],
+    schema: dict[str, Any], api_key: str, model: str, effort: str, timeout: int,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    compact_mir = {
+        "bpm": mir.get("bpm"),
+        "keyscale": mir.get("keyscale"),
+        "key_confidence": mir.get("key_confidence"),
+        "timesignature": mir.get("timesignature"),
+        "sections": mir.get("sections", []),
+    }
+    metadata = {
+        "title_for_identity_only": row.get("expected_title", ""),
+        "artist_for_identity_only_do_not_copy_to_captions": row.get("expected_artist", ""),
+        "version": row.get("expected_version", ""),
+        "audio_source": row.get("audio_source", ""),
+        "vocal_status": row.get("vocal_status_after_processing", "instrumental"),
+        "annotation_window_seconds": [
+            row.get("annotation_window_start", 0),
+            row.get("annotation_window_end", row.get("duration")),
+        ],
+    }
+    prompt = (
+        "Listen carefully to the complete final training audio and return the strict JSON master annotation. "
+        "Describe only audible, stable musical evidence. Treat the track as instrumental: permitted vocal chops are "
+        "production texture, never lyrics. Use only taxonomy values for categorical fields. Do not guess a traditional "
+        "instrument when uncertain; use unknown. The canonical caption must be English, start with 'Instrumental', contain "
+        "40-80 words, and keep only the most important genre, mood, melody, arrangement, instrumentation and production "
+        "facts. Never put artist/channel/title names, BPM, key, time signature, hype, quality claims, or 'in the style of' "
+        "language in any caption. Return exactly four caption variants with unique types: full, composition, production, "
+        "and tags. The full variant text must exactly equal canonical_caption; composition and production should emphasize their own "
+        "audible aspects; tags should be a concise comma-separated prompt. Section captions must differ and describe only "
+        "the sections supported by the supplied MIR structure. Keep BPM/key/time signature as metadata, not caption text. "
+        "Use 'unclear' for detailed free-text attributes that cannot be heard confidently.\n"
+        "Metadata: " + json.dumps(metadata, ensure_ascii=False) + "\n"
+        "MIR: " + json.dumps(compact_mir, ensure_ascii=False) + "\n"
+        "Taxonomy: " + json.dumps(taxonomy, ensure_ascii=False)
+    )
+    audio_b64 = base64.b64encode(preview.read_bytes()).decode("ascii")
+    payload = {
+        "model": model,
+        "messages": [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {"type": "input_audio", "input_audio": {"data": audio_b64, "format": "mp3"}},
+            ],
+        }],
+        "temperature": 0,
+        "max_tokens": 3000,
+        "reasoning": {"effort": effort, "exclude": True},
+        "response_format": {"type": "json_schema", "json_schema": schema},
+        "provider": {"require_parameters": True},
+    }
+    request = urllib.request.Request(
+        API_URL,
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "melodic-edm-training-pipeline/1.0",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        body = json.load(response)
+    if not body.get("choices"):
+        raise ValueError("OpenRouter response has no choices")
+    result = json.loads(content_text(body["choices"][0]["message"]["content"]))
+    return result, body.get("usage") or {}
+
+
+def write_manual_review(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fields = ["sample_id", "record_key", "expected_artist", "expected_title", "review_reason"]
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({field: row.get(field, "") for field in fields})
+    os.replace(tmp, path)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--project-root", default=".")
+    parser.add_argument("--manifest", default="data/training_audio_manifest.jsonl")
+    parser.add_argument("--env-file", default="/workspace/.env")
+    parser.add_argument("--taxonomy", default="configs/taxonomy.json")
+    parser.add_argument("--schema", default="configs/annotation_schema.json")
+    parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument("--limit", type=int)
+    parser.add_argument("--retries", type=int, default=5)
+    parser.add_argument("--timeout", type=int, default=900)
+    args = parser.parse_args()
+
+    root = Path(args.project_root).resolve()
+    load_env_file(Path(args.env_file))
+    api_key = os.environ.get("OPENROUTER_API_KEY", "")
+    if not api_key:
+        raise SystemExit("OPENROUTER_API_KEY is missing")
+    taxonomy = json.loads((root / args.taxonomy).read_text(encoding="utf-8"))
+    schema = json.loads((root / args.schema).read_text(encoding="utf-8"))
+    source = [r for r in read_jsonl(root / args.manifest) if r.get("quality_status") == "accepted"]
+    state_path = root / "data" / "annotation_manifest.jsonl"
+    existing = read_jsonl(state_path)
+    by_id = {r["sample_id"]: r for r in existing}
+    pending = [r for r in source if by_id.get(r["sample_id"], {}).get("annotation_status") != "accepted"]
+    if args.limit is not None:
+        pending = pending[:max(0, args.limit)]
+
+    for index, row in enumerate(pending, 1):
+        sid = row["sample_id"]
+        audio = Path(row["training_audio_path"])
+        mir_path = root / "data" / "mir" / f"{sid}.json"
+        last_error = ""
+        result: dict[str, Any] | None = None
+        usage: dict[str, Any] = {}
+        validation_errors: list[str] = []
+        effort_used = "minimal"
+        annotation_start = 0.0
+        annotation_end = float(row.get("duration") or 0)
+        try:
+            if not audio.is_file():
+                raise FileNotFoundError(audio)
+            if not mir_path.is_file():
+                raise FileNotFoundError(mir_path)
+            mir = json.loads(mir_path.read_text(encoding="utf-8"))
+            from build_acestep_dataset import choose_window
+
+            annotation_start, annotation_end = choose_window(float(row["duration"]), mir, 240.0)
+            preview = root / "data" / "training_preview" / f"{sid}_{int(annotation_start * 1000)}_{int(annotation_end * 1000)}.mp3"
+            ensure_preview(audio, preview, annotation_start, annotation_end)
+            request_row = {
+                **row,
+                "annotation_window_start": annotation_start,
+                "annotation_window_end": annotation_end,
+            }
+            for effort in ("minimal", "low"):
+                effort_used = effort
+                for attempt in range(1, args.retries + 1):
+                    try:
+                        result, usage = request_annotation(
+                            request_row, mir, preview, taxonomy, schema, api_key, args.model, effort, args.timeout
+                        )
+                        validation_errors = validate_annotation(result, row, taxonomy)
+                        if float(result.get("annotation_confidence", 0)) >= 0.70 and not validation_errors:
+                            break
+                        last_error = "validation:" + ",".join(validation_errors or ["low_confidence"])
+                    except urllib.error.HTTPError as exc:
+                        last_error = f"http_{exc.code}"
+                        if exc.code not in {408, 409, 429, 500, 502, 503, 504}:
+                            break
+                    except Exception as exc:
+                        last_error = f"{type(exc).__name__}:{exc}"
+                    if attempt < args.retries:
+                        time.sleep(min(60.0, 2 ** attempt + random.random()))
+                if result is not None and float(result.get("annotation_confidence", 0)) >= 0.70 and not validation_errors:
+                    break
+        except Exception as exc:
+            last_error = f"{type(exc).__name__}:{exc}"
+
+        accepted = bool(
+            result is not None
+            and float(result.get("annotation_confidence", 0)) >= 0.70
+            and not validation_errors
+        )
+        record = {
+            **row,
+            "annotation_status": "accepted" if accepted else "manual_review",
+            "annotation_model": args.model,
+            "annotation_reasoning_effort": effort_used,
+            "annotation_usage": usage,
+            "annotation_window_start": annotation_start,
+            "annotation_window_end": annotation_end,
+            "annotation_error": None if accepted else last_error,
+            "annotated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if result is not None:
+            record["annotation"] = result
+        by_id[sid] = record
+        if accepted:
+            atomic_json(root / "data" / "annotations" / f"{sid}.json", record)
+        atomic_jsonl(state_path, sorted(by_id.values(), key=lambda item: item["sample_id"]))
+        print(
+            f"[{index}/{len(pending)}] {sid} {'PASS' if accepted else 'REVIEW'} "
+            f"confidence={float((result or {}).get('annotation_confidence', 0)):.2f} {last_error}",
+            flush=True,
+        )
+
+    final = [by_id[r["sample_id"]] for r in source if r["sample_id"] in by_id]
+    review = [
+        {
+            **row,
+            "review_reason": row.get("annotation_error", ""),
+        }
+        for row in final if row.get("annotation_status") != "accepted"
+    ]
+    write_manual_review(root / "data" / "manual_review.csv", review)
+    accepted_count = sum(r.get("annotation_status") == "accepted" for r in final)
+    print(json.dumps({"source": len(source), "accepted": accepted_count, "manual_review": len(review)}))
+    return 0 if accepted_count == len(source) else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

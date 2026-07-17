@@ -1,0 +1,34 @@
+{
+  "name": "vocal_classification",
+  "strict": true,
+  "schema": {
+    "type": "object",
+    "properties": {
+      "vocal_status": {
+        "type": "string",
+        "enum": ["instrumental", "lyrics", "vocal_chops", "uncertain"]
+      },
+      "lyrics_prominence": {
+        "type": "number",
+        "minimum": 0.0,
+        "maximum": 1.0
+      },
+      "recommended_action": {
+        "type": "string",
+        "enum": ["keep_original", "separate_vocals", "manual_check"]
+      },
+      "reason": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+      }
+    },
+    "required": [
+      "vocal_status",
+      "lyrics_prominence",
+      "recommended_action",
+      "reason"
+    ],
+    "additionalProperties": false
+  }
+}
