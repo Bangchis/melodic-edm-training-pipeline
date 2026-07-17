@@ -251,7 +251,7 @@ def build_prompt(
         ],
     }
     return (
-        "Listen carefully to the complete final training audio and return only one JSON object matching the schema below. "
+        "Listen carefully to the provided window from the final training audio and return only one JSON object matching the schema below. "
         "Describe only audible, stable musical evidence. Treat the track as instrumental: permitted vocal chops are "
         "production texture, never lyrics. Use only taxonomy values for categorical fields. Do not guess a traditional "
         "instrument when uncertain; use unknown. The canonical caption must be English, start with 'Instrumental', contain "
@@ -342,6 +342,7 @@ def main() -> int:
     parser.add_argument("--schema", default="configs/annotation_schema.json")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--max-new-tokens", type=int, default=2200)
+    parser.add_argument("--annotation-window-seconds", type=float, default=240.0)
     args = parser.parse_args()
 
     root = Path(args.project_root).resolve()
@@ -458,7 +459,7 @@ def main() -> int:
             from build_acestep_dataset import choose_window
 
             mir = json.loads(mir_path.read_text(encoding="utf-8"))
-            start, end = choose_window(float(row["duration"]), mir, 240.0)
+            start, end = choose_window(float(row["duration"]), mir, args.annotation_window_seconds)
             request_row = {**row, "annotation_window_start": start, "annotation_window_end": end}
             preview = root / "data" / "training_preview" / f"{sid}_{int(start * 1000)}_{int(end * 1000)}.mp3"
             ensure_preview(Path(row["training_audio_path"]), preview, start, end)
