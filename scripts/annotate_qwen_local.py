@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import hashlib
 import json
 import os
 import subprocess
@@ -27,7 +28,7 @@ from annotate_openrouter import (
 
 
 MODEL_ID = "Qwen/Qwen2.5-Omni-7B"
-CAPTION_COMPILER_VERSION = 10
+CAPTION_COMPILER_VERSION = 11
 
 
 def _sentence(value: str) -> str:
@@ -225,6 +226,48 @@ def compile_section_captions(annotation: dict[str, Any], mir: dict[str, Any]) ->
         caption = _section_sentence(label, phrase)
         output.append({"label": label, "caption": caption})
     return output
+
+
+def distinctive_detail_candidates(annotation: dict[str, Any]) -> list[str]:
+    """Return grounded master-field details suitable for resolving caption collisions."""
+    mapping = [
+        ("Outro", "outro"), ("Break", "break"), ("Drop", "drop"),
+        ("Build", "buildup"), ("Theme", "theme"), ("Intro", "intro"),
+        ("Final Drop", "final_drop"),
+    ]
+    generic = {
+        "break", "build", "buildup", "climax", "develops", "drop", "main melody",
+        "main_melody", "outro", "theme", "transitions",
+    }
+    arrangement = annotation.get("arrangement") or {}
+    output = []
+    for label, key in mapping:
+        phrase = _without_explicit_key(str(arrangement.get(key, ""))).strip(" .")
+        normalized = " ".join(phrase.lower().split())
+        if not phrase or normalized in generic:
+            continue
+        words = phrase.split()
+        if len(words) <= 4 and "and" in [word.lower() for word in words]:
+            detail = _sentence(f"The {SECTION_DISPLAY[label]} has a {phrase.lower()} character")
+        elif "fade" in normalized and not normalized.startswith(("a ", "an ", "the ")):
+            detail = _sentence(f"The {SECTION_DISPLAY[label]} uses a {phrase.lower()}")
+        else:
+            detail = _section_sentence(label, phrase)
+        if detail and detail not in output:
+            output.append(detail)
+    production = annotation.get("production") or {}
+    description = _sentence(_without_explicit_key(str(production.get("description", ""))))
+    if description and description not in output:
+        output.append(description)
+    return output
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def build_prompt(
@@ -505,6 +548,79 @@ def main() -> int:
         repaired_reviews = True
         print(f"[repair] {sid} PASS", flush=True)
     if repaired_reviews:
+        atomic_jsonl(state_path, sorted(by_id.values(), key=lambda item: item["sample_id"]))
+    caption_groups: dict[str, list[dict[str, Any]]] = {}
+    for row in source:
+        record = by_id.get(row["sample_id"])
+        if not record or record.get("annotation_status") != "accepted":
+            continue
+        canonical = str((record.get("annotation") or {}).get("canonical_caption", "")).strip()
+        if canonical:
+            caption_groups.setdefault(canonical, []).append(row)
+    collision_repairs = False
+    for canonical, group in caption_groups.items():
+        if len(group) < 2:
+            continue
+        audio_hashes = {
+            row["sample_id"]: file_sha256(Path(row["training_audio_path"])) for row in group
+        }
+        if len(set(audio_hashes.values())) < 2:
+            continue
+        pools = {
+            row["sample_id"]: distinctive_detail_candidates(by_id[row["sample_id"]]["annotation"])
+            for row in group
+        }
+        selected: dict[str, str] = {}
+        for row in group:
+            sid = row["sample_id"]
+            other_candidates = {
+                candidate.lower()
+                for other in group if audio_hashes[other["sample_id"]] != audio_hashes[sid]
+                for candidate in pools[other["sample_id"]]
+            }
+            choices = [
+                candidate for candidate in pools[sid]
+                if candidate.lower() not in other_candidates
+                and word_count(canonical + " " + candidate) <= 80
+            ]
+            if not choices:
+                combinations = [
+                    first + " " + second
+                    for index, first in enumerate(pools[sid])
+                    for second in pools[sid][index + 1:]
+                ]
+                choices = [
+                    candidate for candidate in combinations
+                    if candidate.lower() not in other_candidates
+                    and word_count(canonical + " " + candidate) <= 80
+                ]
+            if not choices:
+                raise RuntimeError(f"cannot ground a unique caption detail for {sid}")
+            selected[sid] = choices[0]
+        for row in group:
+            sid = row["sample_id"]
+            record = by_id[sid]
+            annotation = record["annotation"]
+            updated = canonical + " " + selected[sid]
+            annotation["canonical_caption"] = updated
+            for variant in annotation.get("caption_variants", []):
+                if isinstance(variant, dict) and variant.get("type") == "full":
+                    variant["text"] = updated
+            mir = json.loads((root / "data" / "mir" / f"{sid}.json").read_text(encoding="utf-8"))
+            errors = validate_annotation(annotation, row, taxonomy, mir)
+            if errors:
+                raise RuntimeError(f"caption collision repair failed for {sid}: {errors}")
+            record["annotation"] = annotation
+            record["annotation_caption_compiler_version"] = CAPTION_COMPILER_VERSION
+            record["annotation_sanitization"] = (record.get("annotation_sanitization") or []) + [{
+                "action": "appended_unique_grounded_detail_for_caption_collision",
+                "detail": selected[sid],
+            }]
+            by_id[sid] = record
+            atomic_json(root / "data" / "annotations" / f"{sid}.json", record)
+            print(f"[collision-repair] {sid} PASS", flush=True)
+        collision_repairs = True
+    if collision_repairs:
         atomic_jsonl(state_path, sorted(by_id.values(), key=lambda item: item["sample_id"]))
     pending = [row for row in source if by_id.get(row["sample_id"], {}).get("annotation_status") != "accepted"]
     if args.limit is not None:

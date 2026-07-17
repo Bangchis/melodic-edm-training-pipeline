@@ -18,7 +18,11 @@ from annotate_openrouter import parse_json_content, sanitize_annotation, sanitiz
 from build_acestep_dataset import choose_splits, choose_window, render_audio  # noqa: E402
 from validate_tensors import expected_by_split  # noqa: E402
 from validate_training import select_checkpoints  # noqa: E402
-from annotate_qwen_local import compile_canonical_caption, compile_section_captions  # noqa: E402
+from annotate_qwen_local import (  # noqa: E402
+    compile_canonical_caption,
+    compile_section_captions,
+    distinctive_detail_candidates,
+)
 
 
 class RecordPreservingTests(unittest.TestCase):
@@ -292,6 +296,16 @@ class RecordPreservingTests(unittest.TestCase):
         )
         self.assertIn("develops the opening texture", sections[0]["caption"])
         self.assertIn("winds down the arrangement", sections[1]["caption"])
+
+    def test_collision_details_are_grounded_in_master_fields(self) -> None:
+        annotation = {
+            "arrangement": {"outro": "slow and reflective", "drop": "powerful and energetic"},
+            "production": {"description": "Wide synth layers and driving electronic drums"},
+        }
+        candidates = distinctive_detail_candidates(annotation)
+        self.assertIn("The outro has a slow and reflective character.", candidates)
+        self.assertIn("The drop has a powerful and energetic character.", candidates)
+        self.assertIn("Wide synth layers and driving electronic drums.", candidates)
 
     def test_mir_validator_requires_exact_record_coverage(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
