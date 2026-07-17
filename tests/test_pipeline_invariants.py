@@ -255,6 +255,20 @@ class RecordPreservingTests(unittest.TestCase):
         self.assertIn("develops the opening texture", sections[0]["caption"])
         self.assertEqual(sections[1]["caption"], "Piano fades away in the outro section.")
 
+    def test_local_section_compiler_replaces_repeated_long_arrangement_phrases(self) -> None:
+        annotation = {
+            "arrangement": {
+                "intro": "maintains the melody with added layers",
+                "outro": "maintains the melody with added layers",
+            },
+            "main_instruments": [{"name": "pipa"}, {"name": "guzheng"}],
+        }
+        sections = compile_section_captions(
+            annotation, {"sections": [{"label": "Intro"}, {"label": "Outro"}]}
+        )
+        self.assertIn("develops the opening texture", sections[0]["caption"])
+        self.assertIn("winds down the arrangement", sections[1]["caption"])
+
     def test_mir_validator_requires_exact_record_coverage(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

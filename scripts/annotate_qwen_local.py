@@ -26,7 +26,7 @@ from annotate_openrouter import (
 
 
 MODEL_ID = "Qwen/Qwen2.5-Omni-7B"
-CAPTION_COMPILER_VERSION = 9
+CAPTION_COMPILER_VERSION = 10
 
 
 def _sentence(value: str) -> str:
@@ -201,12 +201,25 @@ def compile_section_captions(annotation: dict[str, Any], mir: dict[str, Any]) ->
         instrument_text = instruments[0]
     else:
         instrument_text = "audible electronic layers"
+    raw_phrases = {
+        label: str(arrangement.get(mapping.get(label, ""), "develops")).strip()
+        for label in required
+    }
+    normalized_phrase_counts: dict[str, int] = {}
+    for phrase in raw_phrases.values():
+        normalized = " ".join(phrase.lower().strip(" .").split())
+        normalized_phrase_counts[normalized] = normalized_phrase_counts.get(normalized, 0) + 1
     output = []
     for label in required:
-        phrase = str(arrangement.get(mapping.get(label, ""), "develops")).strip()
+        phrase = raw_phrases[label]
         phrase_words = [word.lower().strip(",.;:") for word in phrase.split()]
         has_finite_verb = any(word in FINITE_SECTION_VERBS for word in phrase_words)
-        if word_count(phrase) < 3 or (word_count(phrase) == 3 and not has_finite_verb):
+        normalized = " ".join(phrase.lower().strip(" .").split())
+        if (
+            normalized_phrase_counts.get(normalized, 0) > 1
+            or word_count(phrase) < 3
+            or (word_count(phrase) == 3 and not has_finite_verb)
+        ):
             phrase = f"{terse_defaults.get(label, 'develops the section')} with {instrument_text}"
         caption = _section_sentence(label, phrase)
         output.append({"label": label, "caption": caption})
