@@ -50,8 +50,18 @@ The five persistent-vocal rejects are:
 
 ## Active stage
 
-The next active server job is `edm-train-main`. The one-epoch two-GPU DDP smoke gate
-has passed, and the main output directory is still clean before its first start.
+`edm-train-main` is running the single fixed two-GPU LoRA configuration. The
+one-epoch DDP smoke gate passed before main training was allowed to start.
+
+The first resumable main checkpoint is verified at epoch 5 / global step 65:
+
+- Train loss: 0.8135 (down from 1.4926 at epoch 1).
+- Validation loss: 0.8021, current best at epoch 5.
+- Training state contains optimizer and scheduler state.
+- The checkpoint adapter contains 512/512 finite, nonzero tensors.
+- Main output size was 482 MiB and the instance had about 221 GiB free.
+- A fresh private metadata backup completed with 1,200 files and zero secret
+  findings; audio, tensors, model checkpoints and tokens were excluded.
 
 Dataset construction and preprocessing are complete:
 
