@@ -142,10 +142,15 @@ and early stopping. Its SHA-256 is
 `f6f7e2b1a1aaa49db5573be67862579df2f4c758a973c7cc96c0e24b9ecaf257`.
 
 Preprocess train part 0 on GPU 0 and part 1 on GPU 1, then preprocess validation and
-merge with `scripts/merge_tensors.py`. The merged tensor count must equal the final
-manifest count. Run the one-epoch smoke job before the 150-epoch job. Smoke passes
-only when both GPUs work, loss is finite, validation runs, and the saved adapter can
-be loaded again.
+merge with `scripts/merge_tensors.py`. Run `edm-validate-tensors` and require its
+report to pass: exactly 231 readable tensors, four caption encodings per tensor,
+finite values, exact split membership and no train/validation overlap. Run the
+one-epoch smoke job before the 150-epoch job. Smoke passes
+only when both GPUs are observed with allocated model memory, train/validation losses
+are finite, all three adapter saves are readable/nonzero, training state is resumable,
+and the final adapter loads back onto a clean XL-Base decoder. The job writes the
+machine-readable gate `outputs/smoke/smoke_validation_report.json`; the main run
+refuses to start until this report passes.
 
 ## 6. Release and backup
 

@@ -6,6 +6,13 @@ utils=/opt/supervisor-scripts/utils
 . "${utils}/environment.sh"
 
 export CUDA_VISIBLE_DEVICES=0,1
+python3 - <<'PY'
+import json
+from pathlib import Path
+smoke = Path('/workspace/melodic_edm_training_pipeline/outputs/smoke/smoke_validation_report.json')
+if not smoke.is_file() or json.loads(smoke.read_text())['status'] != 'pass':
+    raise SystemExit('smoke validation gate has not passed')
+PY
 cd /workspace/melodic_edm_training_pipeline/vendor/ACE-Step-1.5
 exec .venv/bin/python -u -m acestep.training_v2.cli.train_fixed --yes \
   --dataset-dir /workspace/melodic_edm_training_pipeline/data/tensors_all \

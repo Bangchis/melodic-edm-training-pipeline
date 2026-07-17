@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from analyze_mir import map_sections, normalize_edm_bpm, prepare_unique_inputs  # noqa: E402
 from annotate_openrouter import sanitize_annotation, sanitize_caption_text, validate_annotation  # noqa: E402
 from build_acestep_dataset import choose_splits, choose_window, render_audio  # noqa: E402
+from validate_tensors import expected_by_split  # noqa: E402
 
 
 class RecordPreservingTests(unittest.TestCase):
@@ -160,6 +161,20 @@ class RecordPreservingTests(unittest.TestCase):
         splits = choose_splits(rows, val_ratio=0.34, seed=42)
         self.assertEqual(set(splits), {"a", "b", "c"})
         self.assertEqual(splits["a"], splits["b"])
+
+    def test_tensor_gate_preserves_every_record_id(self) -> None:
+        expected = expected_by_split([
+            {"sample_id": "catalog__001", "split": "train"},
+            {"sample_id": "catalog__002", "split": "train"},
+            {"sample_id": "catalog__003", "split": "validation"},
+        ])
+        self.assertEqual(expected["train"], {"catalog__001", "catalog__002"})
+        self.assertEqual(expected["validation"], {"catalog__003"})
+        with self.assertRaisesRegex(ValueError, "duplicate_sample_id"):
+            expected_by_split([
+                {"sample_id": "catalog__001", "split": "train"},
+                {"sample_id": "catalog__001", "split": "validation"},
+            ])
 
     def test_full_audio_uses_unique_hard_link(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
