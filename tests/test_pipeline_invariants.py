@@ -188,6 +188,20 @@ class RecordPreservingTests(unittest.TestCase):
         self.assertNotIn("During the intro section, builds", caption)
         self.assertIn("The intro section builds", caption)
 
+    def test_local_section_compiler_handles_default_verbs_and_synth_lead_noun(self) -> None:
+        annotation = {
+            "arrangement": {"break": "Transitions", "outro": "soft synth lead texture"},
+            "main_instruments": [{"name": "synth_lead"}, {"name": "electronic_drums"}],
+        }
+        sections = compile_section_captions(
+            annotation, {"sections": [{"label": "Break"}, {"label": "Outro"}]}
+        )
+        self.assertTrue(sections[0]["caption"].startswith("The break section reduces"))
+        self.assertEqual(
+            sections[1]["caption"],
+            "The outro section features soft synth lead texture.",
+        )
+
     def test_mir_validator_requires_exact_record_coverage(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

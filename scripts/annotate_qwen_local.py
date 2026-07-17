@@ -25,7 +25,7 @@ from annotate_openrouter import (
 
 
 MODEL_ID = "Qwen/Qwen2.5-Omni-7B"
-CAPTION_COMPILER_VERSION = 7
+CAPTION_COMPILER_VERSION = 8
 
 
 def _sentence(value: str) -> str:
@@ -54,9 +54,9 @@ SECTION_DISPLAY = {
 }
 FINITE_SECTION_VERBS = {
     "adds", "begins", "build", "builds", "combines", "develops", "diminishes", "fades",
-    "features", "introduce", "introduces", "intensifies", "lead", "leads", "maintains",
-    "moves", "opens", "peaks", "presents", "provide", "provides", "reaches", "returns",
-    "shifts", "starts", "strips", "take", "takes", "transitions",
+    "features", "introduce", "introduces", "intensifies", "leads", "maintains", "moves",
+    "opens", "peaks", "presents", "provide", "provides", "reaches", "reduces", "returns",
+    "shifts", "starts", "strips", "take", "takes", "transitions", "winds",
 }
 
 
