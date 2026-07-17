@@ -18,6 +18,7 @@ from annotate_openrouter import parse_json_content, sanitize_annotation, sanitiz
 from build_acestep_dataset import choose_splits, choose_window, render_audio  # noqa: E402
 from validate_tensors import expected_by_split  # noqa: E402
 from validate_training import select_checkpoints  # noqa: E402
+from annotate_qwen_local import compile_canonical_caption  # noqa: E402
 
 
 class RecordPreservingTests(unittest.TestCase):
@@ -104,6 +105,28 @@ class RecordPreservingTests(unittest.TestCase):
     def test_annotation_json_parser_accepts_provider_code_fence(self) -> None:
         self.assertEqual(parse_json_content("```json\n{\"status\": \"ok\"}\n```"), {"status": "ok"})
         self.assertEqual(parse_json_content("Result:\n{\"status\": \"ok\"}"), {"status": "ok"})
+
+    def test_local_master_annotation_compiles_bounded_caption(self) -> None:
+        annotation = {
+            "primary_genre": "melodic_edm",
+            "moods": ["uplifting", "adventurous", "energetic"],
+            "main_instruments": [
+                {"name": "piano", "role": "main_melody"},
+                {"name": "synth_pluck", "role": "chordal_texture"},
+                {"name": "electronic_drums", "role": "drums"},
+            ],
+            "melody": {"description": "A short repeated mid-register motif develops through altered endings"},
+            "arrangement": {
+                "intro": "soft piano introduces the motif",
+                "buildup": "layered plucks increase the energy",
+                "drop": "a bright synth hook leads the drop",
+            },
+            "production": {"bass": "Clean sub bass supports the harmony"},
+        }
+        caption = compile_canonical_caption(annotation)
+        self.assertTrue(caption.startswith("Instrumental"))
+        self.assertGreaterEqual(len(caption.split()), 40)
+        self.assertLessEqual(len(caption.split()), 80)
 
     def test_mir_validator_requires_exact_record_coverage(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

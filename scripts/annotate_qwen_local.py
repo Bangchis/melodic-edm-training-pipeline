@@ -18,11 +18,89 @@ from annotate_openrouter import (
     read_jsonl,
     sanitize_annotation,
     validate_annotation,
+    word_count,
     write_manual_review,
 )
 
 
 MODEL_ID = "Qwen/Qwen2.5-Omni-7B"
+
+
+def _sentence(value: str) -> str:
+    text = " ".join(str(value).strip().split()).strip(" .")
+    if not text:
+        return ""
+    return text[0].upper() + text[1:] + "."
+
+
+def compile_canonical_caption(annotation: dict[str, Any]) -> str:
+    """Compile a 40-80 word caption using only master-annotation evidence."""
+    genre_key = str(annotation.get("primary_genre", "melodic_edm"))
+    genre = {
+        "melodic_edm": "melodic EDM",
+        "progressive_house": "progressive house",
+        "electro_house": "electro house",
+        "glitch_hop": "glitch hop",
+        "future_bass": "future bass",
+        "drumstep": "drumstep",
+        "cinematic_electronic": "cinematic electronic music",
+    }.get(genre_key, genre_key.replace("_", " "))
+    moods = [str(value).replace("_", " ") for value in annotation.get("moods", [])[:4]]
+    mood_text = ", ".join(moods[:-1]) + (" and " + moods[-1] if len(moods) > 1 else (moods[0] if moods else ""))
+    base = f"Instrumental {genre}" + (f" with an {mood_text} mood." if mood_text else ".")
+
+    instruments = []
+    role_phrases = {
+        "main_melody": "leading the main melody",
+        "main_hook": "carrying the main hook",
+        "counter_melody": "adding a countermelody",
+        "call_and_response": "providing call-and-response phrases",
+        "melody_doubling": "doubling the melody",
+        "chordal_texture": "shaping the chord texture",
+        "rhythmic_texture": "adding rhythmic texture",
+        "bass": "supporting the bass",
+        "drums": "driving the rhythm",
+        "accents": "adding accents",
+        "atmosphere": "creating atmosphere",
+    }
+    for item in annotation.get("main_instruments", [])[:5]:
+        name = str(item.get("name", "")).replace("_", " ")
+        role_key = str(item.get("role", ""))
+        role = role_phrases.get(role_key, role_key.replace("_", " "))
+        if name and name != "unknown":
+            instruments.append(f"{name} {role}" if role else name)
+    candidates = []
+    if instruments:
+        candidates.append(_sentence("The instrumentation uses " + ", ".join(instruments)))
+    melody = annotation.get("melody") or {}
+    if melody.get("description"):
+        candidates.append(_sentence(str(melody["description"])))
+    arrangement = annotation.get("arrangement") or {}
+    for key in ("intro", "drop", "final_drop", "buildup"):
+        if arrangement.get(key):
+            candidates.append(_sentence(str(arrangement[key])))
+    production = annotation.get("production") or {}
+    for key in ("bass", "chords", "drums", "space"):
+        if production.get(key):
+            candidates.append(_sentence(str(production[key])))
+
+    result = base
+    for candidate in candidates:
+        if not candidate:
+            continue
+        proposed = result + " " + candidate
+        if word_count(proposed) <= 80:
+            result = proposed
+        if word_count(result) >= 68:
+            break
+    # Continue filling to the hard minimum if earlier clauses were unusually short.
+    if word_count(result) < 40:
+        for candidate in candidates:
+            if candidate and candidate not in result and word_count(result + " " + candidate) <= 80:
+                result += " " + candidate
+            if word_count(result) >= 40:
+                break
+    return result
 
 
 def build_prompt(
@@ -54,7 +132,7 @@ def build_prompt(
         "Describe only audible, stable musical evidence. Treat the track as instrumental: permitted vocal chops are "
         "production texture, never lyrics. Use only taxonomy values for categorical fields. Do not guess a traditional "
         "instrument when uncertain; use unknown. The canonical caption must be English, start with 'Instrumental', contain "
-        "40-80 words, and keep only the most important genre, mood, melody, arrangement, instrumentation and production "
+        "50-65 words (count the words before returning), and keep the most important genre, mood, melody, arrangement, instrumentation and production "
         "facts. Never put artist/channel/title names, BPM, key, time signature, hype, quality claims, or 'in the style of' "
         "language in any caption. Return exactly four caption variants with unique types: full, composition, production, "
         "and tags. The full variant text must exactly equal canonical_caption. Return one distinct section caption for every "
@@ -151,6 +229,39 @@ def main() -> int:
     source = [row for row in read_jsonl(root / args.manifest) if row.get("quality_status") == "accepted"]
     state_path = root / "data" / "annotation_manifest.jsonl"
     by_id = {row["sample_id"]: row for row in read_jsonl(state_path)}
+    reconciled = False
+    for row in source:
+        sid = row["sample_id"]
+        record = by_id.get(sid)
+        if not record or not str(record.get("annotation_model", "")).startswith(MODEL_ID + "@"):
+            continue
+        actions = record.get("annotation_sanitization") or []
+        was_compiled = any(action.get("action") == "compiled_canonical_caption_from_master_fields" for action in actions)
+        if not was_compiled or record.get("annotation_caption_compiler_version") == 2:
+            continue
+        annotation = record.get("annotation") or {}
+        previous = str(annotation.get("canonical_caption", ""))
+        compiled = compile_canonical_caption(annotation)
+        annotation["canonical_caption"] = compiled
+        for variant in annotation.get("caption_variants", []):
+            if variant.get("type") == "full":
+                variant["text"] = compiled
+        mir = json.loads((root / "data" / "mir" / f"{sid}.json").read_text(encoding="utf-8"))
+        errors = validate_annotation(annotation, row, taxonomy, mir)
+        if errors:
+            raise RuntimeError(f"caption compiler reconciliation failed for {sid}: {errors}")
+        record["annotation"] = annotation
+        record["annotation_caption_compiler_version"] = 2
+        record["annotation_sanitization"] = actions + [{
+            "action": "recompiled_canonical_caption_v2",
+            "previous_word_count": word_count(previous),
+            "compiled_word_count": word_count(compiled),
+        }]
+        by_id[sid] = record
+        atomic_json(root / "data" / "annotations" / f"{sid}.json", record)
+        reconciled = True
+    if reconciled:
+        atomic_jsonl(state_path, sorted(by_id.values(), key=lambda item: item["sample_id"]))
     pending = [row for row in source if by_id.get(row["sample_id"], {}).get("annotation_status") != "accepted"]
     if args.limit is not None:
         pending = pending[:max(0, args.limit)]
@@ -175,13 +286,40 @@ def main() -> int:
             request_row = {**row, "annotation_window_start": start, "annotation_window_end": end}
             preview = root / "data" / "training_preview" / f"{sid}_{int(start * 1000)}_{int(end * 1000)}.mp3"
             ensure_preview(Path(row["training_audio_path"]), preview, start, end)
-            result = generate_annotation(model, processor, preview, build_prompt(request_row, mir, taxonomy, schema), args.max_new_tokens)
-            sanitization = sanitize_annotation(result)
-            errors = validate_annotation(result, row, taxonomy, mir)
-            if float(result.get("annotation_confidence", 0)) < 0.70:
-                errors.append("low_confidence")
-            if errors:
-                last_error = "validation:" + ",".join(sorted(set(errors)))
+            base_prompt = build_prompt(request_row, mir, taxonomy, schema)
+            correction = ""
+            for attempt in range(2):
+                result = generate_annotation(
+                    model, processor, preview, base_prompt + correction, args.max_new_tokens
+                )
+                sanitization = sanitize_annotation(result)
+                errors = validate_annotation(result, row, taxonomy, mir)
+                if float(result.get("annotation_confidence", 0)) < 0.70:
+                    errors.append("low_confidence")
+                errors = sorted(set(errors))
+                if len(errors) == 1 and errors[0].startswith("canonical_caption_word_count:"):
+                    previous = str(result.get("canonical_caption", ""))
+                    compiled = compile_canonical_caption(result)
+                    result["canonical_caption"] = compiled
+                    for variant in result.get("caption_variants", []):
+                        if variant.get("type") == "full":
+                            variant["text"] = compiled
+                    sanitization.append({
+                        "action": "compiled_canonical_caption_from_master_fields",
+                        "previous_word_count": word_count(previous),
+                        "compiled_word_count": word_count(compiled),
+                    })
+                    errors = validate_annotation(result, row, taxonomy, mir)
+                if not errors:
+                    break
+                last_error = "validation:" + ",".join(errors)
+                correction = (
+                    "\nYour previous JSON failed these deterministic validator checks: "
+                    + json.dumps(errors, ensure_ascii=False)
+                    + ". Return a corrected complete JSON object. In particular, canonical_caption and the identical full "
+                    "variant must contain 50-65 English words while remaining grounded in the audio. Previous JSON: "
+                    + json.dumps(result, ensure_ascii=False)
+                )
         except Exception as exc:
             last_error = f"{type(exc).__name__}:{exc}"
 
@@ -198,6 +336,8 @@ def main() -> int:
             "annotation_error": None if accepted else last_error,
             "annotated_at": datetime.now(timezone.utc).isoformat(),
         }
+        if any(action.get("action") == "compiled_canonical_caption_from_master_fields" for action in sanitization):
+            record["annotation_caption_compiler_version"] = 2
         if result is not None:
             record["annotation"] = result
         by_id[sid] = record
