@@ -39,6 +39,8 @@ The five persistent-vocal rejects are:
 - Provider mix: 175 Gemini annotations and 56 pinned local Qwen2.5-Omni annotations.
   Three malformed-schema cases passed after a supervised 90-second representative
   audio-window retry; all other local windows used up to 240 seconds.
+- MOSS-Music was not used, is not loaded, and is not part of ACE-Step training or
+  the planned release.
 - Every record has exactly four variants (`full`, `composition`, `production`,
   `tags`). The full variant exactly equals its canonical caption.
 - Final canonical captions range from 43 to 76 words (mean 59.06).
@@ -53,16 +55,20 @@ The five persistent-vocal rejects are:
 `edm-train-main` is running the single fixed two-GPU LoRA configuration. The
 one-epoch DDP smoke gate passed before main training was allowed to start.
 
-The latest verified resumable main checkpoint is epoch 20 / global step 260:
+The latest verified resumable main checkpoint is epoch 45 / global step 585:
 
-- Train loss: 0.7581 (down from 1.4926 at epoch 1).
-- Validation loss: 0.7086, current best at epoch 20; the early-stopping counter
+- Train loss: 0.7085 (down from 1.4926 at epoch 1).
+- Validation loss: 0.6984, current best at epoch 45; the early-stopping counter
   reset to zero at this checkpoint.
 - Training state contains optimizer and scheduler state.
 - Both the epoch and `best_val` adapters contain 512/512 finite, nonzero tensors.
-- Main output size was 1.2 GiB and the instance had about 220 GiB free.
+- Main output size was 2.4 GiB and the instance had about 219 GiB free.
 - A fresh private metadata backup completed with 1,200 files and zero secret
   findings; audio, tensors, model checkpoints and tokens were excluded.
+- A 252 MB resumable epoch-45 checkpoint was also uploaded to the private dataset
+  `Bangchis/melodic-edm-training-resume` at commit `5566dd2`; it contains the LoRA,
+  optimizer/scheduler state and safety metadata, with zero secret findings and no
+  audio or preprocessed tensors.
 
 Dataset construction and preprocessing are complete:
 
@@ -88,7 +94,7 @@ at major gates before later destructive instance actions.
   `6d467e4b5081ccb0abf1ec1bf4fdf9051a2d34b0`.
 - XL-Base, VAE, Qwen embedding checkpoints and the pinned Qwen2.5-Omni annotator are
   downloaded on the server only.
-- Focused pipeline tests: 24 passed locally and on Vast. Full ACE-Step training-v2
+- Focused pipeline tests: 26 passed on Vast. Full ACE-Step training-v2
   tests: 37 passed.
 - The fixed training config is XL-Base LoRA rank 32 / alpha 64 / dropout 0.1,
   learning rate 1e-4, effective batch 16, CFG dropout 0.15 and two-GPU DDP.
