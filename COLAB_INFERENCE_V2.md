@@ -44,7 +44,7 @@ XL-Base revision: 220c1166efbdd9583eafcb12eb160594bbfcb241
 V2 adapter repo: Bangchis/melodic-edm-core-v2
 ```
 
-The release download should use the immutable Hugging Face commit SHA recorded in its upload report, not a moving `main` branch.
+At the beginning of one Colab run, the notebook resolves the model repository's current head to its immutable Hugging Face commit SHA, prints that SHA and uses it for the entire download. It never passes the moving `main` name to `snapshot_download`. Record the printed SHA with any generated example that must be reproduced later.
 
 ## Notebook flow
 
@@ -55,7 +55,7 @@ Use `notebooks/melodic_edm_core_v2_colab.ipynb`. It performs these gates in orde
 3. Clone ACE-Step at the pinned source revision.
 4. Install the official environment with `uv sync`.
 5. Download the core ACE-Step checkpoints and pinned XL-Base weights.
-6. Download the private V2 release at an immutable commit.
+6. Resolve the private V2 release to one immutable commit and download exactly that revision.
 7. Verify every release file with `SHA256SUMS`.
 8. Load either `final-all-data` or `best-val`.
 9. Generate deterministic 48 kHz stereo WAV using an explicit caption.
