@@ -1,0 +1,149 @@
+diff --git a/acestep/training_v2/accumulation.py b/acestep/training_v2/accumulation.py
+new file mode 100644
+index 0000000..e1c4191
+--- /dev/null
++++ b/acestep/training_v2/accumulation.py
+@@ -0,0 +1,46 @@
++"""Exact DDP gradient-accumulation semantics for partial epoch tails."""
++
++from __future__ import annotations
++
++from collections.abc import Iterable
++
++import torch
++
++
++def should_sync_gradient(
++    accumulation_step: int,
++    gradient_accumulation_steps: int,
++    batch_index: int,
++    loader_length: int,
++) -> bool:
++    """Sync on a full accumulation boundary or the final batch of an epoch."""
++    if gradient_accumulation_steps <= 0:
++        raise ValueError("gradient_accumulation_steps must be positive")
++    if loader_length <= 0:
++        raise ValueError("loader_length must be positive")
++    return (
++        accumulation_step + 1 >= gradient_accumulation_steps
++        or batch_index + 1 >= loader_length
++    )
++
++
++def rescale_remainder_gradients(
++    parameters: Iterable[torch.nn.Parameter],
++    accumulation_step: int,
++    gradient_accumulation_steps: int,
++) -> float:
++    """Restore average-gradient magnitude for a partial accumulation tail.
++
++    Every microbatch loss is divided by the configured accumulation target.
++    A tail with fewer microbatches therefore needs ``target / observed``
++    scaling before clipping and the optimizer step.
++    """
++    if not 0 < accumulation_step <= gradient_accumulation_steps:
++        raise ValueError("accumulation_step must be in [1, gradient_accumulation_steps]")
++    scale = gradient_accumulation_steps / accumulation_step
++    if scale == 1.0:
++        return scale
++    for parameter in parameters:
++        if parameter.grad is not None:
++            parameter.grad.mul_(scale)
++    return scale
+diff --git a/acestep/training_v2/accumulation_test.py b/acestep/training_v2/accumulation_test.py
+new file mode 100644
+index 0000000..f348b13
+--- /dev/null
++++ b/acestep/training_v2/accumulation_test.py
+@@ -0,0 +1,37 @@
++"""Regression tests for DDP accumulation tails."""
++
++from __future__ import annotations
++
++import unittest
++
++import torch
++
++from acestep.training_v2.accumulation import (
++    rescale_remainder_gradients,
++    should_sync_gradient,
++)
++
++
++class DDPAccumulationTailTest(unittest.TestCase):
++    def test_final_partial_batch_forces_ddp_sync(self) -> None:
++        self.assertFalse(should_sync_gradient(2, 8, 90, 92))
++        self.assertTrue(should_sync_gradient(3, 8, 91, 92))
++        self.assertTrue(should_sync_gradient(7, 8, 39, 92))
++
++    def test_four_of_eight_tail_restores_average_gradient_scale(self) -> None:
++        parameter = torch.nn.Parameter(torch.ones(1))
++        parameter.grad = torch.tensor([0.5])
++        scale = rescale_remainder_gradients([parameter], 4, 8)
++        self.assertEqual(2.0, scale)
++        self.assertTrue(torch.equal(parameter.grad, torch.tensor([1.0])))
++
++    def test_full_accumulation_does_not_rescale(self) -> None:
++        parameter = torch.nn.Parameter(torch.ones(1))
++        parameter.grad = torch.tensor([0.5])
++        scale = rescale_remainder_gradients([parameter], 8, 8)
++        self.assertEqual(1.0, scale)
++        self.assertTrue(torch.equal(parameter.grad, torch.tensor([0.5])))
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/acestep/training_v2/trainer_fixed.py b/acestep/training_v2/trainer_fixed.py
+index 0eb5847..2033a1f 100644
+--- a/acestep/training_v2/trainer_fixed.py
++++ b/acestep/training_v2/trainer_fixed.py
+@@ -34,6 +34,10 @@ from acestep.training_v2.tensorboard_utils import TrainingLogger
+ from acestep.training_v2.ui import TrainingUpdate
+ from acestep.training_v2.metrics_history import append_metric
+ from acestep.training_v2.prompt_tracking import count_selected_variants, save_prompt_counts
++from acestep.training_v2.accumulation import (
++    rescale_remainder_gradients,
++    should_sync_gradient,
++)
+ 
+ # Split-out modules
+ from acestep.training_v2.fixed_lora_module import (
+@@ -316,7 +320,11 @@ class FixedLoRATrainer:
+         train_loader = self.fabric.setup_dataloaders(train_loader)
+         val_loader = data_module.val_dataloader()
+         if val_loader is not None:
+-            val_loader = self.fabric.setup_dataloaders(val_loader)
++            # Both ranks evaluate all 33 deterministic validation records.
++            # This avoids DistributedSampler padding one duplicate record.
++            val_loader = self.fabric.setup_dataloaders(
++                val_loader, use_distributed_sampler=False
++            )
+ 
+         # -- Trainable params / optimizer -----------------------------------
+         trainable_params = [p for p in self.module.model.parameters() if p.requires_grad]
+@@ -428,7 +435,12 @@ class FixedLoRATrainer:
+                 # intermediate steps for better performance.  Both forward
+                 # and backward must run inside the context so DDP hooks are
+                 # correctly suppressed.
+-                is_last_accum = (accumulation_step + 1) >= cfg.gradient_accumulation_steps
++                is_last_accum = should_sync_gradient(
++                    accumulation_step,
++                    cfg.gradient_accumulation_steps,
++                    _batch_idx,
++                    len(train_loader),
++                )
+                 if world_size > 1 and not is_last_accum:
+                     with self.fabric.no_backward_sync(self.module.model.decoder):
+                         loss = self.module.training_step(batch)
+@@ -524,6 +536,11 @@ class FixedLoRATrainer:
+ 
+             # Flush remainder
+             if accumulation_step > 0 and not reached_step_limit:
++                rescale_remainder_gradients(
++                    trainable_params,
++                    accumulation_step,
++                    cfg.gradient_accumulation_steps,
++                )
+                 self.fabric.clip_gradients(
+                     self.module.model.decoder, optimizer, max_norm=cfg.max_grad_norm,
+                 )

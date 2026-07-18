@@ -285,6 +285,17 @@ def main() -> int:
         root / "data_v2" / "annotation_fidelity_audit.json",
         "stratified-annotation-fidelity",
     )
+    runtime_audit_gate = root / "data_v2" / "trainer_runtime_audit.json"
+    subprocess.run(
+        [
+            str(root / "vendor" / "ACE-Step-1.5-v2" / ".venv" / "bin" / "python"),
+            str(root / "scripts" / "audit_v2_trainer_runtime.py"),
+            "--project-root", str(root),
+            "--vendor-root", str(root / "vendor" / "ACE-Step-1.5-v2"),
+        ],
+        check=False,
+    )
+    require_json_pass(runtime_audit_gate, "two-gpu-trainer-runtime")
     run_stage(
         "edm-v2-evaluate-baseline",
         root / "outputs" / "v2" / "baseline-xl-base" / "generation_report.json",

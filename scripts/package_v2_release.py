@@ -172,6 +172,9 @@ def main() -> int:
         (root / "scripts" / "download_and_infer_v2.py", release / "scripts" / "download_and_infer_v2.py"),
         (root / "scripts" / "prompt_enhancer.py", release / "scripts" / "prompt_enhancer.py"),
         (root / "scripts" / "enhance_prompt_openrouter.py", release / "scripts" / "enhance_prompt_openrouter.py"),
+        (root / "data_v2" / "trainer_runtime_audit.json", release / "reports" / "trainer_runtime_audit.json"),
+        (root / "patches" / "acestep-xl-validation-caption-variants.patch", release / "patches" / "acestep-xl-validation-caption-variants.patch"),
+        (root / "patches" / "acestep-ddp-remainder-validation.patch", release / "patches" / "acestep-ddp-remainder-validation.patch"),
     ):
         copy_file(source, destination)
     apply_recommended_lora_scale(release, float(selection["selected_lora_scale"]))

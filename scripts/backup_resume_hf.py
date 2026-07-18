@@ -96,6 +96,7 @@ def main() -> int:
         "reports/validation_state.json": output / "validation_state.json",
         "configs/train_lora_2x4090.json": root / "configs" / "train_lora_2x4090.json",
         "patches/acestep-xl-validation-caption-variants.patch": root / "patches" / "acestep-xl-validation-caption-variants.patch",
+        "patches/acestep-ddp-remainder-validation.patch": root / "patches" / "acestep-ddp-remainder-validation.patch",
     }
     if final_gate:
         sources.update({

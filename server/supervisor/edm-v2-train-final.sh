@@ -10,6 +10,8 @@ project=/workspace/melodic_edm_training_pipeline
 ace="$project/vendor/ACE-Step-1.5-v2"
 export PYTHONPATH="$ace${PYTHONPATH:+:$PYTHONPATH}"
 output="$project/outputs/v2/final-all-data"
+"$ace/.venv/bin/python" -u "$project/scripts/audit_v2_trainer_runtime.py" \
+  --project-root "$project" --vendor-root "$ace"
 if [ -e "$output/final" ] || [ -e "$output/checkpoints" ]; then
   echo "Refusing to overwrite or resume the final-all-data run" >&2
   exit 1

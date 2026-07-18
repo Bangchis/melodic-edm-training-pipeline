@@ -32,6 +32,8 @@ def main() -> int:
         (root / "outputs" / "v2" / "final_plan.json", "completion/final_plan.json"),
         (root / "outputs" / "v2" / "final-all-data" / "final_validation_report.json", "completion/final_validation_report.json"),
         (root / "outputs" / "v2" / "final-all-data" / "evaluation" / "generation_report.json", "completion/final_generation_report.json"),
+        (root / "data_v2" / "trainer_runtime_audit.json", "completion/trainer_runtime_audit.json"),
+        (root / "patches" / "acestep-ddp-remainder-validation.patch", "completion/acestep-ddp-remainder-validation.patch"),
     )
     token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
     if not token:

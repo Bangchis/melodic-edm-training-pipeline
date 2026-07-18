@@ -167,6 +167,23 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn('"caption_variant_types": list(CAPTION_TYPES)', builder)
         self.assertIn('"prompt_embeddings_per_record": 3', validator)
 
+    def test_two_gpu_runtime_audit_blocks_unpatched_training(self) -> None:
+        audit = (SCRIPTS / "audit_v2_trainer_runtime.py").read_text(encoding="utf-8")
+        for marker in (
+            "should_sync_gradient(",
+            "rescale_remainder_gradients(",
+            "use_distributed_sampler=False",
+            '"tail_microbatches": tail_microbatches',
+        ):
+            self.assertIn(marker, audit)
+        for name in ("smoke", "main", "final"):
+            launcher = (
+                SCRIPTS.parent / "server" / "supervisor" / f"edm-v2-train-{name}.sh"
+            ).read_text(encoding="utf-8")
+            self.assertIn("audit_v2_trainer_runtime.py", launcher)
+        objective = (SCRIPTS / "audit_v2_objective.py").read_text(encoding="utf-8")
+        self.assertIn("ddp_remainder_runtime_proof_invalid", objective)
+
     def test_robust_eval_prompts_match_training_form_density(self) -> None:
         config = json.loads(
             (SCRIPTS.parent / "configs" / "v2" / "robust_eval_prompts.json").read_text(
@@ -602,6 +619,15 @@ class V2PipelineTest(unittest.TestCase):
             ).read_text(encoding="utf-8")
             self.assertIn("--ready-only", launcher)
             self.assertIn("--attempts 5", launcher)
+
+    def test_ddp_remainder_and_exact_validation_patch_is_required(self) -> None:
+        patch = (
+            SCRIPTS.parent / "patches" / "acestep-ddp-remainder-validation.patch"
+        ).read_text(encoding="utf-8")
+        self.assertIn("should_sync_gradient", patch)
+        self.assertIn("rescale_remainder_gradients", patch)
+        self.assertIn("use_distributed_sampler=False", patch)
+        self.assertIn("test_final_partial_batch_forces_ddp_sync", patch)
 
     def test_caption_compiler_cannot_introduce_unverified_exact_instrument(self) -> None:
         decisions = [{

@@ -50,6 +50,7 @@ def main() -> int:
         "data_v2/claim_consensus_report.json",
         "data_v2/caption_repair_report.json",
         "data_v2/downstream_reset_report.json",
+        "data_v2/trainer_runtime_audit.json",
         "outputs/v2/baseline-xl-base/generation_report.json",
         "outputs/v2/baseline-xl-base/listening_scores.json",
         "outputs/v2/baseline-xl-base/listening_quality_report.json",
@@ -167,6 +168,20 @@ def main() -> int:
     reset = reports["data_v2/downstream_reset_report.json"]
     if reset.get("fresh_rank32_outputs_required") is not True:
         errors.append("stale_pre_audio_blind_training_outputs_not_reset")
+    trainer_runtime = reports["data_v2/trainer_runtime_audit.json"]
+    if (
+        trainer_runtime.get("per_rank_microbatches"),
+        trainer_runtime.get("tail_microbatches"),
+        trainer_runtime.get("validation_sampler"),
+    ) != (92, 4, "full_33_records_on_each_rank_without_padding"):
+        errors.append("two_gpu_trainer_runtime_semantics_invalid")
+    helper_checks = trainer_runtime.get("helper_checks", {})
+    if (
+        helper_checks.get("final_tail_forces_sync") is not True
+        or helper_checks.get("pre_final_tail_suppresses_sync") is not True
+        or helper_checks.get("remainder_gradient_scale") != 2.0
+    ):
+        errors.append("ddp_remainder_runtime_proof_invalid")
     tensors = reports["data_v2/tensor_validation_report.json"]
     dataset_build = reports["data_v2/dataset_build_report.json"]
     if (tensors.get("train_tensors"), tensors.get("validation_tensors"), tensors.get("all_tensors")) != (196, 35, 231):
