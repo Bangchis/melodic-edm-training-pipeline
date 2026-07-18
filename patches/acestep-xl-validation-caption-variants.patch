@@ -682,6 +682,13 @@ index 9de3c55..023e167 100644
              # Clear CUDA cache AFTER checkpoint save so serialization
              # temporaries are also freed.
              if torch.cuda.is_available():
+@@ -563,5 +646,5 @@ class FixedLoRATrainer:
+                     f"[OK] Training complete! {adapter_label} saved to {final_path}\n"
+                     f"     For inference, set your LoRA path to: {final_path}"
+                 ),
+-                kind="complete",
++                kind="complete", epoch=epoch + 1, max_epochs=cfg.max_epochs,
+             )
 diff --git a/acestep/training_v2/validation_loop.py b/acestep/training_v2/validation_loop.py
 new file mode 100644
 index 0000000..ba48991
@@ -813,3 +820,93 @@ index 0000000..47ca9c1
 +
 +if __name__ == "__main__":
 +    unittest.main()
+diff --git a/acestep/training_v2/cli/train_fixed.py b/acestep/training_v2/cli/train_fixed.py
+index 252135e..5a15cbf 100644
+--- a/acestep/training_v2/cli/train_fixed.py
++++ b/acestep/training_v2/cli/train_fixed.py
+@@ -110,12 +110,13 @@ def run_fixed(args: argparse.Namespace) -> int:
+                 device=train_cfg.device,
+             )
+ 
+-            # -- Summary ------------------------------------------------------
+-            show_summary(
+-                stats=stats,
+-                output_dir=train_cfg.output_dir,
+-                log_dir=str(train_cfg.effective_log_dir),
+-            )
++            # -- Summary (rank zero only under DDP) ---------------------------
++            if getattr(getattr(trainer, "fabric", None), "global_rank", 0) == 0:
++                show_summary(
++                    stats=stats,
++                    output_dir=train_cfg.output_dir,
++                    log_dir=str(train_cfg.effective_log_dir),
++                )
+         except KeyboardInterrupt:
+             show_info("Training interrupted by user (Ctrl+C)")
+             return 130
+diff --git a/acestep/training_v2/trainer_helpers.py b/acestep/training_v2/trainer_helpers.py
+index b5de03d..eb5ed5e 100644
+--- a/acestep/training_v2/trainer_helpers.py
++++ b/acestep/training_v2/trainer_helpers.py
+@@ -247,12 +247,21 @@ def verify_saved_adapter(output_dir: str) -> None:
+     a warning if the weights appear to be all zeros (which would mean
+     the LoRA has no effect during inference).
+     """
+-    safetensors_path = os.path.join(output_dir, "adapter_model.safetensors")
+-    config_path = os.path.join(output_dir, "adapter_config.json")
++    # PEFT stores a non-default named adapter one level below output_dir.
++    # Accept both its named layout and the legacy flat layout.
++    adapter_dir = output_dir
++    nested_dir = os.path.join(output_dir, "adapter")
++    if (
++        not os.path.exists(os.path.join(adapter_dir, "adapter_model.safetensors"))
++        and os.path.isdir(nested_dir)
++    ):
++        adapter_dir = nested_dir
++    safetensors_path = os.path.join(adapter_dir, "adapter_model.safetensors")
++    config_path = os.path.join(adapter_dir, "adapter_config.json")
+ 
+     # LoKR uses a different file name
+     if not os.path.exists(safetensors_path):
+-        lokr_path = os.path.join(output_dir, "lokr_weights.safetensors")
++        lokr_path = os.path.join(adapter_dir, "lokr_weights.safetensors")
+         if os.path.exists(lokr_path):
+             logger.info("[OK] LoKR weights saved: %s", lokr_path)
+             return
+diff --git a/acestep/training_v2/trainer_helpers_test.py b/acestep/training_v2/trainer_helpers_test.py
+index b8e850b..4640ce3 100644
+--- a/acestep/training_v2/trainer_helpers_test.py
++++ b/acestep/training_v2/trainer_helpers_test.py
+@@ -5,9 +5,13 @@ The save_adapter_flat function only needs attribute-level duck-typing, so
+ plain MagicMock objects work as stand-ins for nn.Module subclasses.
+ """
+ 
++import tempfile
+ import unittest
++from pathlib import Path
+ from unittest.mock import MagicMock, patch
+ 
++import torch
++
+ 
+ def _make_fabric_wrapper(inner: MagicMock) -> MagicMock:
+     """Return a mock that looks like a Fabric _FabricModule wrapping *inner*."""
+@@ -69,6 +73,18 @@ class TestSaveAdapterFlatLora(unittest.TestCase):
+         # The full model's save_pretrained must NOT have been called.
+         trainer.module.model.save_pretrained.assert_not_called()
+ 
++    def test_verify_accepts_named_peft_adapter_subdirectory(self):
++        """PEFT may place a non-default adapter in output_dir/adapter."""
++        from acestep.training_v2.trainer_helpers import verify_saved_adapter
++
++        with tempfile.TemporaryDirectory() as tmp:
++            adapter = Path(tmp) / "adapter"
++            adapter.mkdir()
++            (adapter / "adapter_model.safetensors").touch()
++            (adapter / "adapter_config.json").write_text("{}", encoding="utf-8")
++            with patch("safetensors.torch.load_file", return_value={"weight": torch.ones(2)}):
++                verify_saved_adapter(tmp)
++
+     def test_unwraps_fabric_wrapper_before_saving(self):
+         """When Fabric wraps the decoder, save_pretrained is still called on the PeftModel."""
+         peft_decoder = _make_peft_decoder()

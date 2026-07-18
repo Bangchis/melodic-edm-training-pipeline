@@ -3,7 +3,8 @@
 Server pipeline from downloaded YouTube audio to an ACE-Step 1.5 LoRA.
 
 Current working state is tracked in [`STATUS.md`](STATUS.md). The executable order,
-resume rules and verification gates are in [`RUNBOOK.md`](RUNBOOK.md).
+resume rules and verification gates are in [`RUNBOOK.md`](RUNBOOK.md). Exact tested
+server package versions are in [`ENVIRONMENT.md`](ENVIRONMENT.md).
 
 ## Dataset policy
 

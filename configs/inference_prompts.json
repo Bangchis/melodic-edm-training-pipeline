@@ -1,0 +1,29 @@
+[
+  {
+    "id": "chinese_fantasy_drop",
+    "caption": "Instrumental Chinese melodic EDM with an uplifting adventurous mood. A memorable two-bar minor-pentatonic pipa hook is answered by airy dizi phrases and doubled by a bright synth pluck. The arrangement rises from an atmospheric intro into an energetic four-on-the-floor drop with wide supersaw chords, clean sub bass, punchy drums and spacious fantasy reverb.",
+    "bpm": 128,
+    "keyscale": "F# minor",
+    "timesignature": "4",
+    "duration": 30,
+    "seed": 424201
+  },
+  {
+    "id": "gaming_melodic_anthem",
+    "caption": "Instrumental gaming melodic EDM with a heroic, playful mood. A short bright synth-pluck motif repeats with altered endings over crisp arpeggios and cinematic accents. A compact build opens into a driving melodic drop with wide layered chords, tight four-on-the-floor drums, clear sub bass and a soaring countermelody in the final phrase.",
+    "bpm": 132,
+    "keyscale": "D minor",
+    "timesignature": "4",
+    "duration": 30,
+    "seed": 424202
+  },
+  {
+    "id": "dreamy_future_bass",
+    "caption": "Instrumental dreamy melodic future-bass EDM with a hopeful, emotional mood. A gentle two-bar bell and synth motif develops through call-and-response phrases above warm pads and soft piano colors. The break swells into a luminous drop with expressive chord pulses, rounded sub bass, detailed electronic drums and a clear lifted final melody.",
+    "bpm": 150,
+    "keyscale": "A major",
+    "timesignature": "4",
+    "duration": 30,
+    "seed": 424203
+  }
+]

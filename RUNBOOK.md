@@ -57,6 +57,16 @@ starts appearing. A running Demucs child with GPU utilization is valid progress.
 Do not start annotation until there is one valid MIR JSON for every accepted row in
 `data/training_audio_manifest.jsonl`.
 
+Run the exact-coverage validator before annotation:
+
+```bash
+python3 scripts/validate_mir.py --project-root "$PWD"
+```
+
+It must report `status=pass`, `expected_records=231`, `mir_files=231` and
+`validated_records=231`. Low-confidence key or time-signature omissions are warnings;
+missing/invalid BPM, beats, downbeats or sections are hard errors.
+
 Annotation uses one master annotation plus exactly four prompt variants (`full`,
 `composition`, `production`, `tags`) for each record. The full variant equals the
 40–80 word canonical caption. BPM, key, time signature and artist names are excluded
@@ -68,8 +78,33 @@ python3 scripts/annotate_openrouter.py \
   --project-root "$PWD" --env-file /workspace/.env
 ```
 
+On a fresh provider/model combination, first run the Supervisor
+`edm-annotate-smoke` job. It annotates exactly one record through the same state file;
+verify the schema/caption gate, then start `edm-annotate`, which resumes with the
+remaining records.
+
+If the primary route returns a non-retryable payment error, stop it rather than
+marking the rest of the catalog as content failures. OpenRouter currently requires
+a minimum paid balance even for free audio routes. If that blocks audio,
+`edm-setup-qwen-annotator` downloads the official
+`Qwen/Qwen2.5-Omni-7B` at a recorded immutable revision on Vast. Run
+`edm-annotate-qwen-smoke` for exactly one pending record and inspect the same strict
+validator result before starting `edm-annotate-qwen`. The local path has zero API
+cost and does not upload training audio to another annotation provider.
+
+If a long audio window repeatedly causes malformed schema output, use the separate
+Supervisor job `edm-annotate-qwen-fallback`. It keeps the same model, taxonomy and
+hard validator but uses a representative 90-second window selected from the MIR
+structure. Do not weaken the validator or overwrite accepted records to make a
+fallback pass.
+
 Only records with confidence at least 0.70 and a schema-valid annotation pass. Retry
 failures; resolve `data/manual_review.csv` before building the final dataset.
+
+After all records finish, run `scripts/validate_annotations.py`. The gate requires
+exactly 231 accepted files, four distinct variants per record, zero validation
+errors and no unresolved cross-audio identical-caption warning. Distribution
+summaries are written to `data/annotation_validation_report.json`.
 
 ## 4. ACE-Step dataset
 
@@ -84,6 +119,9 @@ that share audio are both retained, but cannot leak across train and validation.
 ```bash
 python3 scripts/build_acestep_dataset.py --project-root "$PWD"
 ```
+
+On Vast, run the equivalent long step through Supervisor as
+`edm-build-dataset`.
 
 Required gate: final triplet count equals accepted annotation count, every FLAC is
 48 kHz stereo and decodes, every JSON has a non-empty caption and four variants, and
@@ -116,13 +154,28 @@ git -C vendor/ACE-Step-1.5 apply \
 The patch adds four-caption sampling within one sample, deterministic validation,
 XL-Base CLI path validation, periodic global DDP validation loss, `best_val` saving
 and early stopping. Its SHA-256 is
-`f6f7e2b1a1aaa49db5573be67862579df2f4c758a973c7cc96c0e24b9ecaf257`.
+`33b862caf23ac348e3808fa8ea7a3b49e59a85fca25f21cc1496c3f5d1235ccd`.
 
 Preprocess train part 0 on GPU 0 and part 1 on GPU 1, then preprocess validation and
-merge with `scripts/merge_tensors.py`. The merged tensor count must equal the final
-manifest count. Run the one-epoch smoke job before the 150-epoch job. Smoke passes
-only when both GPUs work, loss is finite, validation runs, and the saved adapter can
-be loaded again.
+merge with `scripts/merge_tensors.py`. Run `edm-validate-tensors` and require its
+report to pass: exactly 231 readable tensors, four caption encodings per tensor,
+finite values, exact split membership and no train/validation overlap. Run the
+one-epoch smoke job before the 150-epoch job. Smoke passes
+only when both GPUs are observed with allocated model memory, train/validation losses
+are finite, all three adapter saves are readable/nonzero, training state is resumable,
+and the final adapter loads back onto a clean XL-Base decoder. The job writes the
+machine-readable gate `outputs/smoke/smoke_validation_report.json`; the main run
+refuses to start until this report passes.
+
+`merge_tensors.py` keeps one tensor per catalog sample and performs no deduplication.
+It creates convenience symlinks plus `data/tensors_all/manifest.json` containing
+project-relative paths to the two real shards. The training wrappers start ACE-Step
+from the project root, so its path guard permits only project data/output paths while
+still rejecting paths outside the project. ACE-Step saves PEFT files one level below
+each checkpoint (`<checkpoint>/adapter/`); validation, evaluation and packaging use
+that actual adapter directory. The patch also verifies the nested final adapter,
+preserves the completed epoch in the final progress event and suppresses the empty
+rank-one DDP summary so a successful run cannot be mislabeled as “0 steps”.
 
 ## 6. Release and backup
 
@@ -135,9 +188,38 @@ checkpoint. Generate the same fixed prompts for each. Publish the LoRA/config/co
 and permitted examples, never the copyrighted source dataset. Before stopping the
 instance, download the release into a clean directory and produce one valid WAV.
 
+`edm-train-main` resumes automatically from the newest complete epoch checkpoint.
+On success it writes `training_validation_report.json` and selects the three comparison
+adapters. `edm-evaluate-checkpoints` then generates the three prompts in
+`configs/inference_prompts.json` with identical seeds/settings for all adapters,
+for exactly nine validated WAV files.
+
+After evaluation passes, run `edm-package-release`, `edm-upload-model`, and
+`edm-verify-release` in that order. The package defaults to `best_val`, scans every
+release file for secrets, publishes only the adapter/config/code and three generated
+examples to the private model repo `Bangchis/melodic-edm-core-v1`, then redownloads
+it into a clean directory, verifies every packaged file against `SHA256SUMS`, and
+requires one valid 48 kHz stereo WAV.
+
+The release also includes `requirements.txt`, `inference_config.json`, the fixed
+prompt set at both the inference root and `examples/prompts.json`, a direct inference entrypoint, a revision-pinned download-and-infer
+helper and a structured prompt compiler. These are delivery helpers only; they do
+not add more training configurations or alter checkpoint selection.
+
 ## Resume safety
 
 Long server jobs run through Supervisor and write checkpoints/manifests atomically.
 After a reconnect, use `supervisorctl status`, then rerun the current script; completed
 records are skipped. `/workspace` on this instance is not assumed persistent, so the
 release, logs, manifests and training state must be uploaded before instance removal.
+Run `edm-backup-metadata` at major gates to update the private Hugging Face dataset
+`Bangchis/melodic-edm-training-metadata`. The uploader uses an explicit text-file
+allowlist and fails closed if its secret scan finds a token or private key.
+
+After the main training validation gate passes, run `edm-backup-resume`. It uploads
+only the newest complete adapter plus optimizer/scheduler training state, logs,
+configuration and trainer patch to the private dataset
+`Bangchis/melodic-edm-training-resume`. It hashes and secret-scans every selected
+file; audio and preprocessed tensors remain excluded.
+For a safety checkpoint while the main run is still active, invoke the same wrapper
+with `--allow-in-progress`; mutable logs are excluded until the final gated backup.
