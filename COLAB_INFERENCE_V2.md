@@ -61,11 +61,34 @@ Use `notebooks/melodic_edm_core_v2_colab.ipynb`. It performs these gates in orde
 9. Generate deterministic 48 kHz stereo WAV using an explicit caption.
 10. Inspect and play the result inside Colab.
 
-Inference sets `thinking=False`, so the ACE 5 Hz language model is not needed for prompt planning. The explicit training vocabulary is supplied directly through caption, BPM, key, time signature and instrumental section markers.
+Inference first passes structured musical conditions through the included deterministic `prompt_enhancer.py`, producing a 40–80 word caption in the training vocabulary. It then sets `thinking=False`, so the ACE 5 Hz language model is not needed for prompt planning. BPM, key, time signature and instrumental section markers remain explicit separate conditions.
+
+```text
+genre + mood + melody + arrangement + production
+→ deterministic prompt enhancer
+→ 40–80 word training-style caption
++ BPM/key/time signature/sections
+→ ACE-Step XL-Base + selected LoRA
+```
+
+The deterministic enhancer deliberately does not guess missing facts. A free-form LLM enhancer can be added later, but it must output the same five audible fields and pass the same word-count/artist-name gates before inference.
 
 ## Prompt format
 
 Prefer 40–80 audible words. Describe melody, composition and production; keep BPM/key/time signature in their fields. Do not use artist names or vague quality claims.
+
+The notebook accepts these five enhancer inputs:
+
+```python
+music_conditions = {
+    "genre": "Chinese melodic gaming EDM",
+    "mood": "uplifting and adventurous",
+    "melody": "A two-bar minor-pentatonic pipa motif with varied endings and dizi responses",
+    "arrangement": "An atmospheric intro, short build, melodic drop and denser final return",
+    "production": "Wide supersaws, clean sub bass, punchy drums and spacious fantasy reverb",
+}
+caption = compile_caption(music_conditions)
+```
 
 ```python
 caption = (

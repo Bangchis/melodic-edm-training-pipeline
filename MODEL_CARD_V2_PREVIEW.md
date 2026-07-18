@@ -37,5 +37,8 @@ The preview excludes source audio, stems, cached tensors, optimizer states,
 credentials, browser cookies and MOSS reasoning. Use the exact immutable Hugging
 Face revision printed by the Colab notebook and select `best-val` when prompted.
 
+The included notebook compiles structured genre, mood, melody, arrangement and
+production conditions through `scripts/prompt_enhancer.py` before inference.
+
 See `docs/COLAB_INFERENCE_V2.md` for the pinned ACE-Step/XL-Base setup and the
 48 kHz stereo inference checks.
