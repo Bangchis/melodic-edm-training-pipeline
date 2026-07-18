@@ -21,10 +21,13 @@ from v2_common import atomic_json, extract_json_object, file_sha256, object_sha2
 
 # Used only to discover free-text claims that are not present in the structured
 # instrument lists. Membership here never means that a claim is rejected.
-FREE_TEXT_INSTRUMENTS = (
+CLAIM_DISCOVERY_TERMS = (
     "pipa", "guzheng", "dizi", "erhu", "piano", "guitar", "bass guitar",
     "strings", "orchestral strings", "brass", "choir", "flute", "violin",
     "cello", "saxophone", "trumpet", "harp", "marimba", "xylophone",
+    "synth lead", "synth pluck", "supersaw", "sub bass", "synth bass",
+    "electronic drums", "drum machine", "vocal chops", "choir texture",
+    "bells", "taiko", "xiao", "acoustic guitar", "electric guitar", "percussion",
 )
 GENERIC_NAMES = {
     "", "unknown", "instrument", "instruments", "traditional instruments",
@@ -58,7 +61,7 @@ def extract_instrument_claims(annotation: dict[str, Any]) -> list[str]:
                 if "/" in str(item.get("name") or ""):
                     candidates.extend(normalize_claim(part) for part in str(item["name"]).split("/"))
                 elif "," in str(item.get("name") or "") or len(claim.split()) > 4:
-                    for term in sorted(FREE_TEXT_INSTRUMENTS, key=len, reverse=True):
+                    for term in sorted(CLAIM_DISCOVERY_TERMS, key=len, reverse=True):
                         if re.search(rf"(?<![a-z]){re.escape(term)}(?![a-z])", claim):
                             candidates.append(term)
                 else:
@@ -70,7 +73,7 @@ def extract_instrument_claims(annotation: dict[str, Any]) -> list[str]:
         for item in captions if isinstance(item, dict)
     ).casefold() if isinstance(captions, list) else ""
     # Prefer the most specific phrase when one term contains another.
-    for term in sorted(FREE_TEXT_INSTRUMENTS, key=len, reverse=True):
+    for term in sorted(CLAIM_DISCOVERY_TERMS, key=len, reverse=True):
         matches = list(re.finditer(rf"(?<![a-z]){re.escape(term)}(?![a-z])", prose))
         if any(not prose[match.end():].startswith("-like") for match in matches):
             candidates.append(term)

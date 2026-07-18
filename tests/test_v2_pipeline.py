@@ -161,6 +161,17 @@ class V2PipelineTest(unittest.TestCase):
         }
         self.assertEqual([], extract_instrument_claims(annotation))
 
+    def test_long_structured_timbre_description_keeps_specific_synth_claim(self) -> None:
+        annotation = {
+            "caption_variants": [],
+            "master_annotation": {
+                "base_annotation": {
+                    "main_instruments": [{"name": "bright, high pitched synth lead"}]
+                }
+            },
+        }
+        self.assertEqual(["synth lead"], extract_instrument_claims(annotation))
+
     def test_claim_review_requires_exact_coverage(self) -> None:
         review, errors = parse_claim_review({"claims": [{
             "claim": "pipa", "verdict": "present", "confidence": 0.9,
