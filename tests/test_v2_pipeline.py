@@ -193,6 +193,11 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn('status": "in_progress"', source)
         self.assertIn(" CACHED", source)
 
+    def test_checkpoint_selector_does_not_amplify_trivial_diversity_noise(self) -> None:
+        source = (SCRIPTS / "select_v2_checkpoint.py").read_text(encoding="utf-8")
+        self.assertIn("minimum_range=0.01", source)
+        self.assertIn('"diversity_minimum_meaningful_range": 0.01', source)
+
 
 if __name__ == "__main__":
     unittest.main()

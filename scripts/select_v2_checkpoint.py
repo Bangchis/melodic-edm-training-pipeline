@@ -44,11 +44,16 @@ def cosine(first: np.ndarray, second: np.ndarray) -> float:
     return float(np.clip(np.dot(first, second), -1.0, 1.0))
 
 
-def scale(values: dict[str, float], higher_is_better: bool) -> dict[str, float]:
+def scale(
+    values: dict[str, float],
+    higher_is_better: bool,
+    *,
+    minimum_range: float = 1e-12,
+) -> dict[str, float]:
     """Min-max scale candidate values to 0..1."""
     minimum = min(values.values())
     maximum = max(values.values())
-    if maximum - minimum < 1e-12:
+    if maximum - minimum < minimum_range:
         return {key: 1.0 for key in values}
     output = {key: (value - minimum) / (maximum - minimum) for key, value in values.items()}
     return output if higher_is_better else {key: 1.0 - value for key, value in output.items()}
@@ -113,7 +118,11 @@ def main() -> int:
             "max_training_feature_similarity": nearest,
         }
     val_scaled = scale({key: value["validation_loss"] for key, value in raw.items()}, False)
-    diversity_scaled = scale({key: value["prompt_output_diversity"] for key, value in raw.items()}, True)
+    diversity_scaled = scale(
+        {key: value["prompt_output_diversity"] for key, value in raw.items()},
+        True,
+        minimum_range=0.01,
+    )
     for label, value in raw.items():
         no_memorization = max(0.0, 1.0 - value["max_training_feature_similarity"])
         value["composite_score"] = (
@@ -134,6 +143,7 @@ def main() -> int:
             "validation_loss_weight": 0.40,
             "moss_audio_listening_weight": 0.45,
             "fixed_prompt_diversity_weight": 0.10,
+            "diversity_minimum_meaningful_range": 0.01,
             "training_similarity_penalty_weight": 0.05,
             "human_listening_completed": False,
             "listening_proxy": "OpenMOSS-Team/MOSS-Music-8B-Thinking"
