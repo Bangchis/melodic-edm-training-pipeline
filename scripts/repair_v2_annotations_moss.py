@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -502,7 +503,15 @@ def main() -> int:
                 break
             except (KeyError, RuntimeError, TypeError, ValueError) as exc:
                 last_error = f"{type(exc).__name__}:{exc}"
-                request += "\nPrevious response failed validation: " + last_error + ". Return corrected JSON only."
+                if isinstance(exc, RuntimeError):
+                    if attempt < max(1, args.attempts):
+                        time.sleep(min(2 ** (attempt - 1), 8))
+                    continue
+                request += (
+                    "\nPrevious response failed validation: "
+                    + last_error
+                    + ". Return corrected JSON only."
+                )
         else:
             errors += 1
             manifest.append({"sample_id": sample_id, "status": "failed", "reason": last_error})
