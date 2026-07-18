@@ -84,6 +84,34 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn("confidence_missing", errors)
         self.assertIn("confidence_outside_open_0_1", errors)
 
+    def test_moss_supplement_normalizes_comma_lists(self) -> None:
+        value = {
+            "confidence": 0.9,
+            "audible_facts": {
+                "genre_and_style": "melodic EDM, cinematic electronic",
+                "moods": "uplifting, adventurous",
+                "instruments_and_roles": [
+                    {"name": "synth pluck", "role": "main melody", "confidence": 0.8}
+                ],
+                "melody_and_motifs": "repeating pentatonic motif",
+                "harmony": "wide sustained chords",
+                "rhythm": "four-on-the-floor drums",
+                "arrangement_and_sections": "intro, build, drop and outro",
+                "production": "wide synths and clean sub bass",
+                "uncertain_or_conflicting_facts": "none",
+            },
+            "captions": {name: words(name, 45) for name in CAPTION_TYPES},
+        }
+        supplement, errors = validate_supplement(
+            value, {"expected_artist": "", "expected_title": ""}
+        )
+        self.assertEqual([], errors)
+        self.assertEqual(
+            ["melodic EDM", "cinematic electronic"],
+            supplement["audible_facts"]["genre_and_style"],
+        )
+        self.assertEqual([], supplement["audible_facts"]["uncertain_or_conflicting_facts"])
+
 
 if __name__ == "__main__":
     unittest.main()

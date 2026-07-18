@@ -104,9 +104,10 @@ supervisorctl start edm-v2-train-main
 supervisorctl start edm-v2-evaluate-checkpoints
 supervisorctl start edm-v2-score-moss
 supervisorctl start edm-v2-select-checkpoint
+supervisorctl start edm-v2-upload-evaluation
 ```
 
-Validation, logging and checkpointing occur every five epochs. Every tenth checkpoint is synchronized to the private training repository and later receives the same three fixed prompt/seed audio samples.
+Validation, logging and checkpointing occur every five epochs. Every tenth checkpoint is synchronized to the private training repository and later receives the same three fixed prompt/seed audio samples plus MOSS listening evidence.
 
 Selection is not “last checkpoint wins.” Candidate ranking combines validation loss, MOSS audio-grounded listening scores, output diversity and a conservative training-feature similarity penalty. The machine report records that human listening was not completed, so the automated listener is never presented as a human judgment.
 

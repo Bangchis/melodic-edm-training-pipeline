@@ -125,8 +125,16 @@ def main() -> int:
         errors.append("loss_never_decreased_below_first_logged_value")
     if re.search(r"\b(?:OOM|out of memory|NaN|Inf)\b", log, flags=re.IGNORECASE):
         errors.append("fatal_numeric_or_memory_marker_in_log")
-    if "Resumed LoRA from epoch 5, step 65" not in log:
+    resume_marker = re.search(
+        r"Resumed(?: LoRA)? from epoch 5, step 65[^\n]*",
+        log,
+    )
+    if resume_marker is None:
         errors.append("checkpoint_resume_marker_missing")
+    else:
+        marker_text = resume_marker.group(0)
+        if "optimizer OK" not in marker_text or "scheduler OK" not in marker_text:
+            errors.append(f"checkpoint_resume_state_incomplete:{marker_text}")
 
     validation_path = output / "validation_state.json"
     validation = json.loads(validation_path.read_text(encoding="utf-8")) if validation_path.is_file() else {}

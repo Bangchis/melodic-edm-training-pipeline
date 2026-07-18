@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -107,6 +108,64 @@ def validate_supplement(
     missing_facts = sorted(required_facts - set(facts))
     if missing_facts:
         errors.append(f"audible_facts_fields_missing:{missing_facts}")
+    normalized_facts: dict[str, Any] = dict(facts)
+    for field in ("genre_and_style", "moods", "uncertain_or_conflicting_facts"):
+        raw = facts.get(field)
+        if isinstance(raw, str):
+            lowered = raw.strip().casefold()
+            if field == "uncertain_or_conflicting_facts" and lowered in (
+                "", "none", "no conflicts", "not applicable", "n/a",
+            ):
+                items: list[str] = []
+            else:
+                items = [item.strip() for item in re.split(r"[,;]", raw) if item.strip()]
+        elif isinstance(raw, list):
+            items = [str(item).strip() for item in raw if str(item).strip()]
+        else:
+            items = []
+            errors.append(f"{field}_must_be_list_or_string")
+        if field != "uncertain_or_conflicting_facts" and not items:
+            errors.append(f"{field}_empty")
+        normalized_facts[field] = items
+
+    instruments = facts.get("instruments_and_roles")
+    normalized_instruments = []
+    if not isinstance(instruments, list):
+        errors.append("instruments_and_roles_must_be_list")
+        instruments = []
+    for index, instrument in enumerate(instruments):
+        if not isinstance(instrument, dict):
+            errors.append(f"instrument_{index}_must_be_object")
+            continue
+        name = str(instrument.get("name") or "").strip()
+        role = str(instrument.get("role") or "").strip()
+        try:
+            instrument_confidence = float(instrument["confidence"])
+        except (KeyError, TypeError, ValueError):
+            instrument_confidence = -1.0
+        if not name:
+            errors.append(f"instrument_{index}_name_missing")
+        if not role:
+            errors.append(f"instrument_{index}_role_missing")
+        if not 0.0 <= instrument_confidence <= 1.0:
+            errors.append(f"instrument_{index}_confidence_outside_0_1")
+        normalized_instruments.append({
+            "name": name,
+            "role": role,
+            "confidence": instrument_confidence,
+        })
+    if not normalized_instruments:
+        errors.append("instruments_and_roles_empty")
+    normalized_facts["instruments_and_roles"] = normalized_instruments
+
+    for field in (
+        "melody_and_motifs", "harmony", "rhythm",
+        "arrangement_and_sections", "production",
+    ):
+        text = str(facts.get(field) or "").strip()
+        if not text:
+            errors.append(f"{field}_empty")
+        normalized_facts[field] = text
     captions = caption_map(value.get("captions"))
     errors.extend(
         validate_caption_set(
@@ -117,7 +176,7 @@ def validate_supplement(
     )
     return {
         "confidence": confidence,
-        "audible_facts": facts,
+        "audible_facts": normalized_facts,
         "captions": captions,
     }, errors
 
@@ -179,6 +238,24 @@ def valid_existing(path: Path, row: dict[str, Any]) -> bool:
         return False
 
 
+def normalize_existing(path: Path, row: dict[str, Any]) -> bool:
+    """Atomically normalize a valid stored supplement without rerunning MOSS."""
+    if not path.is_file():
+        return False
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+        supplement, errors = validate_supplement(record["supplement"], row)
+        if errors or record.get("model_revision") != MODEL_REVISION:
+            return False
+        if record["supplement"] != supplement:
+            record["supplement"] = supplement
+            record["schema_normalized_at"] = datetime.now(timezone.utc).isoformat()
+            atomic_json(path, record)
+        return True
+    except (KeyError, OSError, json.JSONDecodeError, TypeError, ValueError):
+        return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project-root", default=".")
@@ -207,6 +284,8 @@ def main() -> int:
     )
     output_dir = root / "data_v2" / "moss_annotations"
     failure_dir = root / "data_v2" / "moss_failures"
+    for row in rows:
+        normalize_existing(output_dir / f"{row['sample_id']}.json", row)
     pending = [row for row in rows if not valid_existing(output_dir / f"{row['sample_id']}.json", row)]
     print(
         json.dumps({
@@ -258,6 +337,7 @@ def main() -> int:
                     "supplement": supplement,
                 }
                 atomic_json(output_dir / f"{sample_id}.json", record)
+                (failure_dir / f"{sample_id}.json").unlink(missing_ok=True)
                 manifest.append({
                     "sample_id": sample_id,
                     "status": "accepted",

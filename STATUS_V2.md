@@ -29,7 +29,7 @@ Last reconciled: 2026-07-18 (Asia/Ho_Chi_Minh)
 - Best-step selection and fresh all-231 step scaling.
 - Private Hugging Face packaging/upload and clean-redownload verification jobs.
 - Detailed training guide, model card and Colab Pro inference notebook.
-- Six focused V2 pipeline unit tests pass locally and on Vast.
+- Seven focused V2 pipeline unit tests pass locally and on Vast.
 
 ## Next automatic gates
 
