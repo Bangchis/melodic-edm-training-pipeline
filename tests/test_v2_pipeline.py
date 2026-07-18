@@ -337,6 +337,16 @@ class V2PipelineTest(unittest.TestCase):
         self.assertFalse(quality["quality_accepted"])
         self.assertIn("individual_score_below_minimum:prompt_alignment:2:3", quality["errors"])
 
+    def test_baseline_profile_measures_specialized_alignment_without_blocking_it(self) -> None:
+        records = [{
+            "scores": {
+                "prompt_alignment": 2, "melody": 3, "structure": 3, "audio_quality": 4,
+            },
+            "failure_modes": {"distorted": False, "collapsed": False, "static_loop": False},
+        }]
+        self.assertTrue(summarize_quality(records, profile="baseline")["quality_accepted"])
+        self.assertFalse(summarize_quality(records, profile="candidate")["quality_accepted"])
+
     def test_release_inference_accepts_user_sampling_and_output_settings(self) -> None:
         sampling, output = merged_generation_settings({
             "sampling": {
@@ -539,6 +549,12 @@ class V2PipelineTest(unittest.TestCase):
         source = (SCRIPTS / "select_v2_checkpoint.py").read_text(encoding="utf-8")
         self.assertIn("minimum_range=0.01", source)
         self.assertIn('"diversity_minimum_meaningful_range": 0.01', source)
+
+    def test_checkpoint_selector_prioritizes_prompt_alignment_over_other_listening_scores(self) -> None:
+        source = (SCRIPTS / "select_v2_checkpoint.py").read_text(encoding="utf-8")
+        self.assertIn('0.30 * value["prompt_alignment_score"]', source)
+        self.assertIn('0.25 * value["other_listening_score"]', source)
+        self.assertIn('value["prompt_alignment_not_worse_than_baseline"]', source)
 
 
 if __name__ == "__main__":

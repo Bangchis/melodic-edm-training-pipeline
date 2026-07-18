@@ -15,10 +15,35 @@ MINIMUM_INDIVIDUAL_BY_DIMENSION = {
     "structure": 2,
     "audio_quality": 2,
 }
+BASELINE_MINIMUM_DIMENSION_MEAN_BY_DIMENSION = {
+    "prompt_alignment": 2.0,
+    "melody": 3.0,
+    "structure": 3.0,
+    "audio_quality": 3.0,
+}
+CANDIDATE_MINIMUM_DIMENSION_MEAN_BY_DIMENSION = {
+    field: MINIMUM_DIMENSION_MEAN for field in SCORE_FIELDS
+}
 
 
-def summarize_quality(records: list[dict[str, Any]]) -> dict[str, Any]:
-    """Require acceptable absolute scores, not merely the best bad candidate."""
+def summarize_quality(
+    records: list[dict[str, Any]],
+    *,
+    profile: str = "candidate",
+) -> dict[str, Any]:
+    """Require musical baseline quality or stricter prompt-aligned candidate quality."""
+    if profile not in {"baseline", "candidate"}:
+        raise ValueError(f"unsupported quality profile: {profile}")
+    minimum_means = (
+        BASELINE_MINIMUM_DIMENSION_MEAN_BY_DIMENSION
+        if profile == "baseline"
+        else CANDIDATE_MINIMUM_DIMENSION_MEAN_BY_DIMENSION
+    )
+    minimum_individuals = (
+        {field: MINIMUM_INDIVIDUAL_SCORE for field in SCORE_FIELDS}
+        if profile == "baseline"
+        else MINIMUM_INDIVIDUAL_BY_DIMENSION
+    )
     values: dict[str, list[int]] = defaultdict(list)
     errors: list[str] = []
     if not records:
@@ -49,12 +74,13 @@ def summarize_quality(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
     for field in SCORE_FIELDS:
         mean = dimension_means.get(field, 0.0)
-        if mean < MINIMUM_DIMENSION_MEAN:
+        required_mean = minimum_means[field]
+        if mean < required_mean:
             errors.append(
-                f"dimension_mean_below_minimum:{field}:{mean:.3f}:{MINIMUM_DIMENSION_MEAN:.3f}"
+                f"dimension_mean_below_minimum:{field}:{mean:.3f}:{required_mean:.3f}"
             )
         minimum = min(values.get(field, [0]))
-        required_minimum = MINIMUM_INDIVIDUAL_BY_DIMENSION[field]
+        required_minimum = minimum_individuals[field]
         if minimum < required_minimum:
             errors.append(
                 f"individual_score_below_minimum:{field}:{minimum}:{required_minimum}"
@@ -64,11 +90,13 @@ def summarize_quality(records: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "status": "pass" if not errors else "failed",
         "quality_accepted": not errors,
+        "quality_profile": profile,
         "records": len(records),
         "dimension_means": dimension_means,
         "overall_mean": overall_mean,
         "minimum_dimension_mean": MINIMUM_DIMENSION_MEAN,
+        "minimum_dimension_mean_by_dimension": minimum_means,
         "minimum_individual_score": MINIMUM_INDIVIDUAL_SCORE,
-        "minimum_individual_by_dimension": MINIMUM_INDIVIDUAL_BY_DIMENSION,
+        "minimum_individual_by_dimension": minimum_individuals,
         "errors": errors,
     }

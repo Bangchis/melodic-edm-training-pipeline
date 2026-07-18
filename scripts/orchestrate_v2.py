@@ -292,6 +292,7 @@ def main() -> int:
                 "--project-root", str(root),
                 "--report", "outputs/v2/baseline-xl-base/listening_scores.json",
                 "--output", "outputs/v2/baseline-xl-base/listening_quality_report.json",
+                "--profile", "baseline",
             ],
             check=False,
         )

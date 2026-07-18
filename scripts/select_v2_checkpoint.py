@@ -82,6 +82,20 @@ def main() -> int:
     listening = json.loads((evaluation / "listening_scores.json").read_text(encoding="utf-8"))
     if generation.get("status") != "pass" or listening.get("status") != "pass":
         raise RuntimeError("generation and listening score gates must pass")
+    baseline_listening = json.loads(
+        (root / "outputs" / "v2" / "baseline-xl-base" / "listening_scores.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    if baseline_listening.get("status") != "pass":
+        raise RuntimeError("baseline listening score gate must pass")
+    baseline_records = baseline_listening.get("results", [])
+    if not baseline_records:
+        raise RuntimeError("baseline listening score report has no records")
+    baseline_prompt_alignment_mean = float(np.mean([
+        int(record["scores"]["prompt_alignment"])
+        for record in baseline_records
+    ]))
 
     training_rows = read_jsonl(root / "data_v2" / "manifest.jsonl")
     training_features = np.stack([feature(Path(row["final_audio_path"])) for row in training_rows])
@@ -109,6 +123,17 @@ def main() -> int:
             np.mean(list(record["scores"].values())) / 5.0
             for record in judge_records
         ]))
+        prompt_alignment_score = float(np.mean([
+            int(record["scores"]["prompt_alignment"]) / 5.0
+            for record in judge_records
+        ]))
+        other_listening_score = float(np.mean([
+            np.mean([
+                int(record["scores"][field])
+                for field in ("melody", "structure", "audio_quality")
+            ]) / 5.0
+            for record in judge_records
+        ]))
         epoch = int(records[0]["epoch"])
         if epoch not in validation_by_epoch:
             nearest_epoch = min(validation_by_epoch, key=lambda value: abs(value - epoch))
@@ -123,6 +148,11 @@ def main() -> int:
             "lora_scale": float(records[0].get("lora_scale", 1.0)),
             "validation_loss": val_loss,
             "moss_listening_score": judge_score,
+            "prompt_alignment_score": prompt_alignment_score,
+            "other_listening_score": other_listening_score,
+            "prompt_alignment_not_worse_than_baseline": (
+                prompt_alignment_score * 5.0 >= baseline_prompt_alignment_mean
+            ),
             "absolute_listening_quality": quality,
             "prompt_output_diversity": float(diversity),
             "max_training_feature_similarity": nearest,
@@ -130,6 +160,7 @@ def main() -> int:
     eligible = {
         key: value for key, value in raw.items()
         if value["absolute_listening_quality"]["quality_accepted"]
+        and value["prompt_alignment_not_worse_than_baseline"]
     }
     if not eligible:
         report = {
@@ -143,6 +174,8 @@ def main() -> int:
                 "minimum_dimension_mean": MINIMUM_DIMENSION_MEAN,
                 "minimum_individual_score": MINIMUM_INDIVIDUAL_SCORE,
                 "minimum_individual_by_dimension": MINIMUM_INDIVIDUAL_BY_DIMENSION,
+                "baseline_prompt_alignment_mean": baseline_prompt_alignment_mean,
+                "candidate_must_not_underperform_baseline_prompt_alignment": True,
                 "human_listening_completed": False,
                 "listening_proxy": "OpenMOSS-Team/MOSS-Music-8B-Thinking",
             },
@@ -163,8 +196,9 @@ def main() -> int:
     for label, value in eligible.items():
         no_memorization = max(0.0, 1.0 - value["max_training_feature_similarity"])
         value["composite_score"] = (
-            0.40 * val_scaled[label]
-            + 0.45 * value["moss_listening_score"]
+            0.30 * val_scaled[label]
+            + 0.30 * value["prompt_alignment_score"]
+            + 0.25 * value["other_listening_score"]
             + 0.10 * diversity_scaled[label]
             + 0.05 * no_memorization
         )
@@ -179,13 +213,16 @@ def main() -> int:
         "selected_epoch": selected["epoch"],
         "selected_lora_scale": selected["lora_scale"],
         "selection_method": {
-            "validation_loss_weight": 0.40,
-            "moss_audio_listening_weight": 0.45,
+            "validation_loss_weight": 0.30,
+            "prompt_alignment_weight": 0.30,
+            "melody_structure_audio_quality_weight": 0.25,
             "fixed_prompt_diversity_weight": 0.10,
             "diversity_minimum_meaningful_range": 0.01,
             "training_similarity_penalty_weight": 0.05,
             "minimum_dimension_mean": MINIMUM_DIMENSION_MEAN,
             "minimum_individual_by_dimension": MINIMUM_INDIVIDUAL_BY_DIMENSION,
+            "baseline_prompt_alignment_mean": baseline_prompt_alignment_mean,
+            "candidate_must_not_underperform_baseline_prompt_alignment": True,
             "human_listening_completed": False,
             "listening_proxy": "OpenMOSS-Team/MOSS-Music-8B-Thinking"
         },

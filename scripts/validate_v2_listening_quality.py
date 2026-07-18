@@ -15,6 +15,7 @@ def main() -> int:
     parser.add_argument("--project-root", default=".")
     parser.add_argument("--report", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--profile", choices=("baseline", "candidate"), default="candidate")
     args = parser.parse_args()
     root = Path(args.project_root).resolve()
     report_path = Path(args.report)
@@ -26,7 +27,7 @@ def main() -> int:
     report = json.loads(report_path.read_text(encoding="utf-8"))
     if report.get("status") != "pass":
         raise RuntimeError(f"listening score report has not passed technical validation: {report_path}")
-    quality = summarize_quality(report.get("results", []))
+    quality = summarize_quality(report.get("results", []), profile=args.profile)
     quality["source_report"] = str(report_path.relative_to(root))
     atomic_json(output_path, quality)
     print(json.dumps(quality, ensure_ascii=False, indent=2))
