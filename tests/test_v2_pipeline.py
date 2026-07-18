@@ -32,6 +32,7 @@ from verify_v2_audio_claims_moss import (  # noqa: E402
     parse_claim_review,
 )
 from orchestrate_v2 import archive_stale_training_outputs, json_pass, json_value  # noqa: E402
+from v2_listening_quality import summarize_quality  # noqa: E402
 
 
 def words(prefix: str, count: int) -> str:
@@ -460,6 +461,36 @@ class V2PipelineTest(unittest.TestCase):
             },
         })
         self.assertIn("audio_quality_score_contradicts_positive_evidence", errors)
+
+    def test_moss_checkpoint_score_records_explicit_failure_modes(self) -> None:
+        score, errors = parse_score({
+            "prompt_alignment": 4,
+            "melody": 4,
+            "structure": 4,
+            "audio_quality": 4,
+            "evidence": {
+                "prompt_alignment": "The requested sound is audible.",
+                "melody": "The melody is coherent.",
+                "structure": "Sections develop clearly.",
+                "audio_quality": "The output is clean.",
+            },
+            "failure_modes": {"distorted": False, "collapsed": False, "static_loop": False},
+        })
+        self.assertEqual([], errors)
+        self.assertEqual(
+            {"distorted": False, "collapsed": False, "static_loop": False},
+            score["failure_modes"],
+        )
+
+    def test_absolute_quality_gate_rejects_static_loop_even_with_high_scores(self) -> None:
+        quality = summarize_quality([{
+            "scores": {
+                "prompt_alignment": 5, "melody": 5, "structure": 5, "audio_quality": 5,
+            },
+            "failure_modes": {"distorted": False, "collapsed": False, "static_loop": True},
+        }])
+        self.assertFalse(quality["quality_accepted"])
+        self.assertIn("audible_failure_mode:0:static_loop", quality["errors"])
 
     def test_moss_checkpoint_scoring_is_resumable(self) -> None:
         source = (SCRIPTS / "score_v2_checkpoints_moss.py").read_text(encoding="utf-8")

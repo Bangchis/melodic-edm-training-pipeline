@@ -27,12 +27,15 @@ def prompt_for(record: dict[str, Any]) -> str:
         "absent. Audio quality measures only technical cleanliness: clipping, collapse, harsh "
         "artifacts, noise, muddiness and obvious generation failure. A clean professional mix must "
         "not receive a low audio_quality score merely because the style or instruments mismatch. "
-        "Likewise, a coherent melody must not receive a low melody score merely for style mismatch. Do not reward "
+        "Likewise, a coherent melody must not receive a low melody score merely for style mismatch. "
+        "Also return explicit boolean failure_modes for distorted, collapsed and static_loop; mark "
+        "a flag true whenever that failure is audible. Do not reward "
         "artist similarity and do not infer hidden metadata. Return a single JSON object without "
         "Markdown or commentary. Required shape: "
         '{"prompt_alignment": 1, "melody": 1, "structure": 1, "audio_quality": 1, '
         '"evidence": {"prompt_alignment": "...", "melody": "...", "structure": "...", '
-        '"audio_quality": "..."}}.\nRequested prompt: ' + record["prompt"]
+        '"audio_quality": "..."}, "failure_modes": {"distorted": false, '
+        '"collapsed": false, "static_loop": false}}.\nRequested prompt: ' + record["prompt"]
     )
 
 
@@ -68,7 +71,18 @@ def parse_score(value: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
         and "not coherent" not in melody_evidence
     ):
         errors.append("melody_score_contradicts_coherent_evidence")
-    return {"scores": scores, "evidence": evidence}, errors
+    raw_failures = value.get("failure_modes")
+    if not isinstance(raw_failures, dict):
+        raw_failures = {}
+        errors.append("failure_modes_missing")
+    failure_modes: dict[str, bool] = {}
+    for name in ("distorted", "collapsed", "static_loop"):
+        observed = raw_failures.get(name)
+        if not isinstance(observed, bool):
+            errors.append(f"failure_mode_not_boolean:{name}")
+            observed = False
+        failure_modes[name] = observed
+    return {"scores": scores, "evidence": evidence, "failure_modes": failure_modes}, errors
 
 
 def main() -> int:
