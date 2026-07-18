@@ -155,6 +155,7 @@ def main() -> int:
             status = "failed"
     report = {
         "status": status,
+        "caption_compiler_revision": CAPTION_COMPILER_REVISION,
         "applied_at": datetime.now(timezone.utc).isoformat(),
         "records": len(results),
         "recommendations": dict(recommendations),

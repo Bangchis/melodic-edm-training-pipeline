@@ -127,6 +127,11 @@ def main() -> int:
     claims = reports["data_v2/claim_consensus_report.json"]
     if claims.get("records") != 231 or int(claims.get("claim_total", 0)) <= 0:
         errors.append("multi_view_claim_consensus_incomplete")
+    if claims.get("claim_verifier_revision") != "multi-view-audio-claims-v2.4":
+        errors.append("claim_verifier_revision_not_v2_4")
+    repairs = reports["data_v2/caption_repair_report.json"]
+    if repairs.get("caption_compiler_revision") != "audio-grounded-caption-compiler-v2.5":
+        errors.append("caption_compiler_revision_not_v2_5")
     reset = reports["data_v2/downstream_reset_report.json"]
     if reset.get("fresh_rank32_outputs_required") is not True:
         errors.append("stale_pre_audio_blind_training_outputs_not_reset")
@@ -137,8 +142,14 @@ def main() -> int:
         errors.append("prompt_embedding_count_invalid")
 
     smoke = reports["outputs/v2/smoke/smoke_validation_report.json"]
+    baseline_scores = reports["outputs/v2/baseline-xl-base/listening_scores.json"]
     baseline_quality = reports["outputs/v2/baseline-xl-base/listening_quality_report.json"]
-    if baseline_quality.get("quality_accepted") is not True:
+    if baseline_scores.get("scorer_revision") != "fixed-prompt-audio-judge-v2.2":
+        errors.append("baseline_prompt_scorer_revision_not_v2_2")
+    if (
+        baseline_quality.get("quality_accepted") is not True
+        or baseline_quality.get("quality_profile") != "baseline"
+    ):
         errors.append("pristine_xl_base_absolute_quality_not_accepted")
     if smoke.get("optimizer_steps") != 66 or not smoke.get("adapter_reload_verified"):
         errors.append("smoke_resume_or_reload_evidence_invalid")
@@ -148,12 +159,21 @@ def main() -> int:
     if training.get("checkpoint_epochs") != [5, 10, 15, 20]:
         errors.append("required_checkpoint_epochs_missing")
     selection = reports["outputs/v2/checkpoint-evaluation/selection.json"]
+    checkpoint_scores = reports["outputs/v2/checkpoint-evaluation/listening_scores.json"]
+    if checkpoint_scores.get("scorer_revision") != "fixed-prompt-audio-judge-v2.2":
+        errors.append("checkpoint_prompt_scorer_revision_not_v2_2")
     if (
         int(selection.get("best_optimizer_step", 0)) <= 0
         or selection.get("quality_accepted") is not True
         or float(selection.get("selected_lora_scale", 0.0)) not in (0.25, 0.5, 1.0)
     ):
         errors.append("best_optimizer_step_invalid")
+    selection_method = selection.get("selection_method", {})
+    if (
+        selection_method.get("prompt_alignment_weight") != 0.30
+        or selection_method.get("candidate_must_not_underperform_baseline_prompt_alignment") is not True
+    ):
+        errors.append("prompt_alignment_not_authoritative_in_checkpoint_selection")
     preview_upload = reports["outputs/v2/checkpoint-evaluation/preview_upload_report.json"]
     preview_clean = reports["outputs/v2/checkpoint-evaluation/preview_clean_verification_report.json"]
     if preview_upload.get("private") is not True or not preview_upload.get("sha"):
@@ -169,7 +189,13 @@ def main() -> int:
     final_quality = reports[
         "outputs/v2/final-all-data/evaluation/listening_quality_report.json"
     ]
-    if final_quality.get("quality_accepted") is not True:
+    final_scores = reports["outputs/v2/final-all-data/evaluation/listening_scores.json"]
+    if final_scores.get("scorer_revision") != "fixed-prompt-audio-judge-v2.2":
+        errors.append("final_prompt_scorer_revision_not_v2_2")
+    if (
+        final_quality.get("quality_accepted") is not True
+        or final_quality.get("quality_profile") != "candidate"
+    ):
         errors.append("final_absolute_listening_quality_not_accepted")
     audio_prepare = reports["outputs/v2/audio_dataset_prepare_report.json"]
     audio_upload = reports["outputs/v2/audio_dataset_upload_report.json"]

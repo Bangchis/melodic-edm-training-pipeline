@@ -586,6 +586,16 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn('0.25 * value["other_listening_score"]', source)
         self.assertIn('value["prompt_alignment_not_worse_than_baseline"]', source)
 
+    def test_final_objective_audit_requires_new_prompt_fidelity_lineage(self) -> None:
+        source = (SCRIPTS / "audit_v2_objective.py").read_text(encoding="utf-8")
+        for revision in (
+            "multi-view-audio-claims-v2.4",
+            "audio-grounded-caption-compiler-v2.5",
+            "fixed-prompt-audio-judge-v2.2",
+        ):
+            self.assertIn(revision, source)
+        self.assertIn("prompt_alignment_not_authoritative_in_checkpoint_selection", source)
+
 
 if __name__ == "__main__":
     unittest.main()
