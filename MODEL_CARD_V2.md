@@ -23,8 +23,8 @@ Private ACE-Step 1.5 XL-Base LoRA adapters for instrumental melodic EDM generati
 - Exact targets: `q_proj`, `k_proj`, `v_proj`, `o_proj`.
 - BF16 AdamW, learning rate `5e-5`, cosine schedule and 25-step warmup.
 - DDP on 2 × RTX 4090, batch 1/GPU, accumulation 8, effective batch 16.
-- One fused canonical prompt embedding per record; it combines that song's old prompt properties with independent new audio evidence.
-- Canonical-only conditioning for both training and validation; composition and production are auxiliary annotation views only.
+- Three fused prompt embeddings per record (canonical, composition and production); each independently combines that song's old prompt properties with new MOSS audio evidence.
+- Uniform random selection among all three prompt embeddings during training; canonical index 0 only during validation.
 - CFG dropout 0.15 for training and 0.0 for validation.
 - Grouped split by `parent_song_id`; no parent crosses train/validation.
 - No test split in the first research run.

@@ -1,18 +1,29 @@
 {
   "schema_version": "2.0",
-  "training_prompts": [
+  "caption_variants": [
     {
       "index": 0,
       "type": "canonical",
       "purpose": "whole-track summary",
       "word_range": [40, 80]
+    },
+    {
+      "index": 1,
+      "type": "composition",
+      "purpose": "melody, motif, harmony and arrangement; fused from old prompt plus new MOSS evidence",
+      "word_range": [25, 80]
+    },
+    {
+      "index": 2,
+      "type": "production",
+      "purpose": "instruments, synths, bass, drums, texture and space; fused from old prompt plus new MOSS evidence",
+      "word_range": [25, 80]
     }
   ],
-  "auxiliary_annotation_views_not_embedded": ["composition", "production"],
   "training": {
     "audio_latents_per_record": 1,
-    "prompt_embeddings_per_record": 1,
-    "selection": "single fused canonical prompt on every load",
+    "prompt_embeddings_per_record": 3,
+    "selection": "uniform random on every load",
     "cfg_dropout": 0.15
   },
   "validation": {

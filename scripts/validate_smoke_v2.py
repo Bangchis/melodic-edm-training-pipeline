@@ -153,8 +153,8 @@ def main() -> int:
     counts_path = output / "prompt_selection_counts.json"
     counts = json.loads(counts_path.read_text(encoding="utf-8")) if counts_path.is_file() else {}
     cumulative = counts.get("cumulative_counts", [])
-    if len(cumulative) != 1 or int(cumulative[0]) <= 0:
-        errors.append(f"single_fused_canonical_prompt_not_observed:{cumulative}")
+    if len(cumulative) != 3 or any(int(value) <= 0 for value in cumulative):
+        errors.append(f"three_fused_prompt_randomization_not_observed:{cumulative}")
 
     checkpoints = sorted((output / "checkpoints").glob("epoch_6_loss_*"))
     if len(checkpoints) != 1:
@@ -177,7 +177,7 @@ def main() -> int:
         if not reload_ok:
             errors.append(f"adapter_reload_failed:{reload_error}")
     tensor_report = json.loads((root / "data_v2" / "tensor_validation_report.json").read_text(encoding="utf-8"))
-    if tensor_report.get("prompt_embeddings_per_record") != 1:
+    if tensor_report.get("prompt_embeddings_per_record") != 3:
         errors.append("tensor_prompt_embedding_count_invalid")
     if tensor_report.get("validation_caption_index") != 0 or tensor_report.get("validation_cfg_dropout") != 0.0:
         errors.append("validation_prompt_or_cfg_semantics_invalid")

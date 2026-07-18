@@ -40,8 +40,10 @@ Clone ACE-Step 1.5 at commit
 V2 keeps the same 231 validated audio records and performs a new XL-Base LoRA run
 with rank 32 / alpha 32 / dropout 0.1. Each record has exactly three song-specific
 annotation views (canonical, composition and production), fused from its own old prompt
-and an independent audio reading. Only the single fused canonical prompt is embedded
-and used for both training and validation. MOSS-Music-8B-Thinking is used only
+and an independent audio reading. All three per-track views—canonical, composition,
+and production—independently fuse the old prompt with the new MOSS evidence and are embedded.
+Training samples one of the three uniformly; validation always uses canonical index 0.
+MOSS-Music-8B-Thinking is used only
 as an audio annotation/listening model; it is never part of ACE-Step training.
 
 Before preprocessing, MOSS first annotates without title, artist, MIR or prior

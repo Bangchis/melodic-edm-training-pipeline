@@ -11,9 +11,6 @@ from typing import Any
 from v2_common import CAPTION_TYPES, atomic_json, atomic_jsonl, read_jsonl
 
 
-TRAINING_PROMPT_TYPES = ("canonical",)
-
-
 def safe_symlink(source: Path, target: Path) -> None:
     """Create or refresh a relative symlink while refusing real-file overwrite."""
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -36,8 +33,8 @@ def metadata_for(root: Path, row: dict[str, Any]) -> tuple[dict[str, Any], str]:
     lyrics = Path(row["final_lyrics_path"]).read_text(encoding="utf-8")
     metadata: dict[str, Any] = {
         "caption": variants[0]["text"],
-        "caption_variants": [variants[0]["text"]],
-        "caption_variant_types": list(TRAINING_PROMPT_TYPES),
+        "caption_variants": [item["text"] for item in variants],
+        "caption_variant_types": list(CAPTION_TYPES),
         "language": "instrumental",
         "parent_song_id": row["parent_song_id"],
         "split": row["split"],
@@ -94,8 +91,8 @@ def write_index(path: Path, samples: list[dict[str, Any]], split: str) -> None:
             "genre_ratio": 0,
             "tag_position": "prepend",
             "custom_tag": "",
-            "caption_variant_types": list(TRAINING_PROMPT_TYPES),
-            "training_prompt_selection": "single_fused_canonical",
+            "caption_variant_types": list(CAPTION_TYPES),
+            "training_prompt_selection": "uniform_random",
             "validation_prompt_selection": "canonical_index_0",
         },
         "samples": samples,
@@ -171,9 +168,8 @@ def main() -> int:
         "validation_records": len(samples_by_split["validation"]),
         "all_records": len(samples_by_split["all"]),
         "test_records": 0,
-        "annotation_caption_views_per_record": 3,
-        "training_prompts_per_record": 1,
-        "training_prompt_types": list(TRAINING_PROMPT_TYPES),
+        "caption_variants_per_record": 3,
+        "training_prompt_types": list(CAPTION_TYPES),
         "audio_storage": "relative_symlinks_to_validated_v1_audio",
         "deduplication_performed": False,
     }

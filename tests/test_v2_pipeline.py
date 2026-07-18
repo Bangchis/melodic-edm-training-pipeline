@@ -65,7 +65,10 @@ class V2PipelineTest(unittest.TestCase):
         self.assertEqual(32, config["adapter"]["alpha"])
         self.assertEqual(20, config["optimization"]["maximum_epochs"])
         self.assertEqual(0.00005, config["optimization"]["learning_rate"])
-        self.assertEqual(["canonical"], config["data"]["caption_variants"])
+        self.assertEqual(
+            ["canonical", "composition", "production"],
+            config["data"]["caption_variants"],
+        )
         self.assertEqual(0.5, config["optimization"]["evaluation_lora_scale"])
         quality_gate = config["optimization"]["absolute_listening_quality_gate"]
         self.assertEqual(3, quality_gate["minimum_candidate_prompt_alignment_per_sample"])
@@ -76,15 +79,18 @@ class V2PipelineTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("min(int(warmup_steps), max(1, int(total_steps) - 1))", trainer_patch)
         self.assertIn("-    warmup_steps = min(warmup_steps, max(1, total_steps // 10))", trainer_patch)
-        self.assertIn("cumulative_prompt_counts = torch.zeros(1", trainer_patch)
-        self.assertIn('"caption_variant_types": ["canonical"]', trainer_patch)
+        self.assertIn("cumulative_prompt_counts = torch.zeros(3", trainer_patch)
+        self.assertIn(
+            '"caption_variant_types": ["canonical", "composition", "production"]',
+            trainer_patch,
+        )
 
-    def test_v2_dataset_embeds_only_the_fused_canonical_prompt(self) -> None:
+    def test_v2_dataset_embeds_all_three_fused_prompt_variants(self) -> None:
         builder = (SCRIPTS / "build_v2_dataset.py").read_text(encoding="utf-8")
         validator = (SCRIPTS / "validate_v2_tensors.py").read_text(encoding="utf-8")
-        self.assertIn('TRAINING_PROMPT_TYPES = ("canonical",)', builder)
-        self.assertIn('"caption_variants": [variants[0]["text"]]', builder)
-        self.assertIn('"prompt_embeddings_per_record": 1', validator)
+        self.assertIn('"caption_variants": [item["text"] for item in variants]', builder)
+        self.assertIn('"caption_variant_types": list(CAPTION_TYPES)', builder)
+        self.assertIn('"prompt_embeddings_per_record": 3', validator)
 
     def test_orchestrator_json_gate_helpers(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -743,7 +749,7 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn("per_record_caption_fusion_lineage_not_proven", source)
         self.assertIn("caption_compiler_provider_is_not_openrouter", source)
         self.assertIn("checkpoint_evaluation_scale_is_not_fixed_0_5", source)
-        self.assertIn("dataset_does_not_use_single_fused_canonical_prompt", source)
+        self.assertIn("dataset_does_not_use_three_fused_prompt_variants", source)
         self.assertIn("prompt_alignment_not_authoritative_in_checkpoint_selection", source)
 
 

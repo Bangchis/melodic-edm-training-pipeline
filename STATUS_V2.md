@@ -34,10 +34,10 @@ Last reconciled: 2026-07-18 (Asia/Ho_Chi_Minh)
 1. Regenerate all 231 MOSS supplements with the identity- and prior-claim-blind prompt.
 2. Finish multi-view verification of exact audible instrument claims.
 3. Compile prompt-useful captions from those decisions, preserving verified specific names, and apply only a fully validated 231-record repair set while keeping a full backup.
-4. Rebuild the single fused canonical prompt embedding for every record and rerun exact annotation–tensor alignment checks.
+4. Build the three fused prompt embeddings for every record and rerun exact annotation–tensor alignment checks.
 5. Rerun the stratified audio-grounded caption fidelity gate.
 6. Run a fresh 66-step rank-32 DDP smoke with save/resume/reload checks.
-7. Train once through epoch 20 and evaluate epochs 5/10/15/20 at all three LoRA scales.
+7. Train once through epoch 20 and evaluate epochs 5/10/15/20 only at the fixed LoRA scale `0.5`.
 8. Select only a checkpoint/scale that passes the absolute quality gate, publish the private `best-val` preview, then fresh-retrain all 231 records to the scaled optimizer step.
 9. Score final audio, upload model plus complete 196/35 audio dataset to private Hugging Face repositories, verify immutable redownloads, then update GitHub and Colab documentation.
 

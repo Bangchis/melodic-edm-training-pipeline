@@ -264,8 +264,8 @@ def main() -> int:
         },
         "training_records": 231,
         "split_run": {"train": 196, "validation": 35, "test": 0},
-        "training_prompts_per_record": 1,
-        "training_prompt_type": "canonical",
+        "caption_variants_per_record": 3,
+        "training_prompt_types": ["canonical", "composition", "production"],
         "deduplication_performed": False,
         "private_audio_dataset": {
             "repo_id": audio_upload["repo_id"],

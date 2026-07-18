@@ -108,20 +108,20 @@ def check_tensors(
             value = torch.load(path, map_location="cpu", weights_only=False)
             metadata = value.get("metadata", {})
             captions = caption_map(annotation)
-            expected = [captions.get("canonical", "")]
+            expected = [captions.get(name, "") for name in CAPTION_TYPES]
             checks = {
                 "filename": metadata.get("filename") == f"{sample_id}.flac",
                 "canonical": metadata.get("caption") == expected[0],
                 "caption_variants": metadata.get("caption_variants") == expected,
                 "split": annotation.get("split") == split,
-                "embedding_count": len(value.get("encoder_hidden_states_variants", [])) == 1,
-                "mask_count": len(value.get("encoder_attention_mask_variants", [])) == 1,
+                "embedding_count": len(value.get("encoder_hidden_states_variants", [])) == 3,
+                "mask_count": len(value.get("encoder_attention_mask_variants", [])) == 3,
             }
             failed = [name for name, passed in checks.items() if not passed]
             if failed:
                 errors.append({"sample_id": sample_id, "reason": "tensor_alignment", "failed": failed})
             embeddings = value.get("encoder_hidden_states_variants", [])
-            if len(embeddings) > 1 and any(
+            if len(embeddings) == 3 and any(
                 torch.equal(embeddings[0], item) for item in embeddings[1:]
             ):
                 embedding_duplicates.append(sample_id)

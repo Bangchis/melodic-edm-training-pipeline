@@ -44,8 +44,8 @@ def main() -> int:
     counts_path = output / "prompt_selection_counts.json"
     counts = json.loads(counts_path.read_text(encoding="utf-8")) if counts_path.is_file() else {}
     cumulative = counts.get("cumulative_counts", [])
-    if len(cumulative) != 1 or int(cumulative[0]) <= 0:
-        errors.append(f"single_fused_canonical_prompt_invalid:{cumulative}")
+    if len(cumulative) != 3 or any(int(value) <= 0 for value in cumulative):
+        errors.append(f"three_fused_prompt_randomization_invalid:{cumulative}")
     tensor_report = json.loads((root / "data_v2" / "tensor_validation_report.json").read_text(encoding="utf-8"))
     if tensor_report.get("all_tensors") != 231:
         errors.append("final_dataset_is_not_231_records")

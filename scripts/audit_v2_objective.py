@@ -121,7 +121,7 @@ def main() -> int:
         "data.test_records": (data.get("test_records"), 0),
         "data.caption_variants": (
             data.get("caption_variants"),
-            ["canonical"],
+            ["canonical", "composition", "production"],
         ),
     }
     for label, (observed, expected) in expected_values.items():
@@ -168,15 +168,16 @@ def main() -> int:
     dataset_build = reports["data_v2/dataset_build_report.json"]
     if (tensors.get("train_tensors"), tensors.get("validation_tensors"), tensors.get("all_tensors")) != (196, 35, 231):
         errors.append("tensor_counts_invalid")
-    if tensors.get("prompt_embeddings_per_record") != 1:
+    if tensors.get("prompt_embeddings_per_record") != 3:
         errors.append("prompt_embedding_count_invalid")
-    if tensors.get("caption_variant_types") != ["canonical"]:
-        errors.append("training_prompt_is_not_single_canonical")
+    if tensors.get("caption_variant_types") != ["canonical", "composition", "production"]:
+        errors.append("training_prompt_variants_are_not_canonical_composition_production")
     if (
-        dataset_build.get("training_prompts_per_record") != 1
-        or dataset_build.get("training_prompt_types") != ["canonical"]
+        dataset_build.get("caption_variants_per_record") != 3
+        or dataset_build.get("training_prompt_types")
+        != ["canonical", "composition", "production"]
     ):
-        errors.append("dataset_does_not_use_single_fused_canonical_prompt")
+        errors.append("dataset_does_not_use_three_fused_prompt_variants")
 
     smoke = reports["outputs/v2/smoke/smoke_validation_report.json"]
     baseline_scores = reports["outputs/v2/baseline-xl-base/listening_scores.json"]

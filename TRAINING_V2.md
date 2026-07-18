@@ -29,7 +29,7 @@ MOSS prompt revision `audio-blind-v2.2` first receives no title, artist, filenam
 
 Compiler revision `openrouter-per-track-prior-audio-fusion-v2.8` then sends two separately hashed text packets for the same `sample_id` to `google/gemini-3.1-flash-lite` through OpenRouter: the old per-track prompt/annotation and the independent waveform analysis. No audio bytes are sent in this step. It preserves distinctive old genre, mood, melody, arrangement and production properties when supported or not contradicted by the audio, prefers waveform evidence on conflict, and obeys the multi-view instrument decisions as binding. This is a fusion step, not a replacement with generic text. Its deterministic gate rejects newly introduced unverified exact instrument names, embedded BPM, time signature, exact key, quality hype and generic `standard/classic EDM structure` boilerplate before a caption can enter tensors. A final MOSS listening audit then checks the compiled caption against the audio.
 
-The canonical view is the only training condition. It combines the useful old prompt properties and the independent new audio evidence into one 40–80 word description. Composition and production remain auxiliary review views and are not embedded. Preprocessing therefore stores one audio latent and one canonical prompt embedding per record. Training always uses canonical index 0 with CFG dropout `0.15`; validation uses the same canonical index with CFG dropout `0.0`.
+Each record has three training conditions: canonical, composition and production. Every view independently combines useful properties from that song's old prompt with the independent new MOSS audio evidence; composition emphasizes melody and arrangement, while production emphasizes instrumentation and sound design. Preprocessing stores one audio latent and three prompt embeddings per record. Training chooses one of the three uniformly on every load with CFG dropout `0.15`; validation always uses canonical index 0 with CFG dropout `0.0`.
 
 ## Fixed LoRA configuration
 
@@ -97,7 +97,7 @@ supervisorctl start edm-v2-preprocess-validation
 supervisorctl start edm-v2-merge-tensors
 ```
 
-The merge gate must report exactly 231 records, 196 train, 35 validation, no parent crossing and three annotation views. The tensor gate must report exactly 196 train tensors, 35 validation tensors and 231 all-data tensors, each with one latent plus one fused canonical prompt embedding.
+The merge gate must report exactly 231 records, 196 train, 35 validation, no parent crossing and three fused annotation views. The tensor gate must report exactly 196 train tensors, 35 validation tensors and 231 all-data tensors, each with one latent plus three fused prompt embeddings.
 
 ### Smoke test
 

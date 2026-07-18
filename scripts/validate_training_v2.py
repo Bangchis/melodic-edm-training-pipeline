@@ -61,8 +61,8 @@ def main() -> int:
     prompt_path = output / "prompt_selection_counts.json"
     prompt_counts = json.loads(prompt_path.read_text(encoding="utf-8")) if prompt_path.is_file() else {}
     cumulative = prompt_counts.get("cumulative_counts", [])
-    if len(cumulative) != 1 or int(cumulative[0]) <= 0:
-        errors.append(f"single_fused_canonical_prompt_invalid:{cumulative}")
+    if len(cumulative) != 3 or any(int(value) <= 0 for value in cumulative):
+        errors.append(f"three_fused_prompt_randomization_invalid:{cumulative}")
 
     adapter_summary, adapter_errors = inspect_adapter(output / "checkpoints" / "best_val")
     errors.extend(f"best_val:{value}" for value in adapter_errors)
