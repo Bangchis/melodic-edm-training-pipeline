@@ -1095,7 +1095,7 @@ class V2PipelineTest(unittest.TestCase):
         title = "China-A"
         captions = attach_track_style_reference(audio_only, artist, title)
         prefix = track_style_reference(artist, title)
-        self.assertEqual("artist-track-style-reference-v1", TRACK_STYLE_REFERENCE_REVISION)
+        self.assertEqual("artist-track-style-reference-v2", TRACK_STYLE_REFERENCE_REVISION)
         self.assertTrue(all(text.startswith(prefix + " ") for text in captions.values()))
         self.assertEqual([], validate_track_style_caption_set(captions, artist, title))
         self.assertEqual(
