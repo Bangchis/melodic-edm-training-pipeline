@@ -47,6 +47,21 @@ class V2PipelineTest(unittest.TestCase):
         self.assertLess(source.index('"edm-v2-upload-preview"'), source.index('"edm-v2-train-final"'))
         self.assertLess(source.index('"edm-v2-verify-preview"'), source.index('"edm-v2-train-final"'))
 
+    def test_all_audio_is_uploaded_and_verified_after_final_training(self) -> None:
+        source = (SCRIPTS / "orchestrate_v2.py").read_text(encoding="utf-8")
+        final = source.index('"edm-v2-train-final"')
+        prepare = source.index('"edm-v2-prepare-audio-dataset"')
+        upload = source.index('"edm-v2-upload-audio-dataset"')
+        verify = source.index('"edm-v2-verify-audio-dataset"')
+        package = source.index('"edm-v2-package-release"')
+        self.assertLess(final, prepare)
+        self.assertLess(prepare, upload)
+        self.assertLess(upload, verify)
+        self.assertLess(verify, package)
+        audit = (SCRIPTS / "audit_v2_objective.py").read_text(encoding="utf-8")
+        self.assertIn("audio_dataset_clean_verification_report.json", audit)
+        self.assertIn('audio_clean.get("records") != 231', audit)
+
     def test_checkpoint_sync_includes_non_tenth_best_val(self) -> None:
         source = (SCRIPTS / "sync_v2_checkpoints_hf.py").read_text(encoding="utf-8")
         self.assertIn("def sync_best", source)
@@ -64,6 +79,12 @@ class V2PipelineTest(unittest.TestCase):
             source = (SCRIPTS / name).read_text(encoding="utf-8")
             self.assertIn('scripts" / "prompt_enhancer.py', source)
             self.assertIn('scripts" / "enhance_prompt_openrouter.py', source)
+
+    def test_colab_inference_overrides_notebook_only_matplotlib_backend(self) -> None:
+        inference = (SCRIPTS / "infer_v2_release.py").read_text(encoding="utf-8")
+        self.assertIn('os.environ["MPLBACKEND"] = "Agg"', inference)
+        notebook = (SCRIPTS.parent / "notebooks" / "melodic_edm_core_v2_colab.ipynb").read_text(encoding="utf-8")
+        self.assertIn("'MPLBACKEND': 'Agg'", notebook)
 
     def test_tensor_merger_replaces_unsafe_symlink_with_hardlink(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

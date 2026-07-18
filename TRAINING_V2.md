@@ -73,6 +73,8 @@ MOSS annotation (2 shards)
 → package + upload best-val preview
 → clean immutable preview download + inference gate
 → fresh all-231 run to scaled optimizer steps
+→ private upload of all 196 train + 35 validation FLAC records
+→ clean immutable download + SHA-256 verification of all 231 audio files
 → package, upload, clean redownload and inference verification
 → final objective audit
 → private completion-evidence backup
@@ -136,10 +138,15 @@ final_steps = round(best_optimizer_step × 231 / 196)
 
 ```bash
 supervisorctl start edm-v2-train-final
+supervisorctl start edm-v2-prepare-audio-dataset
+supervisorctl start edm-v2-upload-audio-dataset
+supervisorctl start edm-v2-verify-audio-dataset
 supervisorctl start edm-v2-evaluate-final
 ```
 
 The final job refuses to resume or overwrite an existing final run. It reloads the pristine XL-Base model, creates a fresh rank-48 LoRA, trains on all 231 records with no validation split, and stops at the exact scaled optimizer step.
+
+After final training passes, all 231 exact FLAC records are staged without copying or deduplicating them and uploaded to the private dataset `Bangchis/melodic-edm-audio-v2`. The dataset keeps the original grouped `196 train / 35 validation` split, one file per catalog record, a sanitized manifest and `SHA256SUMS`. A separate gate force-downloads the immutable dataset revision, verifies every byte size and SHA-256 digest, then removes the temporary clean copy.
 
 ## Outputs
 
@@ -154,6 +161,7 @@ The final job refuses to resume or overwrite an existing final run. It reloads t
 - Private training checkpoints: `Bangchis/melodic-edm-core-v2-training`.
 - Private annotations: `Bangchis/melodic-edm-training-metadata-v2`.
 - Private final model: `Bangchis/melodic-edm-core-v2`.
+- Private complete audio dataset: `Bangchis/melodic-edm-audio-v2`.
 
 Source audio, stems, cached tensors, optimizer states, secrets and MOSS reasoning are excluded from the final model release.
 

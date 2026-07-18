@@ -48,6 +48,11 @@ SHA256SUMS
 
 The model release excludes source audio, stems, cached latents, optimizer states, service credentials, browser cookies and model reasoning traces.
 
+The exact 231 FLAC training records are backed up separately in the private dataset
+`Bangchis/melodic-edm-audio-v2`, preserving 196 train and 35 validation records with
+one file per catalog record, a manifest and SHA-256 checksums. Audio is intentionally
+not duplicated inside this model repository.
+
 ## Inference
 
 Use `final-all-data` with the exact ACE-Step source and XL-Base revisions recorded in `release_manifest.json`. The included Colab notebook sends a free-form idea through an OpenRouter LLM, requires exactly five JSON music-description fields, then applies a local validator/compiler with a hard 300-word inference limit. BPM, key, time signature and instrumental sections remain separate fixed conditions. The notebook performs immutable download, checksum verification, generation and 48 kHz stereo validation. Training captions remain 40–80 words.

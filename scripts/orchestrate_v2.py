@@ -226,6 +226,21 @@ def main() -> int:
         "fresh-all-231-training",
     )
     run_stage(
+        "edm-v2-prepare-audio-dataset",
+        root / "outputs" / "v2" / "audio_dataset_prepare_report.json",
+        "private-audio-dataset-staging",
+    )
+    run_stage(
+        "edm-v2-upload-audio-dataset",
+        root / "outputs" / "v2" / "audio_dataset_upload_report.json",
+        "private-audio-dataset-upload",
+    )
+    run_stage(
+        "edm-v2-verify-audio-dataset",
+        root / "outputs" / "v2" / "audio_dataset_clean_verification_report.json",
+        "private-audio-dataset-clean-verification",
+    )
+    run_stage(
         "edm-v2-evaluate-final",
         root / "outputs" / "v2" / "final-all-data" / "evaluation" / "generation_report.json",
         "final-all-data-audio",

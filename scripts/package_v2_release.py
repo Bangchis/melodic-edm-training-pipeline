@@ -109,6 +109,9 @@ def main() -> int:
     final_generation = read_gate(
         root / "outputs" / "v2" / "final-all-data" / "evaluation" / "generation_report.json"
     )
+    audio_prepare = read_gate(root / "outputs" / "v2" / "audio_dataset_prepare_report.json")
+    audio_upload = read_gate(root / "outputs" / "v2" / "audio_dataset_upload_report.json")
+    audio_clean = read_gate(root / "outputs" / "v2" / "audio_dataset_clean_verification_report.json")
 
     release = root / "outputs" / "release" / "melodic-edm-core-v2"
     if release.exists():
@@ -152,6 +155,13 @@ def main() -> int:
         ],
     })
     atomic_json(release / "reports" / "listening_scores.json", sanitized_listening(listening))
+    atomic_json(release / "reports" / "audio_dataset_prepare_report.json", {
+        key: value for key, value in audio_prepare.items() if key != "staging_root"
+    })
+    atomic_json(release / "reports" / "audio_dataset_upload_report.json", {
+        key: value for key, value in audio_upload.items() if key != "resumable_upload_cache"
+    })
+    atomic_json(release / "reports" / "audio_dataset_clean_verification_report.json", audio_clean)
     for name in ("metrics_history.jsonl", "validation_state.json", "prompt_selection_counts.json"):
         copy_file(train_root / name, release / "metrics" / name)
     final_root = root / "outputs" / "v2" / "final-all-data"
@@ -220,6 +230,14 @@ def main() -> int:
         "split_run": {"train": 196, "validation": 35, "test": 0},
         "caption_variants_per_record": 3,
         "deduplication_performed": False,
+        "private_audio_dataset": {
+            "repo_id": audio_upload["repo_id"],
+            "revision": audio_upload["sha"],
+            "records": audio_clean["records"],
+            "train_records": audio_clean["train_records"],
+            "validation_records": audio_clean["validation_records"],
+            "clean_sha256_verification": audio_clean["status"] == "pass",
+        },
         "generated_examples": len(example_manifest),
         "excluded": [
             "source audio", "separated stems", "preprocessed tensors",

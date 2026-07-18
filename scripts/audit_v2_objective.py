@@ -52,6 +52,9 @@ def main() -> int:
         "outputs/v2/checkpoint-evaluation/preview_upload_report.json",
         "outputs/v2/checkpoint-evaluation/preview_clean_verification_report.json",
         "outputs/v2/final-all-data/final_validation_report.json",
+        "outputs/v2/audio_dataset_prepare_report.json",
+        "outputs/v2/audio_dataset_upload_report.json",
+        "outputs/v2/audio_dataset_clean_verification_report.json",
         "outputs/v2/final-all-data/evaluation/generation_report.json",
         "outputs/release/melodic-edm-core-v2/release_report.json",
         "outputs/release/melodic-edm-core-v2/upload_report.json",
@@ -130,6 +133,26 @@ def main() -> int:
     final = reports["outputs/v2/final-all-data/final_validation_report.json"]
     if final.get("records") != 231 or final.get("initialization") != "fresh_xl_base_and_fresh_rank48_lora":
         errors.append("fresh_final_training_evidence_invalid")
+    audio_prepare = reports["outputs/v2/audio_dataset_prepare_report.json"]
+    audio_upload = reports["outputs/v2/audio_dataset_upload_report.json"]
+    audio_clean = reports["outputs/v2/audio_dataset_clean_verification_report.json"]
+    if (
+        audio_prepare.get("records"),
+        audio_prepare.get("train_records"),
+        audio_prepare.get("validation_records"),
+        audio_prepare.get("deduplication_performed"),
+    ) != (231, 196, 35, False):
+        errors.append("audio_dataset_prepare_counts_or_dedup_invalid")
+    if audio_upload.get("private") is not True or not audio_upload.get("sha"):
+        errors.append("audio_dataset_not_private_or_unpinned")
+    if (
+        audio_clean.get("verified_revision") != audio_upload.get("sha")
+        or audio_clean.get("records") != 231
+        or audio_clean.get("train_records") != 196
+        or audio_clean.get("validation_records") != 35
+        or audio_clean.get("checksum_mismatches") != 0
+    ):
+        errors.append("audio_dataset_clean_verification_invalid")
 
     upload = reports["outputs/release/melodic-edm-core-v2/upload_report.json"]
     if upload.get("private") is not True or not upload.get("sha"):
@@ -157,6 +180,7 @@ def main() -> int:
         "best_optimizer_step": selection.get("best_optimizer_step"),
         "final_optimizer_steps": final.get("observed_optimizer_steps"),
         "hugging_face_model_revision": upload.get("sha"),
+        "hugging_face_audio_dataset_revision": audio_upload.get("sha"),
         "clean_inference_audio": clean.get("inference", {}).get("audio_path"),
         "errors": errors,
     }
