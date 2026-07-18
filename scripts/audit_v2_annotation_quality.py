@@ -10,11 +10,14 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from v2_common import atomic_json, read_jsonl
+try:
+    from v2_common import CAPTION_COMPILER_REVISION, atomic_json, read_jsonl
+except ModuleNotFoundError:  # package import used by local unit tests
+    from scripts.v2_common import CAPTION_COMPILER_REVISION, atomic_json, read_jsonl
 
 
 CAPTION_TYPES = ("canonical", "composition", "production")
-CAPTION_FUSION_REVISION = "openrouter-per-track-prior-audio-fusion-v2.9"
+CAPTION_FUSION_REVISION = CAPTION_COMPILER_REVISION
 GENERIC_TERMS = (
     "clean",
     "polished",

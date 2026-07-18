@@ -12,6 +12,7 @@ from typing import Any, Iterable
 
 
 CAPTION_TYPES = ("canonical", "composition", "production")
+CAPTION_COMPILER_REVISION = "openrouter-per-track-salient-audio-fusion-v3.1"
 STRUCTURE_NORMALIZATION_REVISION = "sequence-safe-instrumental-v1"
 
 

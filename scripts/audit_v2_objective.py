@@ -7,7 +7,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-from v2_common import atomic_json
+try:
+    from v2_common import CAPTION_COMPILER_REVISION, atomic_json
+except ModuleNotFoundError:  # package import used by local unit tests
+    from scripts.v2_common import CAPTION_COMPILER_REVISION, atomic_json
 
 
 def load_json(root: Path, relative: str, errors: list[str]) -> dict[str, Any]:
@@ -145,8 +148,8 @@ def main() -> int:
         errors.append("claim_verifier_revision_not_v2_6")
     repairs = reports["data_v2/caption_repair_report.json"]
     annotation_quality = reports["data_v2/annotation_quality_audit.json"]
-    if repairs.get("caption_compiler_revision") != "openrouter-per-track-prior-audio-fusion-v2.9":
-        errors.append("caption_compiler_revision_not_v2_9")
+    if repairs.get("caption_compiler_revision") != CAPTION_COMPILER_REVISION:
+        errors.append("caption_compiler_revision_not_current")
     if repairs.get("caption_compiler_provider") != "openrouter":
         errors.append("caption_compiler_provider_is_not_openrouter")
     if repairs.get("fusion_records") != 231 or set(repairs.get("fusion_sources", [])) != {
@@ -157,7 +160,7 @@ def main() -> int:
         errors.append("per_track_prior_audio_fusion_incomplete")
     if (
         annotation_quality.get("caption_fusion_revision")
-        != "openrouter-per-track-prior-audio-fusion-v2.9"
+        != CAPTION_COMPILER_REVISION
         or annotation_quality.get("caption_fusion_records") != 231
     ):
         errors.append("per_record_caption_fusion_lineage_not_proven")

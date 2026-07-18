@@ -11,8 +11,12 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+try:
+    from v2_common import CAPTION_COMPILER_REVISION
+except ModuleNotFoundError:  # package import used by local unit tests
+    from scripts.v2_common import CAPTION_COMPILER_REVISION
+
 PROMPT_REVISION = "audio-blind-v2.2"
-CAPTION_COMPILER_REVISION = "openrouter-per-track-prior-audio-fusion-v2.9"
 
 
 ACTIVE_STATES = {"STARTING", "RUNNING", "BACKOFF", "STOPPING"}

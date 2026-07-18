@@ -14,6 +14,7 @@ SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from v2_common import (  # noqa: E402
+    CAPTION_COMPILER_REVISION,
     CAPTION_TYPES,
     caption_map,
     extract_json_object,
@@ -1155,10 +1156,11 @@ class V2PipelineTest(unittest.TestCase):
         source = (SCRIPTS / "audit_v2_objective.py").read_text(encoding="utf-8")
         for revision in (
             "multi-view-audio-claims-v2.6",
-            "openrouter-per-track-prior-audio-fusion-v2.9",
             "fixed-prompt-audio-judge-v2.2",
         ):
             self.assertIn(revision, source)
+        self.assertEqual("openrouter-per-track-salient-audio-fusion-v3.1", CAPTION_COMPILER_REVISION)
+        self.assertIn("CAPTION_COMPILER_REVISION", source)
         self.assertIn("per_record_caption_fusion_lineage_not_proven", source)
         self.assertIn("caption_compiler_provider_is_not_openrouter", source)
         self.assertIn("checkpoint_evaluation_scale_is_not_fixed_0_5", source)

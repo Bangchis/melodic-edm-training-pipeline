@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from v2_common import (
+    CAPTION_COMPILER_REVISION,
     CAPTION_TYPES,
     atomic_json,
     atomic_jsonl,
@@ -36,7 +37,6 @@ SCORE_FIELDS = (
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_COMPILER_MODEL = "google/gemini-3.1-flash-lite"
 CAPTION_COMPILER_PROVIDER = "openrouter"
-CAPTION_COMPILER_REVISION = "openrouter-per-track-salient-audio-fusion-v3.1"
 REPAIR_RESPONSE_SCHEMA = {
     "name": "per_track_caption_fusion",
     "strict": True,
