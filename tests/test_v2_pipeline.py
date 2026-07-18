@@ -52,6 +52,13 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn("def sync_best", source)
         self.assertIn('path_in_repo="checkpoints/best_val"', source)
 
+    def test_user_cutoff_excludes_later_evaluation_checkpoints(self) -> None:
+        source = (SCRIPTS / "evaluate_v2_checkpoints.py").read_text(encoding="utf-8")
+        self.assertIn('training_stop_override.json', source)
+        self.assertIn('int(match.group(1)) > cutoff', source)
+        finalize = (SCRIPTS / "finalize_v2_user_stop.py").read_text(encoding="utf-8")
+        self.assertIn('source_checkpoints_deleted": False', finalize)
+
     def test_tensor_merger_replaces_unsafe_symlink_with_hardlink(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

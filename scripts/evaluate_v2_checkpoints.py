@@ -55,12 +55,25 @@ def checkpoint_state(path: Path) -> dict[str, int]:
 
 def candidates(output: Path) -> list[dict[str, Any]]:
     """Discover every tenth checkpoint plus best-val and last adapters."""
+    cutoff_path = output / "training_stop_override.json"
+    cutoff = None
+    if cutoff_path.is_file():
+        override = json.loads(cutoff_path.read_text(encoding="utf-8"))
+        if override.get("status") != "pass" or override.get("termination") != "user_requested_cutoff":
+            raise RuntimeError("invalid training stop override")
+        cutoff = int(override["requested_cutoff_epoch"])
     selected: list[dict[str, Any]] = []
+    eligible_states: list[dict[str, int]] = []
     for path in sorted((output / "checkpoints").glob("epoch_*_loss_*")):
         match = re.match(r"epoch_(\d+)_loss_", path.name)
-        if not match or int(match.group(1)) % 10:
+        if not match:
             continue
         state = checkpoint_state(path)
+        if cutoff is not None and int(match.group(1)) > cutoff:
+            continue
+        eligible_states.append(state)
+        if int(match.group(1)) % 10:
+            continue
         selected.append({"label": f"epoch_{int(match.group(1)):03d}", "path": path, **state})
     validation = json.loads((output / "validation_state.json").read_text(encoding="utf-8"))
     selected.append({
@@ -69,10 +82,9 @@ def candidates(output: Path) -> list[dict[str, Any]]:
         "epoch": int(validation["best_epoch"]),
         "optimizer_step": int(validation["best_optimizer_step"]),
     })
-    last_state = max(
-        (checkpoint_state(path) for path in (output / "checkpoints").glob("epoch_*_loss_*")),
-        key=lambda value: value.get("optimizer_step", 0),
-    )
+    if not eligible_states:
+        raise RuntimeError("no eligible checkpoint remains after applying cutoff")
+    last_state = max(eligible_states, key=lambda value: value.get("optimizer_step", 0))
     selected.append({"label": "last", "path": output / "final", **last_state})
     return selected
 

@@ -73,6 +73,18 @@ def main() -> int:
         if not match or int(match.group(1)) % 5 != 0:
             errors.append(f"unexpected_checkpoint_epoch:{path.name}")
 
+    stop_override_path = output / "training_stop_override.json"
+    stop_override = (
+        json.loads(stop_override_path.read_text(encoding="utf-8"))
+        if stop_override_path.is_file()
+        else None
+    )
+    if stop_override is not None:
+        if stop_override.get("status") != "pass" or stop_override.get("termination") != "user_requested_cutoff":
+            errors.append("invalid_user_stop_override")
+        if int(stop_override.get("requested_cutoff_epoch") or 0) != best_epoch:
+            errors.append("user_stop_cutoff_is_not_best_epoch")
+
     report = {
         "status": "pass" if not errors else "failed",
         "best_validation_epoch": best_epoch,
@@ -86,6 +98,7 @@ def main() -> int:
         "prompt_selection_counts": cumulative,
         "gpu_observation": gpu_summary,
         "metric_events": sorted(str(value) for value in event_types),
+        "termination": stop_override or {"termination": "trainer_early_stop_or_max_epochs"},
         "errors": errors,
     }
     atomic_json(output / "training_validation_report.json", report)
