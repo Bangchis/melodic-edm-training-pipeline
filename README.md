@@ -51,6 +51,7 @@ two full-track prompts plus an intro/middle/late montage. Verified exact names a
 preserved; absent claims are removed and unresolved names retain a qualified
 `name-like` token instead of collapsing to an unrelated generic label. A stratified
 compiler then fuses the old prompt for that exact song with the waveform facts.
+The fusion compiler is a text-only OpenRouter call; MOSS remains the audio listener.
 A stratified listening gate checks the complete caption fidelity. Checkpoint acceptance also
 requires every generated evaluation sample to reach at least 3/5 prompt alignment,
 so clean but off-prompt audio is rejected. The run is capped at 20 epochs

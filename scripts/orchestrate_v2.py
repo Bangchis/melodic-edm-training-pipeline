@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 PROMPT_REVISION = "audio-blind-v2.2"
-CAPTION_COMPILER_REVISION = "per-track-prior-audio-fusion-v2.7"
+CAPTION_COMPILER_REVISION = "openrouter-per-track-prior-audio-fusion-v2.8"
 
 
 ACTIVE_STATES = {"STARTING", "RUNNING", "BACKOFF", "STOPPING"}

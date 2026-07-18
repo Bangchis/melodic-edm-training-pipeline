@@ -145,8 +145,10 @@ def main() -> int:
         errors.append("claim_verifier_revision_not_v2_5")
     repairs = reports["data_v2/caption_repair_report.json"]
     annotation_quality = reports["data_v2/annotation_quality_audit.json"]
-    if repairs.get("caption_compiler_revision") != "per-track-prior-audio-fusion-v2.7":
-        errors.append("caption_compiler_revision_not_v2_7")
+    if repairs.get("caption_compiler_revision") != "openrouter-per-track-prior-audio-fusion-v2.8":
+        errors.append("caption_compiler_revision_not_v2_8")
+    if repairs.get("caption_compiler_provider") != "openrouter":
+        errors.append("caption_compiler_provider_is_not_openrouter")
     if repairs.get("fusion_records") != 231 or set(repairs.get("fusion_sources", [])) != {
         "prior_per_track_annotation",
         "independent_audio_analysis",
@@ -155,7 +157,7 @@ def main() -> int:
         errors.append("per_track_prior_audio_fusion_incomplete")
     if (
         annotation_quality.get("caption_fusion_revision")
-        != "per-track-prior-audio-fusion-v2.7"
+        != "openrouter-per-track-prior-audio-fusion-v2.8"
         or annotation_quality.get("caption_fusion_records") != 231
     ):
         errors.append("per_record_caption_fusion_lineage_not_proven")

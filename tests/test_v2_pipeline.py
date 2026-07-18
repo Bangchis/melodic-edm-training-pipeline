@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
@@ -28,6 +29,7 @@ from audit_v2_annotation_fidelity_moss import parse_review, stratified_rows  # n
 from repair_v2_annotations_moss import (  # noqa: E402
     exact_claim_asserted,
     fusion_source_material,
+    openrouter_generate,
     parse_repair,
     qualified_claim_mentioned,
     unverified_new_claims,
@@ -335,6 +337,38 @@ class V2PipelineTest(unittest.TestCase):
             moss_captions,
             sources["independent_audio_analysis"]["caption_proposals"],
         )
+
+    def test_openrouter_caption_fusion_is_text_only(self) -> None:
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return json.dumps({
+                    "model": "google/gemini-3.1-flash-lite",
+                    "usage": {"total_tokens": 12},
+                    "choices": [{"message": {"content": '{"ok":true}'}}],
+                }).encode("utf-8")
+
+        captured = {}
+
+        def fake_open(request, timeout):
+            captured["payload"] = json.loads(request.data.decode("utf-8"))
+            captured["timeout"] = timeout
+            return Response()
+
+        with patch("repair_v2_annotations_moss.urllib.request.urlopen", side_effect=fake_open):
+            response, metadata = openrouter_generate(
+                "Fuse these text packets", "test-key", "google/gemini-3.1-flash-lite", 900, 30
+            )
+        self.assertEqual('{"ok":true}', response)
+        self.assertEqual(12, metadata["usage"]["total_tokens"])
+        serialized = json.dumps(captured["payload"])
+        self.assertNotIn("input_audio", serialized)
+        self.assertNotIn("audio_url", serialized)
 
     def test_preview_is_verified_before_final_training(self) -> None:
         source = (SCRIPTS / "orchestrate_v2.py").read_text(encoding="utf-8")
@@ -702,11 +736,12 @@ class V2PipelineTest(unittest.TestCase):
         source = (SCRIPTS / "audit_v2_objective.py").read_text(encoding="utf-8")
         for revision in (
             "multi-view-audio-claims-v2.5",
-            "per-track-prior-audio-fusion-v2.7",
+            "openrouter-per-track-prior-audio-fusion-v2.8",
             "fixed-prompt-audio-judge-v2.2",
         ):
             self.assertIn(revision, source)
         self.assertIn("per_record_caption_fusion_lineage_not_proven", source)
+        self.assertIn("caption_compiler_provider_is_not_openrouter", source)
         self.assertIn("checkpoint_evaluation_scale_is_not_fixed_0_5", source)
         self.assertIn("dataset_does_not_use_single_fused_canonical_prompt", source)
         self.assertIn("prompt_alignment_not_authoritative_in_checkpoint_selection", source)

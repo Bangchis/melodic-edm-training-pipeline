@@ -21,7 +21,7 @@ diff --git a/acestep/training_v2/prompt_tracking.py b/acestep/training_v2/prompt
 diff --git a/acestep/training_v2/prompt_tracking_test.py b/acestep/training_v2/prompt_tracking_test.py
 --- a/acestep/training_v2/prompt_tracking_test.py
 +++ b/acestep/training_v2/prompt_tracking_test.py
-@@ -12,20 +12,20 @@ from acestep.training_v2.prompt_tracking import count_selected_variants
+@@ -12,19 +12,19 @@ from acestep.training_v2.prompt_tracking import count_selected_variants
  class PromptTrackingTest(unittest.TestCase):
      def test_counts_collated_metadata_list(self) -> None:
 -        counts = torch.zeros(3, dtype=torch.int64)
@@ -48,10 +48,10 @@ diff --git a/acestep/training_v2/prompt_tracking_test.py b/acestep/training_v2/p
  
  
  if __name__ == "__main__":
-diff --git a/acestep/training_v2/train.py b/acestep/training_v2/train.py
---- a/acestep/training_v2/train.py
-+++ b/acestep/training_v2/train.py
-@@ -416,12 +416,12 @@ class FixedLoRATrainer:
+diff --git a/acestep/training_v2/trainer_fixed.py b/acestep/training_v2/trainer_fixed.py
+--- a/acestep/training_v2/trainer_fixed.py
++++ b/acestep/training_v2/trainer_fixed.py
+@@ -416,14 +416,14 @@ class FixedLoRATrainer:
          accumulation_step = 0
          accumulated_loss = 0.0
          optimizer.zero_grad(set_to_none=True)

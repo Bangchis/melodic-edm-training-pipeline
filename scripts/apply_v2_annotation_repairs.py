@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate complete MOSS caption repairs and apply only rows marked revise."""
+"""Validate complete OpenRouter caption fusions and apply the corrected views."""
 from __future__ import annotations
 
 import argparse
@@ -13,9 +13,10 @@ from pathlib import Path
 from statistics import mean
 from typing import Any
 
-from annotate_moss_music import MODEL_REVISION
 from repair_v2_annotations_moss import (
     CAPTION_COMPILER_REVISION,
+    CAPTION_COMPILER_PROVIDER,
+    DEFAULT_COMPILER_MODEL,
     SCORE_FIELDS,
     exact_claim_asserted,
     fusion_source_material,
@@ -56,8 +57,12 @@ def main() -> int:
             repair, validation_errors = parse_repair(record.get("repair", {}))
             if validation_errors:
                 raise ValueError(",".join(validation_errors))
-            if record.get("model_revision") != MODEL_REVISION:
-                raise ValueError("model_revision_mismatch")
+            if record.get("caption_compiler_provider") != CAPTION_COMPILER_PROVIDER:
+                raise ValueError("caption_compiler_provider_mismatch")
+            if record.get("compiler_model_requested") != os.environ.get(
+                "V2_CAPTION_COMPILER_MODEL", DEFAULT_COMPILER_MODEL
+            ):
+                raise ValueError("caption_compiler_model_mismatch")
             if record.get("caption_compiler_revision") != CAPTION_COMPILER_REVISION:
                 raise ValueError("caption_compiler_revision_mismatch")
             if record.get("audio_sha256") != file_sha256(Path(row["final_audio_path"])):
@@ -110,8 +115,9 @@ def main() -> int:
                 "binding_multi_view_claim_decisions": True,
             }
             annotation["caption_repair"] = {
-                "model": record["model_id"],
-                "model_revision": record["model_revision"],
+                "provider": record["caption_compiler_provider"],
+                "model_requested": record["compiler_model_requested"],
+                "model_resolved": record["compiler_model_resolved"],
                 "caption_compiler_revision": record["caption_compiler_revision"],
                 "repaired_at": record["repaired_at"],
                 "recommendation": repair["recommendation"],
@@ -175,6 +181,10 @@ def main() -> int:
     report = {
         "status": status,
         "caption_compiler_revision": CAPTION_COMPILER_REVISION,
+        "caption_compiler_provider": CAPTION_COMPILER_PROVIDER,
+        "caption_compiler_model": os.environ.get(
+            "V2_CAPTION_COMPILER_MODEL", DEFAULT_COMPILER_MODEL
+        ),
         "applied_at": datetime.now(timezone.utc).isoformat(),
         "records": len(results),
         "recommendations": dict(recommendations),

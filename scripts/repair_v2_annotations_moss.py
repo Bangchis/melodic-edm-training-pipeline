@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""Repair V2 captions using audio-grounded claim consensus."""
+"""Compile V2 captions through OpenRouter from audio-grounded claim consensus."""
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from annotate_moss_music import MODEL_ID, MODEL_REVISION, generate, load_runtime
 from v2_common import (
     CAPTION_TYPES,
     atomic_json,
@@ -30,7 +32,51 @@ SCORE_FIELDS = (
     "melody_arrangement_accuracy",
     "production_accuracy",
 )
-CAPTION_COMPILER_REVISION = "per-track-prior-audio-fusion-v2.7"
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+DEFAULT_COMPILER_MODEL = "google/gemini-3.1-flash-lite"
+CAPTION_COMPILER_PROVIDER = "openrouter"
+CAPTION_COMPILER_REVISION = "openrouter-per-track-prior-audio-fusion-v2.8"
+REPAIR_RESPONSE_SCHEMA = {
+    "name": "per_track_caption_fusion",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "additionalProperties": False,
+        "required": [
+            *SCORE_FIELDS,
+            "evidence",
+            "unsupported_claims",
+            "recommendation",
+            "corrected_captions",
+        ],
+        "properties": {
+            **{
+                field: {"type": "integer", "minimum": 1, "maximum": 5}
+                for field in SCORE_FIELDS
+            },
+            "evidence": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": list(SCORE_FIELDS),
+                "properties": {
+                    field: {"type": "string", "minLength": 1}
+                    for field in SCORE_FIELDS
+                },
+            },
+            "unsupported_claims": {"type": "array", "items": {"type": "string"}},
+            "recommendation": {"type": "string", "enum": ["keep", "revise"]},
+            "corrected_captions": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": list(CAPTION_TYPES),
+                "properties": {
+                    name: {"type": "string", "minLength": 1}
+                    for name in CAPTION_TYPES
+                },
+            },
+        },
+    },
+}
 FORBIDDEN_TRAINING_CAPTION_PATTERNS = {
     "embedded_bpm": re.compile(r"\b\d{2,3}\s*bpm\b", re.IGNORECASE),
     "embedded_time_signature": re.compile(r"\b[2-7]\s*/\s*(?:2|4|8|16)\b"),
@@ -157,10 +203,12 @@ def fusion_source_material(
 
 
 def request_for(fusion_sources: dict[str, Any], decisions: list[dict[str, Any]]) -> str:
-    """Ask MOSS to fuse old per-track prompts with independently heard evidence."""
+    """Ask a text LLM to fuse old per-track prompts with verified audio evidence."""
     return (
-        "Listen to the complete supplied instrumental audio and compile three accurate, "
-        "prompt-useful training captions for this exact track. Fuse both supplied source packets: "
+        "Compile three accurate, prompt-useful descriptions for this exact instrumental track. "
+        "The independent audio analysis and multi-view claim decisions were produced by an audio "
+        "listener before this text-only compilation step; treat them as the audible evidence and "
+        "do not invent facts beyond them. Fuse both supplied source packets: "
         "(1) the old per-track annotation and prompt, which contains useful song-specific intent "
         "but may contain mistakes, and (2) the independent waveform-only MOSS analysis. Do not "
         "discard the old per-track prompt, and do not copy it blindly. Preserve its distinctive "
@@ -199,6 +247,68 @@ def request_for(fusion_sources: dict[str, Any], decisions: list[dict[str, Any]])
         + "\nBinding multi-view claim decisions: "
         + json.dumps(decisions, ensure_ascii=False)
     )
+
+
+def openrouter_generate(
+    prompt: str,
+    api_key: str,
+    model: str,
+    max_tokens: int,
+    timeout: int,
+) -> tuple[str, dict[str, Any]]:
+    """Generate one strict JSON repair through OpenRouter without sending audio bytes."""
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are a conservative music-dataset caption compiler. Follow the binding "
+                    "audio evidence and return only the requested JSON object."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0,
+        "max_tokens": max_tokens,
+        "reasoning": {"effort": "minimal", "exclude": True},
+        "response_format": {"type": "json_schema", "json_schema": REPAIR_RESPONSE_SCHEMA},
+        "provider": {"require_parameters": True},
+    }
+    request = urllib.request.Request(
+        OPENROUTER_API_URL,
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "melodic-edm-training-pipeline/2.0",
+            "X-Title": "Melodic EDM Core V2 Caption Fusion",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            body = json.load(response)
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8", "replace")[:800]
+        raise RuntimeError(f"OpenRouter HTTP {error.code}: {detail}") from error
+    choices = body.get("choices") or []
+    if not choices:
+        raise ValueError("OpenRouter response has no choices")
+    content = choices[0].get("message", {}).get("content")
+    if isinstance(content, list):
+        content = "".join(
+            str(item.get("text") or "")
+            for item in content
+            if isinstance(item, dict) and item.get("type") in {"text", "output_text"}
+        )
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError("OpenRouter response content is empty")
+    return content, {
+        "requested_model": model,
+        "resolved_model": body.get("model") or model,
+        "usage": body.get("usage") or {},
+    }
 
 
 def parse_repair(value: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
@@ -244,6 +354,7 @@ def existing_valid(
     caption_hash: str,
     decisions_hash: str,
     fusion_sources_hash: str,
+    compiler_model: str,
 ) -> bool:
     """Return whether a resumable repair still matches exact input audio and captions."""
     if not path.is_file():
@@ -251,7 +362,8 @@ def existing_valid(
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
         base_valid = (
-            value.get("model_revision") == MODEL_REVISION
+            value.get("caption_compiler_provider") == CAPTION_COMPILER_PROVIDER
+            and value.get("compiler_model_requested") == compiler_model
             and value.get("caption_compiler_revision") == CAPTION_COMPILER_REVISION
             and value.get("audio_sha256") == audio_hash
             and value.get("original_captions_sha256") == caption_hash
@@ -271,6 +383,8 @@ def main() -> int:
     parser.add_argument("--num-shards", type=int, default=1)
     parser.add_argument("--attempts", type=int, default=3)
     parser.add_argument("--max-new-tokens", type=int, default=1200)
+    parser.add_argument("--model", default=os.environ.get("V2_CAPTION_COMPILER_MODEL", DEFAULT_COMPILER_MODEL))
+    parser.add_argument("--timeout", type=int, default=180)
     args = parser.parse_args()
     if not 0 <= args.shard_index < args.num_shards:
         parser.error("shard-index must be in [0, num-shards)")
@@ -309,7 +423,7 @@ def main() -> int:
         fusion_sources_hash = object_sha256(fusion_sources)
         path = output_dir / f"{row['sample_id']}.json"
         if not existing_valid(
-            path, audio_hash, caption_hash, decisions_hash, fusion_sources_hash
+            path, audio_hash, caption_hash, decisions_hash, fusion_sources_hash, args.model
         ):
             pending.append((
                 row, captions, audio_hash, caption_hash, decisions, decisions_hash,
@@ -319,12 +433,15 @@ def main() -> int:
         "shard": args.shard_index,
         "assigned": len(rows),
         "pending": len(pending),
-        "model": MODEL_ID,
-        "model_revision": MODEL_REVISION,
+        "provider": CAPTION_COMPILER_PROVIDER,
+        "model": args.model,
+        "compiler_revision": CAPTION_COMPILER_REVISION,
     }), flush=True)
     if not pending:
         return 0
-    model, processor = load_runtime(root / "checkpoints" / "MOSS-Music-8B-Thinking")
+    api_key = os.environ.get("OPENROUTER_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("OPENROUTER_API_KEY is required for caption fusion")
     manifest: list[dict[str, Any]] = []
     errors = 0
     for index, (
@@ -335,10 +452,12 @@ def main() -> int:
         request = request_for(fusion_sources, decisions)
         last_error = ""
         for attempt in range(1, max(1, args.attempts) + 1):
-            response = generate(
-                model, processor, Path(row["final_audio_path"]), request, args.max_new_tokens
-            )
+            response = ""
+            call_metadata: dict[str, Any] = {}
             try:
+                response, call_metadata = openrouter_generate(
+                    request, api_key, args.model, args.max_new_tokens, args.timeout
+                )
                 repair, validation_errors = parse_repair(extract_json_object(response))
                 corrected_text = " ".join(repair.get("corrected_captions", {}).values()).casefold()
                 if any(item["decision"] != "present" for item in decisions):
@@ -362,8 +481,9 @@ def main() -> int:
                     "schema_version": "2.1-caption-repair",
                     "sample_id": sample_id,
                     "parent_song_id": row["parent_song_id"],
-                    "model_id": MODEL_ID,
-                    "model_revision": MODEL_REVISION,
+                    "caption_compiler_provider": CAPTION_COMPILER_PROVIDER,
+                    "compiler_model_requested": call_metadata["requested_model"],
+                    "compiler_model_resolved": call_metadata["resolved_model"],
                     "caption_compiler_revision": CAPTION_COMPILER_REVISION,
                     "repaired_at": datetime.now(timezone.utc).isoformat(),
                     "audio_sha256": audio_hash,
@@ -372,13 +492,15 @@ def main() -> int:
                     "fusion_sources_sha256": fusion_sources_hash,
                     "claim_decisions_sha256": decisions_hash,
                     "claim_decisions": decisions,
+                    "raw_response_sha256": object_sha256(response),
+                    "usage": call_metadata["usage"],
                     "repair": repair,
                 }
                 atomic_json(output_dir / f"{sample_id}.json", record)
                 manifest.append({"sample_id": sample_id, "status": "pass", "attempt": attempt})
                 print(f"[{index}/{len(pending)}] {sample_id} PASS {repair['recommendation']}", flush=True)
                 break
-            except (KeyError, TypeError, ValueError) as exc:
+            except (KeyError, RuntimeError, TypeError, ValueError) as exc:
                 last_error = f"{type(exc).__name__}:{exc}"
                 request += "\nPrevious response failed validation: " + last_error + ". Return corrected JSON only."
         else:
