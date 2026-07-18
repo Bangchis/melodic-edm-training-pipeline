@@ -2,14 +2,38 @@
 
 This path is inference-only. It does not install MOSS, load the training tensors or continue LoRA training. The default adapter is `final-all-data`; `best-val` remains available for comparison.
 
+## How Colab Pro is authenticated
+
+Consumer Colab Pro runs from the Colab website in a browser. It does not provide a supported CLI that a Vast server can use to submit a job to a hosted Pro runtime. Therefore:
+
+- do not install a Google/Colab CLI on Vast for this workflow;
+- do not copy a Google password, browser cookie or Google OAuth refresh token to Vast;
+- sign in to the Google account that owns Colab Pro in the browser, open the notebook, select an NVIDIA GPU and run it there;
+- put only a Hugging Face **read** token in Colab Secrets as `HF_TOKEN` so the notebook can download the private release.
+
+The notebook and inference script are published by GitHub/Hugging Face. The Colab VM pulls the immutable release directly from Hugging Face; Vast does not push a process into Colab.
+
+After this branch is merged, open the notebook from:
+
+```text
+https://colab.research.google.com/github/Bangchis/melodic-edm-training-pipeline/blob/main/notebooks/melodic_edm_core_v2_colab.ipynb
+```
+
+While the GitHub repository is private, first authorize GitHub access from Colab's **File → Open notebook → GitHub** tab. Once the repository is public, the direct URL works without GitHub authorization.
+
+If unattended server-side submission is required, that is a separate Google Cloud Colab Enterprise workflow. It requires a Google Cloud project, billing, IAM permissions, a runtime template and its own quota; a consumer Colab Pro subscription is not that service.
+
 ## Requirements
 
-- A Colab Pro runtime with an NVIDIA GPU.
+- A browser signed into the Google account that owns the active Colab Pro subscription.
+- A Colab Pro runtime with an NVIDIA GPU. GPU type and availability are assigned dynamically by Colab and are not guaranteed.
 - At least 20 GB GPU memory is preferred for XL-Base. A 12–16 GB GPU may work with CPU offload and will be slower.
 - Roughly 35–45 GB free disk for the ACE-Step environment, XL-Base checkpoints and the private adapter release.
 - A Hugging Face read token stored in Colab Secrets as `HF_TOKEN`.
 
 Never paste the token into a notebook cell or commit it to GitHub. In Colab, open the key icon, create `HF_TOKEN`, and enable notebook access.
+
+No Google authentication is required on the local machine beyond the browser session, and no Google authentication is required on Vast.
 
 ## Reproducible versions
 
