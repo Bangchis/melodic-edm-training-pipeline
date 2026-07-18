@@ -9,9 +9,11 @@ set -a
 set +a
 
 project=/workspace/melodic_edm_training_pipeline
-revision="$(${project}/vendor/ACE-Step-1.5-v2/.venv/bin/python -c 'import json; print(json.load(open("/workspace/melodic_edm_training_pipeline/outputs/release/melodic-edm-core-v2/upload_report.json"))["sha"])')"
+ace="$project/vendor/ACE-Step-1.5-v2"
+export PYTHONPATH="$ace${PYTHONPATH:+:$PYTHONPATH}"
+revision="$("$ace/.venv/bin/python" -c 'import json; print(json.load(open("/workspace/melodic_edm_training_pipeline/outputs/release/melodic-edm-core-v2/upload_report.json"))["sha"])')"
 
-cd "${project}/vendor/ACE-Step-1.5-v2"
+cd "$ace"
 exec .venv/bin/python -u "${project}/scripts/verify_v2_release.py" \
   --project-root "${project}" \
   --repo-id Bangchis/melodic-edm-core-v2 \

@@ -7,6 +7,7 @@ utils=/opt/supervisor-scripts/utils
 
 project=/workspace/melodic_edm_training_pipeline
 ace="$project/vendor/ACE-Step-1.5-v2"
+export PYTHONPATH="$ace${PYTHONPATH:+:$PYTHONPATH}"
 export CUDA_VISIBLE_DEVICES="${GPU_INDEX:?GPU_INDEX is required}"
 cd "$project"
 exec "$ace/.venv/bin/python" -u -m acestep.training_v2.cli.train_fixed --preprocess \

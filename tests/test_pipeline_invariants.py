@@ -29,6 +29,20 @@ from annotate_qwen_local import (  # noqa: E402
 
 
 class RecordPreservingTests(unittest.TestCase):
+    def test_v2_ace_wrappers_pin_the_v2_worktree_on_pythonpath(self) -> None:
+        wrappers = (
+            "edm-v2-preprocess.sh",
+            "edm-v2-train-smoke.sh",
+            "edm-v2-train-main.sh",
+            "edm-v2-train-final.sh",
+            "edm-v2-evaluate-checkpoints.sh",
+            "edm-v2-evaluate-final.sh",
+        )
+        for name in wrappers:
+            source = (ROOT / "server" / "supervisor" / name).read_text(encoding="utf-8")
+            self.assertIn('ace="$project/vendor/ACE-Step-1.5-v2"', source, name)
+            self.assertIn('export PYTHONPATH="$ace${PYTHONPATH:+:$PYTHONPATH}"', source, name)
+
     def test_prompt_compiler_uses_only_structured_musical_facts(self) -> None:
         caption = compile_caption({
             "genre": "Chinese melodic gaming EDM",
