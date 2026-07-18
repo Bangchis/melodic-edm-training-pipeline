@@ -82,8 +82,8 @@ def track_style_reference(artist: str, title: str) -> str:
     if not normalized_title:
         raise ValueError("track_style_reference_title_missing")
     return (
-        f'Style inspired by the musical identity of {normalized_artist} '
-        f'and the reference track "{normalized_title}".'
+        f'Instrumental music in the characteristic style of {normalized_artist}, '
+        f'drawing on the musical character of the reference track "{normalized_title}".'
     )
 
 
