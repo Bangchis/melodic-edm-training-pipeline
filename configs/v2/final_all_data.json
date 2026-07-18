@@ -1,6 +1,6 @@
 {
   "phase": "final-all-data",
-  "initialization": "fresh_xl_base_and_fresh_rank48_lora",
+  "initialization": "fresh_xl_base_and_fresh_rank32_lora",
   "resume_from_train_validation": false,
   "records": 231,
   "validation": false,

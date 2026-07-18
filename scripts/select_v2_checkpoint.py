@@ -14,6 +14,7 @@ import librosa
 import numpy as np
 
 from v2_common import atomic_json, read_jsonl
+from v2_listening_quality import summarize_quality
 
 
 def feature(path: Path) -> np.ndarray:
@@ -98,6 +99,7 @@ def main() -> int:
         diversity = np.mean([1.0 - cosine(vectors[a], vectors[b]) for a, b in combinations(range(len(vectors)), 2)])
         nearest = max(float(np.max(training_features @ vector)) for vector in vectors)
         judge_records = listening_by_checkpoint[label]
+        quality = summarize_quality(judge_records)
         judge_score = float(np.mean([
             np.mean(list(record["scores"].values())) / 5.0
             for record in judge_records
@@ -112,18 +114,47 @@ def main() -> int:
             "epoch": epoch,
             "optimizer_step": int(records[0]["optimizer_step"]),
             "adapter_path": records[0]["adapter_path"],
+            "checkpoint_base": records[0].get("checkpoint_base", label),
+            "lora_scale": float(records[0].get("lora_scale", 1.0)),
             "validation_loss": val_loss,
             "moss_listening_score": judge_score,
+            "absolute_listening_quality": quality,
             "prompt_output_diversity": float(diversity),
             "max_training_feature_similarity": nearest,
         }
-    val_scaled = scale({key: value["validation_loss"] for key, value in raw.items()}, False)
+    eligible = {
+        key: value for key, value in raw.items()
+        if value["absolute_listening_quality"]["quality_accepted"]
+    }
+    if not eligible:
+        report = {
+            "status": "failed",
+            "quality_accepted": False,
+            "selected_checkpoint": None,
+            "best_optimizer_step": None,
+            "selected_epoch": None,
+            "selection_method": {
+                "absolute_listening_gate_required": True,
+                "minimum_dimension_mean": 3.0,
+                "minimum_individual_score": 2,
+                "human_listening_completed": False,
+                "listening_proxy": "OpenMOSS-Team/MOSS-Music-8B-Thinking",
+            },
+            "candidates": raw,
+            "best_val_output": None,
+            "errors": ["no_checkpoint_passed_absolute_listening_quality"],
+        }
+        atomic_json(evaluation / "selection.json", report)
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 1
+
+    val_scaled = scale({key: value["validation_loss"] for key, value in eligible.items()}, False)
     diversity_scaled = scale(
-        {key: value["prompt_output_diversity"] for key, value in raw.items()},
+        {key: value["prompt_output_diversity"] for key, value in eligible.items()},
         True,
         minimum_range=0.01,
     )
-    for label, value in raw.items():
+    for label, value in eligible.items():
         no_memorization = max(0.0, 1.0 - value["max_training_feature_similarity"])
         value["composite_score"] = (
             0.40 * val_scaled[label]
@@ -131,14 +162,16 @@ def main() -> int:
             + 0.10 * diversity_scaled[label]
             + 0.05 * no_memorization
         )
-    selected_label = max(raw, key=lambda label: raw[label]["composite_score"])
-    selected = raw[selected_label]
+    selected_label = max(eligible, key=lambda label: eligible[label]["composite_score"])
+    selected = eligible[selected_label]
     copy_best(Path(selected["adapter_path"]), root / "outputs" / "v2" / "best-val")
     report = {
         "status": "pass",
+        "quality_accepted": True,
         "selected_checkpoint": selected_label,
         "best_optimizer_step": selected["optimizer_step"],
         "selected_epoch": selected["epoch"],
+        "selected_lora_scale": selected["lora_scale"],
         "selection_method": {
             "validation_loss_weight": 0.40,
             "moss_audio_listening_weight": 0.45,

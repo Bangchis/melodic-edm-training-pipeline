@@ -15,6 +15,9 @@ import torch
 from v2_common import atomic_json
 
 
+LORA_SCALES = (0.25, 0.5, 1.0)
+
+
 LYRICS = """[Intro]
 [Instrumental]
 
@@ -54,7 +57,7 @@ def checkpoint_state(path: Path) -> dict[str, int]:
 
 
 def candidates(output: Path) -> list[dict[str, Any]]:
-    """Discover every tenth checkpoint plus best-val and last adapters."""
+    """Discover every fifth checkpoint plus best-val and last adapters."""
     cutoff_path = output / "training_stop_override.json"
     cutoff = None
     if cutoff_path.is_file():
@@ -72,7 +75,7 @@ def candidates(output: Path) -> list[dict[str, Any]]:
         if cutoff is not None and int(match.group(1)) > cutoff:
             continue
         eligible_states.append(state)
-        if int(match.group(1)) % 10:
+        if int(match.group(1)) % 5:
             continue
         selected.append({"label": f"epoch_{int(match.group(1)):03d}", "path": path, **state})
     validation = json.loads((output / "validation_state.json").read_text(encoding="utf-8"))
@@ -164,63 +167,73 @@ def main() -> int:
         active_message = handler.set_active_lora_adapter(label)
         if not active_message.startswith("✅"):
             raise RuntimeError(active_message)
-        for prompt in prompts:
-            target_dir = evaluation_root / "audio" / label / prompt["id"]
-            params = GenerationParams(
-                caption=prompt["caption"],
-                lyrics=LYRICS,
-                instrumental=True,
-                bpm=int(prompt["bpm"]),
-                keyscale=prompt["keyscale"],
-                timesignature=str(prompt["timesignature"]),
-                duration=float(prompt["duration"]),
-                inference_steps=50,
-                guidance_scale=7.0,
-                shift=1.0,
-                seed=int(prompt["seed"]),
-                thinking=False,
-                use_cot_metas=False,
-                use_cot_caption=False,
-                use_cot_language=False,
-                use_cot_lyrics=False,
-            )
-            config = GenerationConfig(
-                batch_size=1,
-                use_random_seed=False,
-                seeds=[int(prompt["seed"])],
-                audio_format="wav",
-            )
-            generated = generate_music(handler, None, params, config, save_dir=str(target_dir))
-            if not generated.success or len(generated.audios) != 1:
-                errors.append({"checkpoint": label, "prompt": prompt["id"], "reason": generated.error or generated.status_message})
-                continue
-            path = audio_path(generated.audios[0])
-            if path is None or not path.is_file():
-                errors.append({"checkpoint": label, "prompt": prompt["id"], "reason": "generated_audio_path_missing"})
-                continue
-            valid, audio_probe = probe(path)
-            record = {
-                "checkpoint": label,
-                "adapter_path": str(adapter),
-                "epoch": checkpoint.get("epoch"),
-                "optimizer_step": checkpoint.get("optimizer_step"),
-                "prompt_id": prompt["id"],
-                "prompt": prompt["caption"],
-                "seed": prompt["seed"],
-                "audio_path": str(path),
-                "probe": audio_probe,
-                "status": "pass" if valid else "failed",
-            }
-            results.append(record)
-            if not valid:
-                errors.append({"checkpoint": label, "prompt": prompt["id"], "reason": "audio_validation_failed"})
-            print(f"[{label}] {prompt['id']} {'PASS' if valid else 'FAIL'}", flush=True)
+        for lora_scale in LORA_SCALES:
+            scaled_label = f"{label}_scale_{lora_scale:.2f}"
+            scale_message = handler.set_lora_scale(label, lora_scale)
+            if not scale_message.startswith("✅"):
+                raise RuntimeError(scale_message)
+            for prompt in prompts:
+                target_dir = evaluation_root / "audio" / scaled_label / prompt["id"]
+                params = GenerationParams(
+                    caption=prompt["caption"],
+                    lyrics=LYRICS,
+                    instrumental=True,
+                    bpm=int(prompt["bpm"]),
+                    keyscale=prompt["keyscale"],
+                    timesignature=str(prompt["timesignature"]),
+                    duration=float(prompt["duration"]),
+                    inference_steps=64,
+                    guidance_scale=8.0,
+                    shift=1.0,
+                    use_adg=True,
+                    dcw_enabled=False,
+                    seed=int(prompt["seed"]),
+                    thinking=False,
+                    use_cot_metas=False,
+                    use_cot_caption=False,
+                    use_cot_language=False,
+                    use_cot_lyrics=False,
+                )
+                config = GenerationConfig(
+                    batch_size=1,
+                    use_random_seed=False,
+                    seeds=[int(prompt["seed"])],
+                    audio_format="wav",
+                )
+                generated = generate_music(handler, None, params, config, save_dir=str(target_dir))
+                if not generated.success or len(generated.audios) != 1:
+                    errors.append({"checkpoint": scaled_label, "prompt": prompt["id"], "reason": generated.error or generated.status_message})
+                    continue
+                path = audio_path(generated.audios[0])
+                if path is None or not path.is_file():
+                    errors.append({"checkpoint": scaled_label, "prompt": prompt["id"], "reason": "generated_audio_path_missing"})
+                    continue
+                valid, audio_probe = probe(path)
+                record = {
+                    "checkpoint": scaled_label,
+                    "checkpoint_base": label,
+                    "lora_scale": lora_scale,
+                    "adapter_path": str(adapter),
+                    "epoch": checkpoint.get("epoch"),
+                    "optimizer_step": checkpoint.get("optimizer_step"),
+                    "prompt_id": prompt["id"],
+                    "prompt": prompt["caption"],
+                    "seed": prompt["seed"],
+                    "audio_path": str(path),
+                    "probe": audio_probe,
+                    "status": "pass" if valid else "failed",
+                }
+                results.append(record)
+                if not valid:
+                    errors.append({"checkpoint": scaled_label, "prompt": prompt["id"], "reason": "audio_validation_failed"})
+                print(f"[{scaled_label}] {prompt['id']} {'PASS' if valid else 'FAIL'}", flush=True)
         handler.remove_lora(label)
-    expected = len(checkpoints) * len(prompts)
+    expected = len(checkpoints) * len(LORA_SCALES) * len(prompts)
     report = {
         "status": "pass" if not errors and len(results) == expected else "failed",
         "fixed_prompt_count": len(prompts),
         "checkpoint_count": len(checkpoints),
+        "lora_scales": list(LORA_SCALES),
         "expected_outputs": expected,
         "generated_outputs": len(results),
         "results": results,

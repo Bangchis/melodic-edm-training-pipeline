@@ -19,9 +19,9 @@ Private ACE-Step 1.5 XL-Base LoRA adapters for instrumental melodic EDM generati
 
 ## Training facts
 
-- LoRA rank 48, alpha 96, dropout 0.1.
+- LoRA rank 32, alpha 32, dropout 0.1.
 - Exact targets: `q_proj`, `k_proj`, `v_proj`, `o_proj`.
-- BF16 AdamW, learning rate `7.5e-5`, cosine schedule and 75-step warmup.
+- BF16 AdamW, learning rate `5e-5`, cosine schedule and 25-step warmup.
 - DDP on 2 × RTX 4090, batch 1/GPU, accumulation 8, effective batch 16.
 - Three caption embeddings per record: canonical, composition and production.
 - Uniform random caption selection during training; canonical-only validation.
@@ -30,6 +30,8 @@ Private ACE-Step 1.5 XL-Base LoRA adapters for instrumental melodic EDM generati
 - No test split in the first research run.
 
 MOSS-Music-8B-Thinking was used only to listen to source audio for annotation supplements and to score fixed checkpoint examples. It was not trained, fine-tuned, connected to the ACE-Step gradient graph or included in these adapters.
+
+The annotation listener runs under prompt revision `audio-blind-v2.2`, which withholds identity, MIR and prior claims. Named sound sources then pass two independent full-track checks plus an intro/middle/late montage. Exact instrument names are preserved when supported by consensus; absent claims are removed and unresolved timbres are explicitly qualified rather than silently asserted. Captions are recompiled before prompt embeddings are rebuilt, and the final stratified fidelity report is included in the completion evidence.
 
 ## Files
 
@@ -55,7 +57,7 @@ not duplicated inside this model repository.
 
 ## Inference
 
-Use `final-all-data` with the exact ACE-Step source and XL-Base revisions recorded in `release_manifest.json`. The included Colab notebook sends a free-form idea through an OpenRouter LLM, requires exactly five JSON music-description fields, then applies a local validator/compiler with a hard 300-word inference limit. BPM, key, time signature and instrumental sections remain separate fixed conditions. The notebook performs immutable download, checksum verification, generation and 48 kHz stereo validation. Training captions remain 40–80 words.
+Use `final-all-data` with the exact ACE-Step source and XL-Base revisions recorded in `release_manifest.json`. The included Colab notebook sends a free-form idea through an OpenRouter LLM, requires exactly five JSON music-description fields, then applies a local validator/compiler with a hard 300-word inference limit. BPM, key, time signature and instrumental sections remain separate fixed conditions. The notebook performs immutable download, checksum verification, generation and 48 kHz stereo validation. Training captions remain 40–80 words. The packaged default uses 64 steps, guidance 8, XL-Base shift 1, ADG enabled and DCW disabled; every control remains editable.
 
 See `docs/COLAB_INFERENCE_V2.md` and `notebooks/melodic_edm_core_v2_colab.ipynb`.
 

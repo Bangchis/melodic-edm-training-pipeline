@@ -19,6 +19,8 @@ def main() -> int:
     args = parser.parse_args()
     root = Path(args.project_root).resolve()
     selection = json.loads((root / args.selection).read_text(encoding="utf-8"))
+    if selection.get("status") != "pass" or selection.get("quality_accepted") is not True:
+        raise ValueError("checkpoint selection has not passed absolute listening quality")
     best_steps = int(selection["best_optimizer_step"])
     if best_steps <= 0:
         raise ValueError("best_optimizer_step must be positive")
@@ -26,12 +28,13 @@ def main() -> int:
     plan = {
         "status": "ready",
         "selected_checkpoint": selection["selected_checkpoint"],
+        "selected_lora_scale": selection["selected_lora_scale"],
         "best_optimizer_step": best_steps,
         "train_records": 196,
         "final_records": 231,
         "formula": "round(best_optimizer_step * 231 / 196)",
         "final_optimizer_steps": final_steps,
-        "initialization": "fresh_xl_base_and_fresh_rank48_lora",
+        "initialization": "fresh_xl_base_and_fresh_rank32_lora",
         "resume": False,
     }
     atomic_json(root / "outputs" / "v2" / "final_plan.json", plan)

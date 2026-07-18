@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Upload every tenth v2 checkpoint and current metrics to a private Hub repo."""
+"""Upload every fifth v2 checkpoint and current metrics to a private Hub repo."""
 from __future__ import annotations
 
 import argparse
@@ -27,14 +27,14 @@ def load_state(path: Path) -> dict[str, Any]:
 
 
 def discover(checkpoint_root: Path) -> list[tuple[int, Path]]:
-    """Return complete checkpoints whose epoch is a multiple of ten."""
+    """Return complete checkpoints whose epoch is a multiple of five."""
     output = []
     for path in checkpoint_root.glob("epoch_*_loss_*"):
         match = EPOCH_PATTERN.match(path.name)
         if not match:
             continue
         epoch = int(match.group(1))
-        if epoch % 10 == 0 and (path / "training_state.pt").is_file():
+        if epoch % 5 == 0 and (path / "training_state.pt").is_file():
             output.append((epoch, path))
     return sorted(output)
 
@@ -141,7 +141,7 @@ def sync_best(api: HfApi, repo_id: str, root: Path, state: dict[str, Any]) -> bo
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project-root", default=".")
-    parser.add_argument("--repo-id", default="Bangchis/melodic-edm-core-v2-training")
+    parser.add_argument("--repo-id", default="Bangchis/melodic-edm-core-v2-r32-training")
     parser.add_argument("--watch", action="store_true")
     parser.add_argument("--poll-seconds", type=int, default=60)
     parser.add_argument("--max-idle-minutes", type=int, default=360)

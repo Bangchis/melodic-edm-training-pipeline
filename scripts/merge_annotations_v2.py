@@ -10,6 +10,7 @@ from pathlib import Path
 from statistics import mean
 from typing import Any
 
+from annotate_moss_music import PROMPT_REVISION
 from v2_common import (
     CAPTION_TYPES,
     atomic_json,
@@ -36,6 +37,8 @@ def merge_record(
     if file_sha256(audio_path) != moss_record.get("audio_sha256"):
         raise ValueError("audio_changed_after_moss_run")
     supplement = moss_record["supplement"]
+    if moss_record.get("prompt_revision") != PROMPT_REVISION:
+        raise ValueError("moss_prompt_revision_mismatch")
     captions = caption_map(supplement.get("captions"))
     errors = validate_caption_set(
         captions,
@@ -62,12 +65,14 @@ def merge_record(
             "moss_model": moss_record["model_id"],
             "moss_model_revision": moss_record["model_revision"],
             "moss_source_revision": moss_record["source_revision"],
+            "moss_prompt_revision": moss_record["prompt_revision"],
             "moss_response_sha256": moss_record["raw_response_sha256"],
             "audio_sha256": moss_record["audio_sha256"],
         },
     }
     return {
         "schema_version": "2.0",
+        "moss_prompt_revision": PROMPT_REVISION,
         "sample_id": row["sample_id"],
         "record_key": row["record_key"],
         "parent_song_id": parent,
@@ -139,6 +144,7 @@ def main() -> int:
     report = {
         "status": status,
         "schema_version": "2.0",
+        "moss_prompt_revision": PROMPT_REVISION,
         "records_expected": len(rows),
         "records_merged": len(merged_rows),
         "train_records": counts.get("train", 0),

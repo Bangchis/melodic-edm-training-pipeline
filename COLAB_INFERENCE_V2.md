@@ -94,7 +94,7 @@ USE_LORA = True
 LORA_SCALE = 0.5
 
 USE_LORA = True
-LORA_SCALE = 1.0
+LORA_SCALE = 0.5  # validated safe default; the packaged selection report may override it
 ```
 
 If the base output is coherent while higher LoRA scales become noisy, the adapter is the cause; mastering or normalization will not repair it. If the base is also broken, investigate the pinned base/checkpoint/sampling path first.

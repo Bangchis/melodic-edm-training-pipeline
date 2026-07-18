@@ -5,45 +5,42 @@ Last reconciled: 2026-07-18 (Asia/Ho_Chi_Minh)
 ## Current state
 
 - V1 is complete and remains unchanged.
-- V2 runs from branch `agent/training-v2-r48` and a separate ACE-Step worktree.
-- The 231 validated V1 audio records are reused; no audio is redownloaded and no record is deduplicated.
-- MOSS annotation, three-caption merge, grouped 196/35 split and preprocessing of all 231 records have passed their strict gates.
-- MOSS is an annotation/listening model only. It is not loaded by the ACE-Step trainer and is not updated.
-- The 66-step DDP smoke, checkpoint save/resume and clean adapter reload have passed.
-- The single train/validation run is active. At the latest reconciliation it completed epoch 35; the best validation state remained epoch 20, optimizer step 260, loss `0.7067630870`, with three stale checks.
-- Epoch 10, 20 and 30 resumable checkpoints plus metrics are confirmed in the private Hugging Face training repository.
-- Both RTX 4090 GPUs remain active without OOM/NaN. The Vast workspace has about 186 GiB free.
+- V2 reuses 231 validated audio records with a grouped 196-train/35-validation split. No audio is redownloaded or deduplicated.
+- The previous rank-48/alpha-96 run was stopped and preserved under `outputs/v2-r48-failed-20260718T0841Z`; it is not treated as a releasable final model.
+- Diagnosis proved that the chaotic Colab samples were not enough to declare training failure. The old inference profile (`50 steps`, ADG off, DCW on, LoRA scale 1) made pristine XL-Base fail too. The corrected XL-Base profile is `64 steps`, guidance `8`, shift `1`, ADG on and DCW off.
+- With that corrected profile, the archived rank-48 epoch-45 adapter at LoRA scale `0.5` scored 5/5 for prompt alignment, melody, structure and audio quality on the fixed gaming prompt. Scale `0.25` was clean but generic; scale `1.0` was clean but less aligned. This is why V2 now A/B tests scales instead of assuming `1.0`.
+- The annotation-to-audio/tensor linkage is exact for 231/231 records, but the first stratified listening audit found unsupported audible claims, including pipa/guzheng on `myomouse__009` and strings/brass on `diversity__001`.
+- Rank-32 training has **not started**. The first conservative caption-repair pass was stopped before applying anything because a single MOSS audit contradicted MOSS's earlier instrument identification on the same audio. No existing annotation or tensor was replaced.
+- Caption checking is being changed to claim-level multi-view consensus: two differently worded full-track checks plus an intro/middle/late montage. Exact names such as pipa, dizi or guzheng are preserved when at least two views support them without a strong full-track contradiction; only absent or unresolved claims are removed or softened.
+- Root cause in the previous annotation prompt was confirmation bias: MOSS received title/artist context and the prior instrument list before listening, so it could echo `pipa/guzheng/dizi` instead of independently identifying them. Prompt revision `audio-blind-v2.2` now withholds identity, MIR and prior claims; all 231 MOSS supplements must be regenerated under that revision.
+- The five-record consensus pilot validated the policy. `diversity__001` retained three verified electronic claims and rejected only strings/brass; `xu_mengyuan__001` retained pipa as present; conflicted rows remained uncertain rather than being automatically erased.
+- The Vast workspace currently has about 182 GiB free.
 
-## Completed V2 implementation
+## Locked replacement configuration
 
-- Pinned MOSS source/model installation in a separate virtual environment.
-- Real MOSS audio smoke inference.
-- Exact three-caption schema and validator.
-- Atomic/resumable two-shard MOSS annotation.
-- Merged annotation builder with immutable audio/base-annotation hashes.
-- Exact grouped split solver for 196 train / 35 validation / 0 test.
-- Dataset builder with one audio latent and three prompt embeddings per record.
-- Strict rank-48 q/k/v/o LoRA scope gate.
-- Uniform train caption selection, canonical-only validation and CFG semantics.
-- Exact optimizer-step stop, metric history, prompt counters, VRAM monitoring and resume state.
-- A 66-step DDP smoke plan with one-step checkpoint resume.
-- Main train/validation, checkpoint sync, fixed-sample generation and MOSS listening jobs.
-- Best-step selection and fresh all-231 step scaling.
-- A pre-final `best-val` package/upload/clean-inference gate so the selected adapter can be tested before all-data retraining starts.
-- Private Hugging Face packaging/upload and clean-redownload verification jobs.
-- Detailed training guide, model card and Colab Pro inference notebook.
-- Forty-three focused pipeline tests pass locally and on Vast.
+- ACE-Step 1.5 XL-Base, fixed LoRA training.
+- Rank `32`, alpha `32`, dropout `0.1`.
+- `q_proj`, `k_proj`, `v_proj`, `o_proj` across self- and cross-attention.
+- Learning rate `5e-5`, AdamW, cosine, 25 optimizer-step warmup.
+- BF16, gradient checkpointing, DDP on 2 × RTX 4090.
+- Batch 1/GPU, accumulation 8, effective batch 16.
+- CFG dropout `0.15`; random canonical/composition/production embedding during training.
+- Maximum 20 epochs; checkpoint/validation/evaluation at epochs 5, 10, 15 and 20.
+- Absolute MOSS gate: every dimension mean at least 3/5 and every individual score at least 2/5.
+- Every candidate is evaluated at LoRA scales `0.25`, `0.5` and `1.0` using identical prompts/seeds.
 
-## Next automatic gates
+## Active work
 
-1. Finish the single train/validation run by early stopping or epoch 150 and finalize every tenth private checkpoint upload.
-2. Generate the same three fixed prompt/seed examples for all tenth checkpoints plus best/last, then run MOSS listening and feature checks.
-3. Select the optimizer step from validation, alignment, melody, structure, audio quality, diversity and similarity evidence.
-4. Publish `best-val` to the private model repository and require a clean immutable redownload plus 48 kHz stereo inference before continuing.
-5. Fresh-train all 231 records to `round(best_step × 231 / 196)`.
-6. Package/upload both adapters, redownload the final immutable revision and pass clean inference.
-7. Run the objective audit, back up completion evidence and update GitHub with final hashes, metrics and links.
+1. Regenerate all 231 MOSS supplements with the identity- and prior-claim-blind prompt.
+2. Finish multi-view verification of exact audible instrument claims.
+3. Compile prompt-useful captions from those decisions, preserving verified specific names, and apply only a fully validated 231-record repair set while keeping a full backup.
+4. Rebuild all prompt embeddings/tensors and rerun exact annotation–tensor alignment checks.
+5. Rerun the stratified audio-grounded caption fidelity gate.
+6. Run a fresh 66-step rank-32 DDP smoke with save/resume/reload checks.
+7. Train once through epoch 20 and evaluate epochs 5/10/15/20 at all three LoRA scales.
+8. Select only a checkpoint/scale that passes the absolute quality gate, publish the private `best-val` preview, then fresh-retrain all 231 records to the scaled optimizer step.
+9. Score final audio, upload model plus complete 196/35 audio dataset to private Hugging Face repositories, verify immutable redownloads, then update GitHub and Colab documentation.
 
 ## Safety
 
-`/workspace` is not persistent across instance destruction. Do not close the Vast instance until final metadata, checkpoints, adapters, reports and fixed audio examples have been confirmed on private Hugging Face repositories. Secrets, source audio, stems, tensors and MOSS reasoning are excluded from GitHub/model releases.
+`/workspace` is not a persistent volume. Do not destroy the Vast instance before repaired annotations, rebuilt tensors, checkpoints, adapters, metrics and fixed audio examples have been backed up. Secrets, optimizer state, MOSS reasoning and browser credentials remain excluded from GitHub/model packages.

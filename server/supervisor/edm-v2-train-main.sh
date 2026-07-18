@@ -43,14 +43,14 @@ set +e
   --output-dir "$output" \
   --checkpoint-dir "$project/checkpoints" \
   --model-variant xl_base --base-model xl_base \
-  --adapter-type lora --rank 48 --alpha 96 --dropout 0.1 \
+  --adapter-type lora --rank 32 --alpha 32 --dropout 0.1 \
   --target-modules q_proj k_proj v_proj o_proj --attention-type both --strict-attention-scope \
-  --lr 7.5e-5 --batch-size 1 --gradient-accumulation 8 --epochs 150 \
-  --warmup-steps 75 --weight-decay 0.01 --optimizer-type adamw --scheduler-type cosine \
+  --lr 5e-5 --batch-size 1 --gradient-accumulation 8 --epochs 20 \
+  --warmup-steps 25 --weight-decay 0.01 --optimizer-type adamw --scheduler-type cosine \
   --gradient-checkpointing --cfg-ratio 0.15 --shift 1.0 --num-inference-steps 50 \
   --num-devices 2 --strategy ddp --save-every 5 \
-  --validate-every 5 --early-stopping-patience 5 \
-  --log-every 10 --log-heavy-every 50 --sample-every-n-epochs 10 \
+  --validate-every 5 --early-stopping-patience 0 \
+  --log-every 10 --log-heavy-every 50 --sample-every-n-epochs 5 \
   "${resume_args[@]}" 2>&1 | tee -a "$output/training.log"
 train_status=${PIPESTATUS[0]}
 set -e

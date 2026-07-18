@@ -42,6 +42,12 @@ def main() -> int:
         "data_v2/dataset_build_report.json",
         "data_v2/tensor_validation_report.json",
         "data_v2/metadata_upload_report.json",
+        "data_v2/annotation_quality_audit.json",
+        "data_v2/annotation_fidelity_audit.json",
+        "data_v2/claim_consensus_report.json",
+        "data_v2/caption_repair_report.json",
+        "outputs/v2/baseline-xl-base/generation_report.json",
+        "outputs/v2/baseline-xl-base/listening_scores.json",
         "outputs/v2/smoke/smoke_validation_report.json",
         "outputs/v2/train-validation/training_validation_report.json",
         "outputs/v2/checkpoint-evaluation/generation_report.json",
@@ -56,6 +62,8 @@ def main() -> int:
         "outputs/v2/audio_dataset_upload_report.json",
         "outputs/v2/audio_dataset_clean_verification_report.json",
         "outputs/v2/final-all-data/evaluation/generation_report.json",
+        "outputs/v2/final-all-data/evaluation/listening_scores.json",
+        "outputs/v2/final-all-data/evaluation/listening_quality_report.json",
         "outputs/release/melodic-edm-core-v2/release_report.json",
         "outputs/release/melodic-edm-core-v2/upload_report.json",
         "outputs/release/melodic-edm-core-v2/clean_verification_report.json",
@@ -70,25 +78,25 @@ def main() -> int:
     uploaded_epochs = {int(epoch) for epoch in sync_state.get("uploaded_epochs", {})}
     if not sync_state.get("completed_at") or not uploaded_epochs:
         errors.append("private_checkpoint_sync_incomplete")
-    if any(epoch % 10 for epoch in uploaded_epochs):
-        errors.append(f"non_tenth_epoch_uploaded:{sorted(uploaded_epochs)}")
+    if any(epoch % 5 for epoch in uploaded_epochs):
+        errors.append(f"non_fifth_epoch_uploaded:{sorted(uploaded_epochs)}")
 
     config = load_json(root, "configs/v2/train_val.json", errors)
     adapter = config.get("adapter", {})
     optimization = config.get("optimization", {})
     data = config.get("data", {})
     expected_values = {
-        "adapter.rank": (adapter.get("rank"), 48),
-        "adapter.alpha": (adapter.get("alpha"), 96),
+        "adapter.rank": (adapter.get("rank"), 32),
+        "adapter.alpha": (adapter.get("alpha"), 32),
         "adapter.dropout": (adapter.get("dropout"), 0.1),
         "adapter.targets": (adapter.get("target_modules"), ["q_proj", "k_proj", "v_proj", "o_proj"]),
         "adapter.attention_scope": (
             adapter.get("attention_scope"),
             "separate_self_and_cross_attention_projections",
         ),
-        "optimization.learning_rate": (optimization.get("learning_rate"), 0.000075),
+        "optimization.learning_rate": (optimization.get("learning_rate"), 0.00005),
         "optimization.cfg_dropout": (optimization.get("cfg_dropout"), 0.15),
-        "optimization.warmup": (optimization.get("warmup_optimizer_steps"), 75),
+        "optimization.warmup": (optimization.get("warmup_optimizer_steps"), 25),
         "optimization.gpus": (optimization.get("gpus"), 2),
         "optimization.effective_batch": (optimization.get("effective_batch"), 16),
         "data.records": (data.get("records"), 231),
@@ -105,10 +113,18 @@ def main() -> int:
             errors.append(f"config_mismatch:{label}:{observed}:{expected}")
 
     merge = reports["data_v2/annotation_merge_report.json"]
+    moss = reports["data_v2/moss_validation_report.json"]
+    if moss.get("prompt_revision") != "audio-blind-v2.2":
+        errors.append("moss_annotation_prompt_is_not_audio_blind_v2_2")
+    if merge.get("moss_prompt_revision") != "audio-blind-v2.2":
+        errors.append("merged_annotations_do_not_use_audio_blind_v2_2")
     if (merge.get("records_merged"), merge.get("train_records"), merge.get("validation_records")) != (231, 196, 35):
         errors.append("merged_dataset_counts_invalid")
     if merge.get("parent_split_crossings"):
         errors.append("parent_song_split_crossing_present")
+    claims = reports["data_v2/claim_consensus_report.json"]
+    if claims.get("records") != 231 or int(claims.get("claim_total", 0)) <= 0:
+        errors.append("multi_view_claim_consensus_incomplete")
     tensors = reports["data_v2/tensor_validation_report.json"]
     if (tensors.get("train_tensors"), tensors.get("validation_tensors"), tensors.get("all_tensors")) != (196, 35, 231):
         errors.append("tensor_counts_invalid")
@@ -119,7 +135,11 @@ def main() -> int:
     if smoke.get("optimizer_steps") != 66 or not smoke.get("adapter_reload_verified"):
         errors.append("smoke_resume_or_reload_evidence_invalid")
     selection = reports["outputs/v2/checkpoint-evaluation/selection.json"]
-    if int(selection.get("best_optimizer_step", 0)) <= 0:
+    if (
+        int(selection.get("best_optimizer_step", 0)) <= 0
+        or selection.get("quality_accepted") is not True
+        or float(selection.get("selected_lora_scale", 0.0)) not in (0.25, 0.5, 1.0)
+    ):
         errors.append("best_optimizer_step_invalid")
     preview_upload = reports["outputs/v2/checkpoint-evaluation/preview_upload_report.json"]
     preview_clean = reports["outputs/v2/checkpoint-evaluation/preview_clean_verification_report.json"]
@@ -131,8 +151,13 @@ def main() -> int:
     ):
         errors.append("best_val_preview_clean_verification_invalid")
     final = reports["outputs/v2/final-all-data/final_validation_report.json"]
-    if final.get("records") != 231 or final.get("initialization") != "fresh_xl_base_and_fresh_rank48_lora":
+    if final.get("records") != 231 or final.get("initialization") != "fresh_xl_base_and_fresh_rank32_lora":
         errors.append("fresh_final_training_evidence_invalid")
+    final_quality = reports[
+        "outputs/v2/final-all-data/evaluation/listening_quality_report.json"
+    ]
+    if final_quality.get("quality_accepted") is not True:
+        errors.append("final_absolute_listening_quality_not_accepted")
     audio_prepare = reports["outputs/v2/audio_dataset_prepare_report.json"]
     audio_upload = reports["outputs/v2/audio_dataset_upload_report.json"]
     audio_clean = reports["outputs/v2/audio_dataset_clean_verification_report.json"]
@@ -174,7 +199,7 @@ def main() -> int:
             errors.append(f"documentation_missing:{relative}")
     report = {
         "status": "pass" if not errors else "failed",
-        "objective": "melodic_edm_core_v2_rank48_train_select_fresh231_release",
+        "objective": "melodic_edm_core_v2_rank32_quality_gated_fresh231_release",
         "reports_checked": [*required_reports, sync_relative],
         "configuration_checks": len(expected_values),
         "best_optimizer_step": selection.get("best_optimizer_step"),

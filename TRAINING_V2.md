@@ -25,6 +25,8 @@ Every record has one master annotation and exactly three captions in this fixed 
 
 Artist names and source titles are rejected from captions. BPM, key and time signature remain structured fields. Song form remains in the instrumental lyrics sidecar.
 
+MOSS prompt revision `audio-blind-v2.2` receives no title, artist, filename, MIR or prior annotation. This prevents plausible catalog context from anchoring the listener on instruments it has not actually heard. Before tensors are accepted, every named sound-source claim is checked by two differently worded full-track passes and an intro/middle/late montage. An exact name is retained when at least two views support it without a strong full-track contradiction; an absent claim is removed, while conflicting evidence is expressed as a precise `-like` timbre rather than asserted as a physical instrument. A final full-track compiler writes prompt-useful captions and a stratified listening audit requires acceptable fidelity and specificity.
+
 Preprocessing stores one audio latent and three prompt embeddings per record. During training, the dataset chooses caption index 0, 1 or 2 uniformly at each load. CFG dropout is `0.15`. Validation always uses canonical index 0 and CFG dropout `0.0`.
 
 ## Fixed LoRA configuration
@@ -32,14 +34,14 @@ Preprocessing stores one audio latent and three prompt embeddings per record. Du
 | Setting | Value |
 |---|---:|
 | Adapter | LoRA |
-| Rank | 48 |
-| Alpha | 96 |
+| Rank | 32 |
+| Alpha | 32 |
 | Dropout | 0.1 |
 | Targets | `q_proj`, `k_proj`, `v_proj`, `o_proj` |
-| Learning rate | `7.5e-5` |
+| Learning rate | `5e-5` |
 | Optimizer | AdamW |
 | Scheduler | cosine |
-| Warmup | 75 optimizer steps |
+| Warmup | 25 optimizer steps |
 | Precision | BF16 |
 | Gradient checkpointing | enabled |
 | GPUs | DDP, 2 × RTX 4090 |
@@ -60,14 +62,17 @@ supervisorctl start edm-v2-orchestrator
 ```
 
 ```text
-MOSS annotation (2 shards)
+identity- and prior-claim-blind MOSS annotation (2 shards)
 → merge annotations + grouped 196/35 split
 → build sidecars and dataset indexes
+→ multi-view named-claim consensus
+→ audio-only caption compiler (2 shards) + fidelity gate
 → preprocess train shards + validation
 → merge and validate 196/35/231 tensors
 → 66-step smoke with checkpoint resume
-→ one train/validation run
-→ fixed-prompt checkpoint generation
+→ one train/validation run, maximum 20 epochs
+→ fixed-prompt checkpoint generation at epochs 5/10/15/20
+→ A/B every candidate at LoRA scale 0.25/0.5/1.0
 → MOSS listening score + feature checks
 → select best optimizer step
 → package + upload best-val preview
@@ -106,7 +111,7 @@ The smoke run reaches optimizer step 65, resumes, then stops at exact step 66. I
 - all three prompt indexes selected;
 - canonical-only validation;
 - checkpoint save, resume and clean adapter reload;
-- rank 48 / alpha 96 / dropout 0.1 and exact q/k/v/o adapter coverage.
+- rank 32 / alpha 32 / dropout 0.1 and exact q/k/v/o adapter coverage.
 
 ### Train/validation and selection
 
@@ -122,7 +127,7 @@ supervisorctl start edm-v2-upload-preview
 supervisorctl start edm-v2-verify-preview
 ```
 
-Validation, logging and checkpointing occur every five epochs. Every tenth checkpoint is synchronized to the private training repository and later receives the same three fixed prompt/seed audio samples plus MOSS listening evidence.
+Validation, logging, checkpointing and fixed-prompt sampling occur every five epochs, through a hard maximum of 20 epochs. Each epoch 5/10/15/20 adapter is evaluated at LoRA scales `0.25`, `0.5` and `1.0` with the same prompts and seeds. The selected scale is recorded and packaged as the recommended inference default; it remains user-adjustable.
 
 After checkpoint selection, the deployable `best-val` adapter, its three fixed audio examples, metrics, scripts and Colab notebook are packaged and uploaded to the private model repository. A clean immutable redownload must pass checksum verification and 48 kHz stereo inference before the fresh all-231 run is allowed to start. This provides an inference-ready preview while final retraining continues.
 
@@ -144,7 +149,7 @@ supervisorctl start edm-v2-verify-audio-dataset
 supervisorctl start edm-v2-evaluate-final
 ```
 
-The final job refuses to resume or overwrite an existing final run. It reloads the pristine XL-Base model, creates a fresh rank-48 LoRA, trains on all 231 records with no validation split, and stops at the exact scaled optimizer step.
+The final job refuses to resume or overwrite an existing final run. It reloads the pristine XL-Base model, creates a fresh rank-32/alpha-32 LoRA, trains on all 231 records with no validation split, and stops at the exact scaled optimizer step. Final fixed-prompt audio must also pass the absolute listening-quality gate before packaging.
 
 After final training passes, all 231 exact FLAC records are staged without copying or deduplicating them and uploaded to the private dataset `Bangchis/melodic-edm-audio-v2`. The dataset keeps the original grouped `196 train / 35 validation` split, one file per catalog record, a sanitized manifest and `SHA256SUMS`. A separate gate force-downloads the immutable dataset revision, verifies every byte size and SHA-256 digest, then removes the temporary clean copy.
 

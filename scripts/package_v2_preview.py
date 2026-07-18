@@ -16,6 +16,7 @@ from package_v2_release import (
     sanitized_listening,
     sanitized_selection,
     sanitized_training_report,
+    apply_recommended_lora_scale,
 )
 
 
@@ -57,6 +58,7 @@ def main() -> int:
         (root / "scripts" / "enhance_prompt_openrouter.py", preview / "scripts" / "enhance_prompt_openrouter.py"),
     ):
         copy_file(source, destination)
+    apply_recommended_lora_scale(preview, float(selection["selected_lora_scale"]))
 
     atomic_json(preview / "reports" / "training_validation_report.json", sanitized_training_report(training))
     atomic_json(preview / "reports" / "selection.json", sanitized_selection(selection))
@@ -91,6 +93,7 @@ def main() -> int:
         "private": True,
         "selected_checkpoint": selection["selected_checkpoint"],
         "best_optimizer_step": selection["best_optimizer_step"],
+        "recommended_lora_scale": selection["selected_lora_scale"],
         "training_records": 196,
         "validation_records": 35,
         "final_all_data_included": False,

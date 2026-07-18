@@ -33,7 +33,7 @@ def inspect_adapter(path: Path) -> tuple[dict[str, Any], list[str]]:
     if not config_path.is_file() or not weights_path.is_file():
         return {}, ["adapter_files_missing"]
     config = json.loads(config_path.read_text(encoding="utf-8"))
-    for key, expected in (("r", 48), ("lora_alpha", 96), ("lora_dropout", 0.1)):
+    for key, expected in (("r", 32), ("lora_alpha", 32), ("lora_dropout", 0.1)):
         if config.get(key) != expected:
             errors.append(f"adapter_config_mismatch:{key}:{config.get(key)}")
     configured_targets = {str(value).rsplit(".", 1)[-1] for value in config.get("target_modules", [])}
@@ -55,6 +55,9 @@ def inspect_adapter(path: Path) -> tuple[dict[str, Any], list[str]]:
     if nonzero == 0:
         errors.append("adapter_all_zero")
     return {
+        "rank": config.get("r"),
+        "alpha": config.get("lora_alpha"),
+        "dropout": config.get("lora_dropout"),
         "tensor_count": len(tensor_keys),
         "nonzero_tensor_count": nonzero,
         "target_modules": sorted(configured_targets),
@@ -181,7 +184,7 @@ def main() -> int:
 
     report = {
         "status": "pass" if not errors else "failed",
-        "configuration": "xl_base_lora_r48_alpha96_dropout0.1_lr7.5e-5_ddp2",
+        "configuration": "xl_base_lora_r32_alpha32_dropout0.1_lr5e-5_ddp2",
         "optimizer_steps": state.get("global_step"),
         "logged_losses": losses,
         "validation_state": validation,

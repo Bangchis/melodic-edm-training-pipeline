@@ -38,17 +38,17 @@ DEFAULT_LYRICS = """[Intro]
 # notebook writes every value explicitly, so sampling quality is controlled by
 # the user-facing configuration cell instead of being locked in this script.
 SAMPLING_DEFAULTS: dict[str, Any] = {
-    "inference_steps": 50,
-    "guidance_scale": 7.0,
+    "inference_steps": 64,
+    "guidance_scale": 8.0,
     "shift": 1.0,
-    "use_adg": False,
+    "use_adg": True,
     "cfg_interval_start": 0.0,
     "cfg_interval_end": 1.0,
     "infer_method": "ode",
     "sampler_mode": "euler",
     "velocity_norm_threshold": 0.0,
     "velocity_ema_factor": 0.0,
-    "dcw_enabled": True,
+    "dcw_enabled": False,
     "dcw_mode": "double",
     "dcw_scaler": 0.05,
     "dcw_high_scaler": 0.02,
@@ -203,7 +203,7 @@ def main() -> int:
     parser.add_argument("--output-dir", default="generated-v2")
     parser.add_argument("--offload-to-cpu", action="store_true")
     parser.add_argument("--disable-lora", action="store_true")
-    parser.add_argument("--lora-scale", type=float, default=1.0)
+    parser.add_argument("--lora-scale", type=float, default=0.5)
     args = parser.parse_args()
     if not 0.0 <= args.lora_scale <= 1.0:
         parser.error("--lora-scale must be between 0 and 1")

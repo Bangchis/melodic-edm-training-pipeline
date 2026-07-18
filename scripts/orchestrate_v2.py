@@ -9,6 +9,8 @@ import sys
 import time
 from pathlib import Path
 
+PROMPT_REVISION = "audio-blind-v2.2"
+
 
 ACTIVE_STATES = {"STARTING", "RUNNING", "BACKOFF", "STOPPING"}
 
@@ -74,6 +76,14 @@ def json_pass(path: Path) -> bool:
         return False
 
 
+def json_value(path: Path, key: str):
+    """Read one top-level JSON value, returning None for missing/invalid data."""
+    try:
+        return json.loads(path.read_text(encoding="utf-8")).get(key)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
 def require_json_pass(path: Path, label: str) -> None:
     """Fail the orchestrator if a stage did not produce a passing gate."""
     if not json_pass(path):
@@ -136,11 +146,66 @@ def main() -> int:
             raise RuntimeError("MOSS annotation gate still failed after three repair rounds")
         print(f"[moss-annotations] starting repair round {repair_round + 1}", flush=True)
         run_parallel(["edm-v2-moss-0", "edm-v2-moss-1"])
-    run_stage(
-        "edm-v2-build-annotations",
-        root / "data_v2" / "dataset_build_report.json",
-        "annotations-and-dataset",
-    )
+    annotation_merge_gate = root / "data_v2" / "annotation_merge_report.json"
+    dataset_build_gate = root / "data_v2" / "dataset_build_report.json"
+    annotations_rebuilt = json_value(annotation_merge_gate, "moss_prompt_revision") != PROMPT_REVISION
+    if annotations_rebuilt:
+        start("edm-v2-build-annotations")
+        wait_for_exit("edm-v2-build-annotations")
+        require_json_pass(annotation_merge_gate, "audio-blind-annotation-merge")
+        require_json_pass(dataset_build_gate, "annotations-and-dataset")
+        for downstream_gate in (
+            "claim_consensus_report.json",
+            "caption_repair_report.json",
+            "tensor_validation_report.json",
+            "metadata_upload_report.json",
+            "annotation_quality_audit.json",
+            "annotation_fidelity_audit.json",
+        ):
+            (root / "data_v2" / downstream_gate).unlink(missing_ok=True)
+    else:
+        run_stage(
+            "edm-v2-build-annotations",
+            dataset_build_gate,
+            "annotations-and-dataset",
+        )
+
+    claim_consensus_gate = root / "data_v2" / "claim_consensus_report.json"
+    if not json_pass(claim_consensus_gate):
+        for consensus_round in range(4):
+            run_parallel(["edm-v2-verify-claims-0", "edm-v2-verify-claims-1"])
+            start("edm-v2-validate-claim-consensus")
+            wait_for_exit("edm-v2-validate-claim-consensus")
+            if json_pass(claim_consensus_gate):
+                print("[multi-view-audible-claim-consensus] PASS", flush=True)
+                break
+            if consensus_round == 3:
+                raise RuntimeError("multi-view claim consensus still failed after four rounds")
+            print(f"[claim-consensus] retry round {consensus_round + 1}", flush=True)
+
+    caption_repair_gate = root / "data_v2" / "caption_repair_report.json"
+    if not json_pass(caption_repair_gate):
+        for caption_round in range(4):
+            run_parallel(["edm-v2-repair-captions-0", "edm-v2-repair-captions-1"])
+            start("edm-v2-apply-caption-repairs")
+            wait_for_exit("edm-v2-apply-caption-repairs")
+            if json_pass(caption_repair_gate):
+                print("[audio-grounded-caption-repairs] PASS", flush=True)
+                break
+            if caption_round == 3:
+                raise RuntimeError("caption repair still failed after four rounds")
+            print(f"[caption-repair] retry round {caption_round + 1}", flush=True)
+    annotation_quality_gate = root / "data_v2" / "annotation_quality_audit.json"
+    if not json_pass(annotation_quality_gate):
+        subprocess.run(
+            [
+                sys.executable,
+                str(root / "scripts" / "audit_v2_annotation_quality.py"),
+                "--project-root", str(root),
+            ],
+            check=False,
+        )
+    require_json_pass(annotation_quality_gate, "annotation-static-quality")
 
     tensor_gate = root / "data_v2" / "tensor_validation_report.json"
     metadata_gate = root / "data_v2" / "metadata_upload_report.json"
@@ -160,6 +225,22 @@ def main() -> int:
     else:
         print("[tensors] gate already passed", flush=True)
     require_json_pass(metadata_gate, "private-metadata-upload")
+
+    run_stage(
+        "edm-v2-audit-annotation-fidelity",
+        root / "data_v2" / "annotation_fidelity_audit.json",
+        "stratified-annotation-fidelity",
+    )
+    run_stage(
+        "edm-v2-evaluate-baseline",
+        root / "outputs" / "v2" / "baseline-xl-base" / "generation_report.json",
+        "pristine-xl-base-audio",
+    )
+    run_stage(
+        "edm-v2-score-baseline",
+        root / "outputs" / "v2" / "baseline-xl-base" / "listening_scores.json",
+        "pristine-xl-base-listening",
+    )
 
     run_stage(
         "edm-v2-train-smoke",
@@ -244,6 +325,16 @@ def main() -> int:
         "edm-v2-evaluate-final",
         root / "outputs" / "v2" / "final-all-data" / "evaluation" / "generation_report.json",
         "final-all-data-audio",
+    )
+    run_stage(
+        "edm-v2-score-final",
+        root / "outputs" / "v2" / "final-all-data" / "evaluation" / "listening_scores.json",
+        "final-all-data-listening",
+    )
+    run_stage(
+        "edm-v2-quality-final",
+        root / "outputs" / "v2" / "final-all-data" / "evaluation" / "listening_quality_report.json",
+        "final-all-data-absolute-quality",
     )
     release = root / "outputs" / "release" / "melodic-edm-core-v2"
     run_stage("edm-v2-package-release", release / "release_report.json", "release-package")

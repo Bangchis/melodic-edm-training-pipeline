@@ -93,6 +93,31 @@ def sanitized_listening(value: dict[str, Any]) -> dict[str, Any]:
     return output
 
 
+def apply_recommended_lora_scale(package: Path, scale: float) -> None:
+    """Write the quality-selected LoRA scale into packaged config and Colab defaults."""
+    for relative in ("inference_config.json", "configs/inference_config.json"):
+        path = package / relative
+        value = json.loads(path.read_text(encoding="utf-8"))
+        value["recommended_lora_scale"] = scale
+        atomic_json(path, value)
+    notebook_path = package / "notebooks" / "melodic_edm_core_v2_colab.ipynb"
+    notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
+    replaced = 0
+    for cell in notebook.get("cells", []):
+        source = cell.get("source")
+        if not isinstance(source, list):
+            continue
+        for index, line in enumerate(source):
+            if str(line).startswith("LORA_SCALE = "):
+                source[index] = (
+                    f"LORA_SCALE = {scale:g}          # quality-selected default; freely adjustable 0.0–1.0\n"
+                )
+                replaced += 1
+    if replaced != 1:
+        raise RuntimeError(f"expected one Colab LORA_SCALE control, found {replaced}")
+    atomic_json(notebook_path, notebook)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project-root", default=".")
@@ -108,6 +133,12 @@ def main() -> int:
     final = read_gate(root / "outputs" / "v2" / "final-all-data" / "final_validation_report.json")
     final_generation = read_gate(
         root / "outputs" / "v2" / "final-all-data" / "evaluation" / "generation_report.json"
+    )
+    final_listening = read_gate(
+        root / "outputs" / "v2" / "final-all-data" / "evaluation" / "listening_scores.json"
+    )
+    final_quality = read_gate(
+        root / "outputs" / "v2" / "final-all-data" / "evaluation" / "listening_quality_report.json"
     )
     audio_prepare = read_gate(root / "outputs" / "v2" / "audio_dataset_prepare_report.json")
     audio_upload = read_gate(root / "outputs" / "v2" / "audio_dataset_upload_report.json")
@@ -143,6 +174,7 @@ def main() -> int:
         (root / "scripts" / "enhance_prompt_openrouter.py", release / "scripts" / "enhance_prompt_openrouter.py"),
     ):
         copy_file(source, destination)
+    apply_recommended_lora_scale(release, float(selection["selected_lora_scale"]))
 
     atomic_json(release / "reports" / "training_validation_report.json", sanitized_training_report(training))
     atomic_json(release / "reports" / "selection.json", sanitized_selection(selection))
@@ -154,6 +186,8 @@ def main() -> int:
             for row in final_generation.get("results", [])
         ],
     })
+    atomic_json(release / "reports" / "final_listening_scores.json", sanitized_listening(final_listening))
+    atomic_json(release / "reports" / "final_listening_quality_report.json", final_quality)
     atomic_json(release / "reports" / "listening_scores.json", sanitized_listening(listening))
     atomic_json(release / "reports" / "audio_dataset_prepare_report.json", {
         key: value for key, value in audio_prepare.items() if key != "staging_root"
@@ -219,10 +253,12 @@ def main() -> int:
         "adapters": {
             "best-val": {
                 "optimizer_step": selection["best_optimizer_step"],
+                "recommended_lora_scale": selection["selected_lora_scale"],
                 "purpose": "selected checkpoint from the 196/35 grouped run",
             },
             "final-all-data": {
                 "optimizer_steps": final["observed_optimizer_steps"],
+                "recommended_lora_scale": selection["selected_lora_scale"],
                 "purpose": "fresh adapter retrained on all 231 records",
             },
         },

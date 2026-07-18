@@ -6,8 +6,8 @@
   "training_mode": "fixed",
   "adapter": {
     "type": "lora",
-    "rank": 48,
-    "alpha": 96,
+    "rank": 32,
+    "alpha": 32,
     "dropout": 0.1,
     "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
     "attention_scope": "separate_self_and_cross_attention_projections",
@@ -31,12 +31,12 @@
     "validation_prompt_selection": "canonical_index_0"
   },
   "optimization": {
-    "learning_rate": 0.000075,
+    "learning_rate": 0.00005,
     "cfg_dropout": 0.15,
     "precision": "bf16",
     "optimizer": "adamw",
     "scheduler": "cosine",
-    "warmup_optimizer_steps": 75,
+    "warmup_optimizer_steps": 25,
     "gradient_checkpointing": true,
     "batch_per_gpu": 1,
     "gradient_accumulation": 8,
@@ -45,7 +45,13 @@
     "effective_batch": 16,
     "save_every_epochs": 5,
     "validate_every_epochs": 5,
-    "sample_and_upload_every_epochs": 10,
-    "early_stopping_validation_checks": 5
+    "sample_and_upload_every_epochs": 5,
+    "maximum_epochs": 20,
+    "early_stopping_validation_checks": 0,
+    "absolute_listening_quality_gate": {
+      "minimum_dimension_mean": 3.0,
+      "minimum_individual_score": 2,
+      "required_checkpoints": [5, 10, 15, 20]
+    }
   }
 }

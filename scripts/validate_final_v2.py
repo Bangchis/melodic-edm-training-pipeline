@@ -53,7 +53,7 @@ def main() -> int:
     errors.extend(gpu_errors)
     report = {
         "status": "pass" if not errors else "failed",
-        "initialization": "fresh_xl_base_and_fresh_rank48_lora",
+        "initialization": "fresh_xl_base_and_fresh_rank32_lora",
         "records": 231,
         "expected_optimizer_steps": expected_steps,
         "observed_optimizer_steps": observed_steps,

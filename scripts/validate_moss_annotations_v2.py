@@ -8,7 +8,7 @@ from pathlib import Path
 from statistics import mean
 from typing import Any
 
-from annotate_moss_music import MODEL_REVISION, validate_supplement
+from annotate_moss_music import MODEL_REVISION, PROMPT_REVISION, validate_supplement
 from v2_common import (
     atomic_json,
     file_sha256,
@@ -73,6 +73,8 @@ def main() -> int:
                 raise ValueError("parent_song_id_mismatch")
             if record.get("model_revision") != MODEL_REVISION:
                 raise ValueError("moss_model_revision_mismatch")
+            if record.get("prompt_revision") != PROMPT_REVISION:
+                raise ValueError("moss_prompt_revision_mismatch")
             audio_path = Path(row["final_audio_path"])
             if record.get("audio_sha256") != file_sha256(audio_path):
                 raise ValueError("audio_sha256_mismatch")
@@ -103,6 +105,7 @@ def main() -> int:
         "records_expected": len(rows),
         "records_valid": len(confidences),
         "model_revision": MODEL_REVISION,
+        "prompt_revision": PROMPT_REVISION,
         "confidence": {
             "min": min(confidences, default=None),
             "max": max(confidences, default=None),

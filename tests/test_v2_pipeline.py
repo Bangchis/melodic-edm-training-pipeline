@@ -20,10 +20,18 @@ from v2_common import (  # noqa: E402
     parent_song_id,
     validate_caption_set,
 )
-from annotate_moss_music import validate_supplement  # noqa: E402
+from annotate_moss_music import build_prompt, validate_supplement  # noqa: E402
 from score_v2_checkpoints_moss import parse_score  # noqa: E402
 from merge_v2_tensors import hardlink_tensor  # noqa: E402
 from infer_v2_release import merged_generation_settings  # noqa: E402
+from audit_v2_annotation_fidelity_moss import parse_review, stratified_rows  # noqa: E402
+from repair_v2_annotations_moss import exact_claim_asserted, parse_repair  # noqa: E402
+from verify_v2_audio_claims_moss import (  # noqa: E402
+    consensus_for,
+    extract_instrument_claims,
+    parse_claim_review,
+)
+from orchestrate_v2 import json_pass, json_value  # noqa: E402
 
 
 def words(prefix: str, count: int) -> str:
@@ -42,6 +50,130 @@ class V2PipelineTest(unittest.TestCase):
             "separate_self_and_cross_attention_projections",
             config["adapter"]["attention_scope"],
         )
+        self.assertEqual(32, config["adapter"]["rank"])
+        self.assertEqual(32, config["adapter"]["alpha"])
+        self.assertEqual(20, config["optimization"]["maximum_epochs"])
+        self.assertEqual(0.00005, config["optimization"]["learning_rate"])
+
+    def test_orchestrator_json_gate_helpers(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "gate.json"
+            path.write_text('{"status":"pass","revision":"r2"}', encoding="utf-8")
+            self.assertTrue(json_pass(path))
+            self.assertEqual("r2", json_value(path, "revision"))
+
+    def test_annotation_fidelity_sample_is_deterministic_and_stratified(self) -> None:
+        rows = [
+            {"sample_id": "alpha__001"},
+            {"sample_id": "alpha__002"},
+            {"sample_id": "alpha__003"},
+            {"sample_id": "beta__001"},
+            {"sample_id": "beta__002"},
+            {"sample_id": "beta__003"},
+        ]
+        selected = stratified_rows(rows, 2)
+        self.assertEqual(
+            ["alpha__001", "alpha__003", "beta__001", "beta__003"],
+            [row["sample_id"] for row in selected],
+        )
+
+    def test_moss_annotation_prompt_is_identity_and_prior_claim_blind(self) -> None:
+        prompt = build_prompt(
+            {"expected_artist": "Secret Artist", "expected_title": "Secret Title"},
+            {"main_instruments": [{"name": "invented_pipa"}]},
+            {"bpm": 128, "keyscale": "F# minor"},
+            {"type": "object"},
+        )
+        self.assertNotIn("Secret Artist", prompt)
+        self.assertNotIn("Secret Title", prompt)
+        self.assertNotIn("invented_pipa", prompt)
+        self.assertNotIn("128", prompt)
+        self.assertIn("independently from the waveform", prompt)
+
+    def test_annotation_fidelity_review_requires_grounded_fields(self) -> None:
+        review, errors = parse_review({
+            "audible_fidelity": 4,
+            "specificity": 3,
+            "melody_arrangement_accuracy": 4,
+            "production_accuracy": 4,
+            "evidence": {field: "Audible evidence." for field in (
+                "audible_fidelity", "specificity", "melody_arrangement_accuracy",
+                "production_accuracy",
+            )},
+            "unsupported_claims": [],
+            "recommendation": "keep",
+        })
+        self.assertEqual([], errors)
+        self.assertEqual(4, review["scores"]["audible_fidelity"])
+
+    def test_caption_repair_requires_three_valid_corrected_captions(self) -> None:
+        value = {
+            "audible_fidelity": 2,
+            "specificity": 2,
+            "melody_arrangement_accuracy": 3,
+            "production_accuracy": 3,
+            "evidence": {field: "Audio-grounded evidence." for field in (
+                "audible_fidelity", "specificity", "melody_arrangement_accuracy",
+                "production_accuracy",
+            )},
+            "unsupported_claims": ["invented pipa"],
+            "recommendation": "revise",
+            "corrected_captions": {name: words(name, 45) for name in CAPTION_TYPES},
+        }
+        repair, errors = parse_repair(value)
+        self.assertEqual([], errors)
+        self.assertEqual("revise", repair["recommendation"])
+        self.assertEqual(["invented pipa"], repair["unsupported_claims"])
+
+    def test_claim_extraction_is_not_a_blacklist(self) -> None:
+        annotation = {
+            "caption_variants": [{"text": "A pipa lead with orchestral strings."}],
+            "master_annotation": {
+                "base_annotation": {"main_instruments": [{"name": "pipa"}]},
+                "moss_music_supplement": {
+                    "instruments_and_roles": [{"name": "orchestral_strings"}]
+                },
+            },
+        }
+        self.assertEqual(["pipa", "orchestral strings"], extract_instrument_claims(annotation))
+
+    def test_like_free_text_does_not_create_exact_instrument_claim(self) -> None:
+        annotation = {
+            "caption_variants": [{"text": "A pipa-like lead and choir-like pad."}],
+            "master_annotation": {},
+        }
+        self.assertEqual([], extract_instrument_claims(annotation))
+
+    def test_claim_review_requires_exact_coverage(self) -> None:
+        review, errors = parse_claim_review({"claims": [{
+            "claim": "pipa", "verdict": "present", "confidence": 0.9,
+            "evidence": "Audible plucked attacks.", "audible_alternative": "",
+        }]}, ["pipa"])
+        self.assertEqual([], errors)
+        self.assertEqual("present", review["claims"][0]["verdict"])
+
+    def test_claim_review_accepts_claim_keyed_json(self) -> None:
+        review, errors = parse_claim_review({"claims": {"pipa": {
+            "verdict": "present", "confidence": 0.9,
+            "evidence": "Audible plucked attacks.", "audible_alternative": "",
+        }}}, ["pipa"])
+        self.assertEqual([], errors)
+        self.assertEqual("pipa", review["claims"][0]["claim"])
+
+    def test_consensus_preserves_specific_name_only_with_agreement(self) -> None:
+        def review(neutral: str, challenge: str, montage: str):
+            return {
+                "full_neutral": {"claims": [{"claim": "pipa", "verdict": neutral, "confidence": 0.9, "evidence": "n", "audible_alternative": "plucked lead"}]},
+                "full_challenge": {"claims": [{"claim": "pipa", "verdict": challenge, "confidence": 0.9, "evidence": "c", "audible_alternative": "plucked lead"}]},
+                "overview_montage": {"claims": [{"claim": "pipa", "verdict": montage, "confidence": 0.9, "evidence": "m", "audible_alternative": "plucked lead"}]},
+            }
+        self.assertEqual("present", consensus_for("pipa", review("present", "present", "present"))["decision"])
+        self.assertEqual("absent", consensus_for("pipa", review("absent", "absent", "uncertain"))["decision"])
+        self.assertEqual("uncertain", consensus_for("pipa", review("present", "absent", "present"))["decision"])
+
+    def test_like_qualifier_is_not_an_exact_instrument_assertion(self) -> None:
+        self.assertTrue(exact_claim_asserted("A pipa carries the hook.", "pipa"))
+        self.assertFalse(exact_claim_asserted("A pipa-like plucked lead carries the hook.", "pipa"))
 
     def test_preview_is_verified_before_final_training(self) -> None:
         source = (SCRIPTS / "orchestrate_v2.py").read_text(encoding="utf-8")
@@ -63,10 +195,35 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn("audio_dataset_clean_verification_report.json", audit)
         self.assertIn('audio_clean.get("records") != 231', audit)
 
-    def test_checkpoint_sync_includes_non_tenth_best_val(self) -> None:
+    def test_final_release_requires_absolute_listening_quality(self) -> None:
+        orchestrator = (SCRIPTS / "orchestrate_v2.py").read_text(encoding="utf-8")
+        self.assertLess(
+            orchestrator.index('"edm-v2-quality-final"'),
+            orchestrator.index('"edm-v2-package-release"'),
+        )
+        package = (SCRIPTS / "package_v2_release.py").read_text(encoding="utf-8")
+        self.assertIn("final_listening_quality_report.json", package)
+
+    def test_caption_repairs_finish_before_tensor_preprocessing(self) -> None:
+        orchestrator = (SCRIPTS / "orchestrate_v2.py").read_text(encoding="utf-8")
+        self.assertLess(
+            orchestrator.index('"edm-v2-verify-claims-0"'),
+            orchestrator.index('"edm-v2-repair-captions-0"'),
+        )
+        self.assertLess(
+            orchestrator.index('"edm-v2-apply-caption-repairs"'),
+            orchestrator.index('"edm-v2-preprocess-train-0"'),
+        )
+        apply_script = (SCRIPTS / "apply_v2_annotation_repairs.py").read_text(encoding="utf-8")
+        self.assertIn('"tensors_train"', apply_script)
+        self.assertIn('"tensor_validation_report.json"', apply_script)
+        self.assertIn('"build_v2_dataset.py"', apply_script)
+
+    def test_checkpoint_sync_includes_non_fifth_best_val(self) -> None:
         source = (SCRIPTS / "sync_v2_checkpoints_hf.py").read_text(encoding="utf-8")
         self.assertIn("def sync_best", source)
         self.assertIn('path_in_repo="checkpoints/best_val"', source)
+        self.assertIn("epoch % 5 == 0", source)
 
     def test_user_cutoff_excludes_later_evaluation_checkpoints(self) -> None:
         source = (SCRIPTS / "evaluate_v2_checkpoints.py").read_text(encoding="utf-8")
@@ -74,6 +231,13 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn('int(match.group(1)) > cutoff', source)
         finalize = (SCRIPTS / "finalize_v2_user_stop.py").read_text(encoding="utf-8")
         self.assertIn('source_checkpoints_deleted": False', finalize)
+
+    def test_checkpoint_evaluation_ab_tests_required_lora_scales(self) -> None:
+        source = (SCRIPTS / "evaluate_v2_checkpoints.py").read_text(encoding="utf-8")
+        self.assertIn("LORA_SCALES = (0.25, 0.5, 1.0)", source)
+        self.assertIn("handler.set_lora_scale(label, lora_scale)", source)
+        selection = (SCRIPTS / "select_v2_checkpoint.py").read_text(encoding="utf-8")
+        self.assertIn('"selected_lora_scale": selected["lora_scale"]', selection)
 
     def test_v2_preview_and_final_packages_include_prompt_enhancer(self) -> None:
         for name in ("package_v2_preview.py", "package_v2_release.py"):
@@ -251,6 +415,21 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn("evidence_melody_missing", errors)
         self.assertIn("evidence_structure_missing", errors)
         self.assertIn("evidence_audio_quality_missing", errors)
+
+    def test_moss_checkpoint_score_rejects_quality_evidence_contradiction(self) -> None:
+        _, errors = parse_score({
+            "prompt_alignment": 1,
+            "melody": 3,
+            "structure": 3,
+            "audio_quality": 1,
+            "evidence": {
+                "prompt_alignment": "The requested instruments are absent.",
+                "melody": "A stable melodic line is present.",
+                "structure": "The arrangement develops over time.",
+                "audio_quality": "The audio is clean and professionally mixed.",
+            },
+        })
+        self.assertIn("audio_quality_score_contradicts_positive_evidence", errors)
 
     def test_moss_checkpoint_scoring_is_resumable(self) -> None:
         source = (SCRIPTS / "score_v2_checkpoints_moss.py").read_text(encoding="utf-8")

@@ -17,7 +17,7 @@ grouped 196-train/35-validation run. It is published before the fresh all-231
 retraining run so inference can be tested without waiting for `final-all-data`.
 
 This is not the final deployment adapter. The repository will receive
-`final-all-data` only after a new rank-48 LoRA has been trained from pristine
+`final-all-data` only after a new rank-32/alpha-32 LoRA has been trained from pristine
 ACE-Step 1.5 XL-Base weights on all 231 records.
 
 ## Preview files

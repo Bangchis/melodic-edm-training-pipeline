@@ -27,56 +27,35 @@ from v2_common import (
 MODEL_ID = "OpenMOSS-Team/MOSS-Music-8B-Thinking"
 MODEL_REVISION = "2ce899988b94b8ecc5dd0dacbc5ce1874d3500e3"
 SOURCE_REVISION = "ad107c7ddaa06de168a0dfbc18d3e1e6a40c0e5e"
+PROMPT_REVISION = "audio-blind-v2.2"
 
 
 def build_prompt(
     row: dict[str, Any], existing: dict[str, Any], mir: dict[str, Any], schema: dict[str, Any]
 ) -> str:
-    """Build an audio-grounded correction and caption-merging request."""
-    identity = {
-        "title_for_identity_check_only": row.get("expected_title", ""),
-        "artist_for_identity_check_only": row.get("expected_artist", ""),
-        "version_for_identity_check_only": row.get("expected_version", ""),
-        "instrumental": True,
-    }
-    mir_context = {
-        field: mir.get(field)
-        for field in ("bpm", "keyscale", "timesignature", "sections")
-    }
-    old_annotation = {
-        field: existing.get(field)
-        for field in (
-            "primary_genre",
-            "secondary_genres",
-            "style_families",
-            "moods",
-            "main_instruments",
-            "melody",
-            "arrangement",
-            "production",
-            "canonical_caption",
-            "caption_variants",
-        )
-    }
+    """Build an identity-blind audio analysis request.
+
+    The unused inputs remain part of the API for provenance and validation, but
+    excluding them from the prompt prevents title and prior-annotation anchoring.
+    """
+    del row, existing, mir
     return (
-        "Listen to the complete supplied training audio. Improve the existing Gemini/Qwen "
-        "annotation by correcting unsupported claims and adding stable audible musical facts. "
-        "Return only one JSON object matching the supplied schema. The result is a supplement, "
-        "not a replacement for the audio evidence. Do not mention title, artist, channel, model, "
+        "Listen to the complete supplied instrumental training audio before forming any conclusion. "
+        "You are not given title, artist, filename, country, catalog family or a prior annotation; "
+        "derive every fact independently from the waveform. Return only one JSON object matching "
+        "the supplied schema. Do not mention title, artist, channel, model, "
         "BPM, exact key, time signature, media use cases, quality hype, or named-artist style. "
-        "Do not invent a traditional instrument when uncertain. Treat vocal chops as production "
+        "Keep exact instrument names when their timbre is clearly audible. When a source cannot be "
+        "distinguished reliably, use an honest precise timbre description and list the exact name "
+        "under uncertain_or_conflicting_facts rather than guessing. Treat vocal chops as production "
         "texture and do not describe lyrics. Captions must be English, distinct, grounded, and use "
         "the exact keys canonical, composition and production. Canonical must contain 40-80 words; "
         "composition and production must each contain 25-80 words. Canonical summarizes the whole "
         "track. Composition prioritizes melody, motif, harmony and arrangement. Production "
-        "prioritizes audible instruments, synths, bass, drums, texture and space. The captions "
-        "should merge facts that remain correct in the existing annotation with your own listening. "
+        "prioritizes audible instruments, synths, bass, drums, texture and space. "
         "The top-level confidence field is mandatory and must be a numeric overall confidence "
         "strictly greater than 0 and at most 1. Every audible_facts field in the schema is mandatory. "
         "Do not wrap JSON in Markdown.\n"
-        f"Identity metadata: {json.dumps(identity, ensure_ascii=False)}\n"
-        f"Existing annotation: {json.dumps(old_annotation, ensure_ascii=False)}\n"
-        f"MIR context (keep out of prose captions): {json.dumps(mir_context, ensure_ascii=False)}\n"
         f"Required schema: {json.dumps(schema, ensure_ascii=False)}"
     )
 
@@ -226,6 +205,15 @@ def generate(model: Any, processor: Any, audio_path: Path, prompt: str, max_toke
     return processor.decode(generated[0, input_length:], skip_special_tokens=True)
 
 
+def current_base_annotation_hash(output_path: Path, row: dict[str, Any]) -> str:
+    """Hash the current base annotation corresponding to a MOSS output path."""
+    root = output_path.resolve().parents[2]
+    record = json.loads(
+        (root / "data" / "annotations" / f"{row['sample_id']}.json").read_text(encoding="utf-8")
+    )
+    return object_sha256(record["annotation"])
+
+
 def valid_existing(path: Path, row: dict[str, Any]) -> bool:
     """Return whether an existing output is complete and still valid."""
     if not path.is_file():
@@ -233,7 +221,13 @@ def valid_existing(path: Path, row: dict[str, Any]) -> bool:
     try:
         record = json.loads(path.read_text(encoding="utf-8"))
         _, errors = validate_supplement(record["supplement"], row)
-        return not errors and record.get("model_revision") == MODEL_REVISION
+        return (
+            not errors
+            and record.get("model_revision") == MODEL_REVISION
+            and record.get("prompt_revision") == PROMPT_REVISION
+            and record.get("audio_sha256") == file_sha256(Path(row["final_audio_path"]))
+            and record.get("existing_annotation_sha256") == current_base_annotation_hash(path, row)
+        )
     except (KeyError, OSError, json.JSONDecodeError, TypeError, ValueError):
         return False
 
@@ -245,7 +239,13 @@ def normalize_existing(path: Path, row: dict[str, Any]) -> bool:
     try:
         record = json.loads(path.read_text(encoding="utf-8"))
         supplement, errors = validate_supplement(record["supplement"], row)
-        if errors or record.get("model_revision") != MODEL_REVISION:
+        if (
+            errors
+            or record.get("model_revision") != MODEL_REVISION
+            or record.get("prompt_revision") != PROMPT_REVISION
+            or record.get("audio_sha256") != file_sha256(Path(row["final_audio_path"]))
+            or record.get("existing_annotation_sha256") != current_base_annotation_hash(path, row)
+        ):
             return False
         if record["supplement"] != supplement:
             record["supplement"] = supplement
@@ -340,12 +340,13 @@ def main() -> int:
                 if errors:
                     raise ValueError(",".join(errors))
                 record = {
-                    "schema_version": "2.0",
+                    "schema_version": "2.2",
                     "sample_id": sample_id,
                     "parent_song_id": parent_song_id(row),
                     "model_id": MODEL_ID,
                     "model_revision": MODEL_REVISION,
                     "source_revision": SOURCE_REVISION,
+                    "prompt_revision": PROMPT_REVISION,
                     "annotated_at": datetime.now(timezone.utc).isoformat(),
                     "audio_sha256": file_sha256(audio_path),
                     "existing_annotation_sha256": object_sha256(old_annotation),

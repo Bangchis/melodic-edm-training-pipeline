@@ -20,6 +20,14 @@ def main() -> int:
     gate = json.loads((final_root / "final_validation_report.json").read_text(encoding="utf-8"))
     if gate.get("status") != "pass":
         raise RuntimeError("final all-data validation gate has not passed")
+    selection = json.loads(
+        (root / "outputs" / "v2" / "checkpoint-evaluation" / "selection.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    if selection.get("status") != "pass" or selection.get("quality_accepted") is not True:
+        raise RuntimeError("best-val selection gate has not passed")
+    lora_scale = float(selection["selected_lora_scale"])
     prompts = json.loads(
         (root / "configs" / "v2" / "fixed_eval_prompts.json").read_text(encoding="utf-8")
     )["prompts"]
@@ -45,6 +53,9 @@ def main() -> int:
     active_message = handler.set_active_lora_adapter("final_all_data")
     if not active_message.startswith("✅"):
         raise RuntimeError(active_message)
+    scale_message = handler.set_lora_scale("final_all_data", lora_scale)
+    if not scale_message.startswith("✅"):
+        raise RuntimeError(scale_message)
 
     output = final_root / "evaluation"
     results: list[dict[str, Any]] = []
@@ -59,9 +70,11 @@ def main() -> int:
             keyscale=prompt["keyscale"],
             timesignature=str(prompt["timesignature"]),
             duration=float(prompt["duration"]),
-            inference_steps=50,
-            guidance_scale=7.0,
+            inference_steps=64,
+            guidance_scale=8.0,
             shift=1.0,
+            use_adg=True,
+            dcw_enabled=False,
             seed=int(prompt["seed"]),
             thinking=False,
             use_cot_metas=False,
@@ -88,7 +101,12 @@ def main() -> int:
             continue
         valid, audio_probe = probe(path)
         results.append({
+            "checkpoint": "final_all_data",
+            "epoch": None,
+            "optimizer_step": gate.get("observed_optimizer_steps"),
+            "lora_scale": lora_scale,
             "prompt_id": prompt["id"],
+            "prompt": prompt["caption"],
             "seed": prompt["seed"],
             "audio_path": str(path),
             "probe": audio_probe,
@@ -102,6 +120,14 @@ def main() -> int:
         "adapter": "final-all-data",
         "fixed_prompt_count": len(prompts),
         "generated_outputs": len(results),
+        "selected_lora_scale": lora_scale,
+        "sampling": {
+            "inference_steps": 64,
+            "guidance_scale": 8.0,
+            "shift": 1.0,
+            "use_adg": True,
+            "dcw_enabled": False,
+        },
         "results": results,
         "errors": errors,
     }

@@ -13,4 +13,4 @@ ace="$project/vendor/ACE-Step-1.5-v2"
 export PYTHONPATH="$ace${PYTHONPATH:+:$PYTHONPATH}"
 cd "$project"
 exec "$ace/.venv/bin/python" -u scripts/sync_v2_checkpoints_hf.py \
-  --project-root "$project" --watch
+  --project-root "$project" --repo-id Bangchis/melodic-edm-core-v2-r32-training --watch

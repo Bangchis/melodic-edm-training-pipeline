@@ -39,10 +39,10 @@ common=(
   --output-dir "$output"
   --checkpoint-dir "$project/checkpoints"
   --model-variant xl_base --base-model xl_base
-  --adapter-type lora --rank 48 --alpha 96 --dropout 0.1
+  --adapter-type lora --rank 32 --alpha 32 --dropout 0.1
   --target-modules q_proj k_proj v_proj o_proj --attention-type both --strict-attention-scope
-  --lr 7.5e-5 --batch-size 1 --gradient-accumulation 8
-  --warmup-steps 10 --weight-decay 0.01 --optimizer-type adamw --scheduler-type cosine
+  --lr 5e-5 --batch-size 1 --gradient-accumulation 8
+  --warmup-steps 25 --weight-decay 0.01 --optimizer-type adamw --scheduler-type cosine
   --gradient-checkpointing --cfg-ratio 0.15 --shift 1.0 --num-inference-steps 50
   --num-devices 2 --strategy ddp --validate-every 5 --early-stopping-patience 0
   --log-every 5 --log-heavy-every 25 --sample-every-n-epochs 0
