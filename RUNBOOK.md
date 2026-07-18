@@ -196,7 +196,8 @@ After evaluation passes, run `edm-package-release`, `edm-upload-model`, and
 `edm-verify-release` in that order. The package defaults to `best_val`, scans every
 release file for secrets, publishes only the adapter/config/code and three generated
 examples to the private model repo `Bangchis/melodic-edm-core-v1`, then redownloads
-it into a clean directory and requires one valid 48 kHz stereo WAV.
+it into a clean directory, verifies every packaged file against `SHA256SUMS`, and
+requires one valid 48 kHz stereo WAV.
 
 ## Resume safety
 

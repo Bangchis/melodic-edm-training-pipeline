@@ -20,6 +20,12 @@ snapshot_download(
 )
 PY
 
+test -s "$verify/download/SHA256SUMS"
+(
+  cd "$verify/download"
+  sha256sum -c SHA256SUMS
+)
+
 exec .venv/bin/python -u "$verify/download/infer_release.py" \
   --ace-root "$project/vendor/ACE-Step-1.5" \
   --checkpoint-root "$project/checkpoints" \
