@@ -598,7 +598,7 @@ class V2PipelineTest(unittest.TestCase):
 
     def test_final_training_caption_policy_rejects_metadata_and_hype(self) -> None:
         errors = validate_training_caption_policy({
-            "canonical": "A polished 4/4 EDM track in F# minor with a repetitive lead.",
+            "canonical": "A polished 4/4 EDM track in F# minor with a repetitive lead suitable for gaming.",
             "composition": "A standard EDM structure supports the motif.",
             "production": "The lead moves over a professional 128 BPM mix.",
         })
@@ -606,6 +606,7 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn("canonical_contains_embedded_exact_key", errors)
         self.assertIn("canonical_contains_quality_hype", errors)
         self.assertIn("canonical_contains_static_loop_cue", errors)
+        self.assertIn("canonical_contains_intended_use_case", errors)
         self.assertIn("composition_contains_generic_edm_structure", errors)
         self.assertIn("production_contains_embedded_bpm", errors)
 

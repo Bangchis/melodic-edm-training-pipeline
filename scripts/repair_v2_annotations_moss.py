@@ -91,6 +91,10 @@ FORBIDDEN_TRAINING_CAPTION_PATTERNS = {
         r"\b(?:masterpiece|polished|professional|extremely beautiful|best song ever)\b",
         re.IGNORECASE,
     ),
+    "intended_use_case": re.compile(
+        r"\b(?:suitable|ideal|designed|perfect)\s+for\b",
+        re.IGNORECASE,
+    ),
     "generic_edm_structure": re.compile(
         r"\b(?:classic|standard|typical)\s+EDM\s+structure\b",
         re.IGNORECASE,
@@ -623,7 +627,8 @@ def main() -> int:
                     "\nPrevious response failed validation: "
                     + last_error
                     + ". Correct every named validation error. Remove quality-hype words such as "
-                    "polished or professional, remove numeric BPM/key/meter notation, omit an absent "
+                    "polished or professional, remove intended-use phrases such as suitable for, "
+                    "remove numeric BPM/key/meter notation, omit an absent "
                     "claim, and qualify or omit an uncertain exact source name. Return corrected JSON only."
                 )
         else:
