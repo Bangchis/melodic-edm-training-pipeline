@@ -8,4 +8,6 @@ utils=/opt/supervisor-scripts/utils
 cd /workspace/melodic_edm_training_pipeline/vendor/ACE-Step-1.5
 exec .venv/bin/python -u /workspace/melodic_edm_training_pipeline/scripts/backup_resume_hf.py \
   --project-root /workspace/melodic_edm_training_pipeline \
-  --repo-id Bangchis/melodic-edm-training-resume
+  --repo-id Bangchis/melodic-edm-training-resume \
+  --allow-in-progress \
+  "$@"

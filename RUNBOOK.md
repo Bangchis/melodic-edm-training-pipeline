@@ -219,3 +219,5 @@ only the newest complete adapter plus optimizer/scheduler training state, logs,
 configuration and trainer patch to the private dataset
 `Bangchis/melodic-edm-training-resume`. It hashes and secret-scans every selected
 file; audio and preprocessed tensors remain excluded.
+For a safety checkpoint while the main run is still active, invoke the same wrapper
+with `--allow-in-progress`; mutable logs are excluded until the final gated backup.

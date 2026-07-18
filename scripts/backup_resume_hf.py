@@ -55,33 +55,54 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project-root", default=".")
     parser.add_argument("--repo-id", default="Bangchis/melodic-edm-training-resume")
+    parser.add_argument(
+        "--allow-in-progress",
+        action="store_true",
+        help="Back up the newest immutable epoch checkpoint before the final gate exists",
+    )
     args = parser.parse_args()
 
     root = Path(args.project_root).resolve()
     output = root / "outputs" / "training" / "melodic-edm-core-v1"
     gate_path = output / "training_validation_report.json"
     gate = json.loads(gate_path.read_text(encoding="utf-8")) if gate_path.is_file() else {}
-    if gate.get("status") != "pass":
+    final_gate = gate.get("status") == "pass"
+    if not final_gate and not args.allow_in_progress:
         raise SystemExit("main training validation gate has not passed")
     checkpoints = epoch_checkpoints(output / "checkpoints")
     if not checkpoints:
         raise SystemExit("no resumable epoch checkpoint found")
     latest_epoch, latest = checkpoints[-1]
-    if latest_epoch != int(gate.get("completed_epoch") or 0):
+    if final_gate and latest_epoch != int(gate.get("completed_epoch") or 0):
         raise SystemExit("latest checkpoint does not match validated completed epoch")
+
+    if final_gate:
+        global_step = int(gate.get("global_step") or 0)
+    else:
+        import torch
+
+        state = torch.load(latest / "training_state.pt", map_location="cpu", weights_only=True)
+        if int(state.get("epoch") or 0) != latest_epoch:
+            raise SystemExit("latest training state epoch does not match checkpoint name")
+        global_step = int(state.get("global_step") or 0)
+        if global_step <= 0:
+            raise SystemExit("latest training state has no valid global step")
 
     sources = {
         "resume/latest/training_state.pt": latest / "training_state.pt",
         "resume/latest/training_state.safetensors": latest / "training_state.safetensors",
         "resume/latest/adapter/adapter_config.json": latest / "adapter" / "adapter_config.json",
         "resume/latest/adapter/adapter_model.safetensors": latest / "adapter" / "adapter_model.safetensors",
-        "reports/training_validation_report.json": gate_path,
         "reports/validation_state.json": output / "validation_state.json",
-        "logs/training.log": output / "training.log",
-        "logs/gpu_metrics.csv": output / "gpu_metrics.csv",
         "configs/train_lora_2x4090.json": root / "configs" / "train_lora_2x4090.json",
         "patches/acestep-xl-validation-caption-variants.patch": root / "patches" / "acestep-xl-validation-caption-variants.patch",
     }
+    if final_gate:
+        sources.update({
+            "reports/training_validation_report.json": gate_path,
+            "logs/training.log": output / "training.log",
+            "logs/gpu_metrics.csv": output / "gpu_metrics.csv",
+        })
     missing = [name for name, path in sources.items() if not path.is_file() or path.is_symlink()]
     if missing:
         raise SystemExit(f"resume backup inputs missing or unsafe: {missing}")
@@ -99,9 +120,14 @@ def main() -> int:
         "status": "pass",
         "repo_id": args.repo_id,
         "private": True,
+        "run_status": "complete" if final_gate else "in_progress",
         "completed_epoch": latest_epoch,
-        "global_step": gate.get("global_step"),
-        "best_epoch": gate.get("validation_state", {}).get("best_epoch"),
+        "global_step": global_step,
+        "best_epoch": (
+            gate.get("validation_state", {}).get("best_epoch")
+            if final_gate
+            else json.loads((output / "validation_state.json").read_text(encoding="utf-8")).get("best_epoch")
+        ),
         "ace_step_commit": "6d467e4b5081ccb0abf1ec1bf4fdf9051a2d34b0",
         "deduplication_performed": False,
         "training_records": 231,
@@ -131,7 +157,7 @@ def main() -> int:
         repo_id=args.repo_id,
         repo_type="dataset",
         operations=operations,
-        commit_message=f"Back up resumable epoch {latest_epoch}",
+        commit_message=f"Back up resumable {'final' if final_gate else 'in-progress'} epoch {latest_epoch}",
     )
     info = api.repo_info(args.repo_id, repo_type="dataset")
     remote_files = {item.rfilename for item in info.siblings}
