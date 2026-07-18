@@ -108,6 +108,11 @@ def main() -> int:
     parser.add_argument("--offload-to-cpu", action="store_true")
     args = parser.parse_args()
 
+    # Colab exports its notebook-only matplotlib_inline backend to subprocesses.
+    # The isolated ACE-Step venv does not include that backend, and Lightning's
+    # torchmetrics import touches matplotlib even though inference never plots.
+    os.environ["MPLBACKEND"] = "Agg"
+
     ace_root = Path(args.ace_root).resolve()
     checkpoint_root = Path(args.checkpoint_root).resolve()
     release = Path(args.release_dir).resolve()

@@ -182,6 +182,8 @@ The notebook displays the generated WAV only after these checks pass.
 
 `OpenRouter output failed the deterministic gate`: rerun the enhancer cell or make the idea more concrete. ACE-Step is not called when the caption or structured fields fail validation.
 
+`matplotlib ... backend_inline is not a valid value`: use the latest notebook, which forces the headless `MPLBACKEND=Agg` for the ACE-Step subprocess. On an already-running older notebook, run `os.environ["MPLBACKEND"] = "Agg"` and rerun only the inference cell.
+
 `CUDA out of memory`: restart the runtime, set `offload_to_cpu=True`, and rerun from model initialization with batch size 1.
 
 `adapter_config.json missing`: confirm the chosen subdirectory is exactly `final-all-data` or `best-val` under the downloaded release.
