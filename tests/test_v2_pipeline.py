@@ -504,8 +504,19 @@ class V2PipelineTest(unittest.TestCase):
             "claim": "pipa", "verdict": "present", "confidence": 0,
             "evidence": "No pipa is audible in the track.", "audible_alternative": "",
         }]}, ["pipa"])
-        self.assertIn("low_confidence_non_uncertain:pipa", errors)
         self.assertIn("present_verdict_contradicts_evidence:pipa", errors)
+
+    def test_claim_review_conservatively_normalizes_low_confidence_binary_verdict(self) -> None:
+        review, errors = parse_claim_review({"claims": [{
+            "claim": "pipa", "verdict": "present", "confidence": 0.3,
+            "evidence": "A weak plucked attack may be audible.",
+            "audible_alternative": "plucked lead",
+        }]}, ["pipa"])
+        self.assertEqual([], errors)
+        item = review["claims"][0]
+        self.assertEqual("uncertain", item["verdict"])
+        self.assertEqual("present", item["original_verdict"])
+        self.assertEqual("low_confidence_binary_to_uncertain", item["normalization"])
 
     def test_claim_verifier_forces_json_before_reasoning(self) -> None:
         source = (SCRIPTS / "verify_v2_audio_claims_moss.py").read_text(encoding="utf-8")
@@ -539,16 +550,20 @@ class V2PipelineTest(unittest.TestCase):
             }]}
             for name in ("full_neutral", "full_challenge", "overview_montage")
         }
-        migrated = migrate_cached_consensus({
-            "claim_verifier_revision": "multi-view-audio-claims-v2.5",
-            "model_revision": MODEL_REVISION,
-            "audio_sha256": "audio-hash",
-            "claims": ["pipa"],
-            "views": views,
-        }, ["pipa"], "audio-hash", "new-input-hash")
-        self.assertIsNotNone(migrated)
-        self.assertEqual("multi-view-audio-claims-v2.6", migrated["claim_verifier_revision"])
-        self.assertEqual("present", migrated["decisions"][0]["decision"])
+        for previous_revision in (
+            "multi-view-audio-claims-v2.5",
+            "multi-view-audio-claims-v2.6",
+        ):
+            migrated = migrate_cached_consensus({
+                "claim_verifier_revision": previous_revision,
+                "model_revision": MODEL_REVISION,
+                "audio_sha256": "audio-hash",
+                "claims": ["pipa"],
+                "views": views,
+            }, ["pipa"], "audio-hash", "new-input-hash")
+            self.assertIsNotNone(migrated)
+            self.assertEqual("multi-view-audio-claims-v2.7", migrated["claim_verifier_revision"])
+            self.assertEqual("present", migrated["decisions"][0]["decision"])
 
     def test_contradictory_v25_claim_evidence_must_be_reheard(self) -> None:
         views = {
@@ -1278,7 +1293,7 @@ class V2PipelineTest(unittest.TestCase):
     def test_final_objective_audit_requires_new_prompt_fidelity_lineage(self) -> None:
         source = (SCRIPTS / "audit_v2_objective.py").read_text(encoding="utf-8")
         for revision in (
-            "multi-view-audio-claims-v2.6",
+            "multi-view-audio-claims-v2.7",
             "fixed-prompt-audio-judge-v2.2",
         ):
             self.assertIn(revision, source)

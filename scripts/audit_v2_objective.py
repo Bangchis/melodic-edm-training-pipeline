@@ -173,8 +173,8 @@ def main() -> int:
     claims = reports["data_v2/claim_consensus_report.json"]
     if claims.get("records") != 231 or int(claims.get("claim_total", 0)) <= 0:
         errors.append("multi_view_claim_consensus_incomplete")
-    if claims.get("claim_verifier_revision") != "multi-view-audio-claims-v2.6":
-        errors.append("claim_verifier_revision_not_v2_6")
+    if claims.get("claim_verifier_revision") != "multi-view-audio-claims-v2.7":
+        errors.append("claim_verifier_revision_not_v2_7")
     repairs = reports["data_v2/caption_repair_report.json"]
     annotation_quality = reports["data_v2/annotation_quality_audit.json"]
     if repairs.get("caption_compiler_revision") != CAPTION_COMPILER_REVISION:

@@ -36,8 +36,11 @@ GENERIC_NAMES = {
     "traditional chinese instruments", "electronic elements",
 }
 VIEW_NAMES = ("full_neutral", "full_challenge", "overview_montage")
-CLAIM_VERIFIER_REVISION = "multi-view-audio-claims-v2.6"
-MIGRATABLE_CLAIM_VERIFIER_REVISIONS = {"multi-view-audio-claims-v2.5"}
+CLAIM_VERIFIER_REVISION = "multi-view-audio-claims-v2.7"
+MIGRATABLE_CLAIM_VERIFIER_REVISIONS = {
+    "multi-view-audio-claims-v2.5",
+    "multi-view-audio-claims-v2.6",
+}
 
 
 def evidence_explicitly_denies_presence(text: str) -> bool:
@@ -195,6 +198,7 @@ def parse_claim_review(value: dict[str, Any], expected: list[str]) -> tuple[dict
             continue
         claim = normalize_claim(item.get("claim"))
         verdict = str(item.get("verdict") or "").strip().casefold()
+        original_verdict = verdict
         try:
             confidence = float(item.get("confidence"))
         except (TypeError, ValueError):
@@ -208,19 +212,38 @@ def parse_claim_review(value: dict[str, Any], expected: list[str]) -> tuple[dict
             errors.append(f"invalid_verdict:{claim}")
         if not 0.0 <= confidence <= 1.0:
             errors.append(f"invalid_confidence:{claim}")
-        if verdict in {"present", "absent"} and 0.0 <= confidence < 0.5:
-            errors.append(f"low_confidence_non_uncertain:{claim}")
-        if verdict == "present" and evidence_explicitly_denies_presence(evidence):
+        evidence_contradiction = (
+            original_verdict == "present"
+            and evidence_explicitly_denies_presence(evidence)
+        )
+        if evidence_contradiction:
             errors.append(f"present_verdict_contradicts_evidence:{claim}")
+        normalization = ""
+        if (
+            original_verdict in {"present", "absent"}
+            and 0.0 <= confidence < 0.5
+            and not evidence_contradiction
+        ):
+            # A low-confidence binary verdict cannot support either side of the
+            # consensus. Conservatively preserve the evidence as ``uncertain``
+            # instead of spending repeated GPU calls asking for the same semantic fix.
+            verdict = "uncertain"
+            normalization = "low_confidence_binary_to_uncertain"
         if not evidence:
             errors.append(f"missing_evidence:{claim}")
-        by_claim[claim] = {
+        normalized_item = {
             "claim": claim,
             "verdict": verdict,
             "confidence": confidence,
             "evidence": evidence,
             "audible_alternative": alternative,
         }
+        if normalization:
+            normalized_item.update({
+                "original_verdict": original_verdict,
+                "normalization": normalization,
+            })
+        by_claim[claim] = normalized_item
     expected_set = set(expected)
     if set(by_claim) != expected_set:
         errors.append(
