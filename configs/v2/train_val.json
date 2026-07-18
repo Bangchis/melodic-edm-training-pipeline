@@ -51,6 +51,15 @@
     "absolute_listening_quality_gate": {
       "minimum_dimension_mean": 3.0,
       "minimum_individual_score": 2,
+      "minimum_candidate_prompt_alignment_per_sample": 3,
+      "candidate_prompt_alignment_not_worse_than_baseline": true,
+      "baseline_profile": {
+        "prompt_alignment_mean": 2.0,
+        "melody_mean": 3.0,
+        "structure_mean": 3.0,
+        "audio_quality_mean": 3.0
+      },
+      "maximum_final_prompt_alignment_regression_from_best_val": 0.34,
       "required_checkpoints": [5, 10, 15, 20]
     }
   }

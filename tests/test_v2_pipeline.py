@@ -62,6 +62,10 @@ class V2PipelineTest(unittest.TestCase):
         self.assertEqual(32, config["adapter"]["alpha"])
         self.assertEqual(20, config["optimization"]["maximum_epochs"])
         self.assertEqual(0.00005, config["optimization"]["learning_rate"])
+        quality_gate = config["optimization"]["absolute_listening_quality_gate"]
+        self.assertEqual(3, quality_gate["minimum_candidate_prompt_alignment_per_sample"])
+        self.assertTrue(quality_gate["candidate_prompt_alignment_not_worse_than_baseline"])
+        self.assertEqual(0.34, quality_gate["maximum_final_prompt_alignment_regression_from_best_val"])
         trainer_patch = (
             SCRIPTS.parent / "patches" / "acestep-xl-validation-caption-variants.patch"
         ).read_text(encoding="utf-8")

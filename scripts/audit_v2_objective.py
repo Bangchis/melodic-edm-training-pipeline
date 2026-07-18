@@ -87,6 +87,7 @@ def main() -> int:
     adapter = config.get("adapter", {})
     optimization = config.get("optimization", {})
     data = config.get("data", {})
+    quality_gate_config = optimization.get("absolute_listening_quality_gate", {})
     expected_values = {
         "adapter.rank": (adapter.get("rank"), 32),
         "adapter.alpha": (adapter.get("alpha"), 32),
@@ -101,6 +102,16 @@ def main() -> int:
         "optimization.warmup": (optimization.get("warmup_optimizer_steps"), 25),
         "optimization.gpus": (optimization.get("gpus"), 2),
         "optimization.effective_batch": (optimization.get("effective_batch"), 16),
+        "quality.minimum_candidate_prompt_alignment": (
+            quality_gate_config.get("minimum_candidate_prompt_alignment_per_sample"), 3,
+        ),
+        "quality.candidate_not_worse_than_baseline": (
+            quality_gate_config.get("candidate_prompt_alignment_not_worse_than_baseline"), True,
+        ),
+        "quality.maximum_final_alignment_regression": (
+            quality_gate_config.get("maximum_final_prompt_alignment_regression_from_best_val"),
+            0.34,
+        ),
         "data.records": (data.get("records"), 231),
         "data.train_records": (data.get("train_records"), 196),
         "data.validation_records": (data.get("validation_records"), 35),
