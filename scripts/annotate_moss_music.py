@@ -306,12 +306,29 @@ def main() -> int:
     for index, row in enumerate(pending, 1):
         sample_id = str(row["sample_id"])
         audio_path = Path(row["final_audio_path"])
+        failure_path = failure_dir / f"{sample_id}.json"
+        repair_round = 0
+        prior_failure_error = ""
+        if failure_path.is_file():
+            try:
+                prior_failure = json.loads(failure_path.read_text(encoding="utf-8"))
+                repair_round = int(prior_failure.get("failure_count", 1))
+                prior_failure_error = str(prior_failure.get("error") or "")
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                repair_round = 1
         old_record = json.loads(
             (root / "data" / "annotations" / f"{sample_id}.json").read_text(encoding="utf-8")
         )
         old_annotation = old_record["annotation"]
         mir = json.loads((root / "data" / "mir" / f"{sample_id}.json").read_text(encoding="utf-8"))
         prompt = build_prompt(row, old_annotation, mir, schema)
+        if repair_round:
+            prompt += (
+                f"\nRepair round {repair_round}: a prior complete run exhausted retries with "
+                f"{prior_failure_error}. Do not reuse that response. Keep canonical between "
+                "50 and 70 words and both composition and production between 30 and 60 words. "
+                "Count conservatively and return a newly worded complete JSON object."
+            )
         last_error = "unknown"
         last_response_hash = ""
         for attempt in range(1, args.max_attempts + 1):
@@ -337,7 +354,7 @@ def main() -> int:
                     "supplement": supplement,
                 }
                 atomic_json(output_dir / f"{sample_id}.json", record)
-                (failure_dir / f"{sample_id}.json").unlink(missing_ok=True)
+                failure_path.unlink(missing_ok=True)
                 manifest.append({
                     "sample_id": sample_id,
                     "status": "accepted",
@@ -357,10 +374,11 @@ def main() -> int:
             failure = {
                 "sample_id": sample_id,
                 "status": "failed",
+                "failure_count": repair_round + 1,
                 "error": last_error,
                 "raw_response_sha256": last_response_hash,
             }
-            atomic_json(failure_dir / f"{sample_id}.json", failure)
+            atomic_json(failure_path, failure)
             manifest.append(failure)
             print(f"[{index}/{len(pending)}] {sample_id} FAILED {last_error}", flush=True)
 

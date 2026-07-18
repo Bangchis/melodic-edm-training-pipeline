@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -108,9 +109,26 @@ def main() -> int:
     args = parser.parse_args()
     root = Path(args.project_root).resolve()
 
+    moss_gate = root / "data_v2" / "moss_validation_report.json"
     print("[v2] waiting for both MOSS annotation shards", flush=True)
-    wait_for_exit("edm-v2-moss-0")
-    wait_for_exit("edm-v2-moss-1")
+    for repair_round in range(4):
+        wait_for_exit("edm-v2-moss-0")
+        wait_for_exit("edm-v2-moss-1")
+        validation = subprocess.run(
+            [
+                sys.executable,
+                str(root / "scripts" / "validate_moss_annotations_v2.py"),
+                "--project-root", str(root),
+            ],
+            check=False,
+        )
+        if validation.returncode == 0 and json_pass(moss_gate):
+            print("[moss-annotations] PASS", flush=True)
+            break
+        if repair_round == 3:
+            raise RuntimeError("MOSS annotation gate still failed after three repair rounds")
+        print(f"[moss-annotations] starting repair round {repair_round + 1}", flush=True)
+        run_parallel(["edm-v2-moss-0", "edm-v2-moss-1"])
     run_stage(
         "edm-v2-build-annotations",
         root / "data_v2" / "dataset_build_report.json",

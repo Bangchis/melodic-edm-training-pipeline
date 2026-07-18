@@ -10,6 +10,7 @@ Last reconciled: 2026-07-18 (Asia/Ho_Chi_Minh)
 - Two MOSS-Music-8B-Thinking annotator shards are running under Supervisor, one per RTX 4090.
 - MOSS is an annotation/listening model only. It is not loaded by the ACE-Step trainer and is not updated.
 - A stricter validator now rejects missing/zero overall MOSS confidence and incomplete audible-fact schemas. Atomic valid files are retained; rejected files are retried.
+- Deterministic failures receive a numbered repair prompt with tighter caption-length bounds; the orchestrator allows at most three repair rounds before stopping.
 - At the latest checkpoint the Vast workspace had about 193 GiB free.
 
 ## Completed V2 implementation
