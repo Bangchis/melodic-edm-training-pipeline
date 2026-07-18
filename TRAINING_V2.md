@@ -66,6 +66,7 @@ MOSS annotation (2 shards)
 → select best optimizer step
 → fresh all-231 run to scaled optimizer steps
 → package, upload, clean redownload and inference verification
+→ final objective audit
 ```
 
 ### Annotation and tensors
