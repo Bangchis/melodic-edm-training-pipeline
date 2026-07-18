@@ -73,6 +73,7 @@ MOSS annotation (2 shards)
 → fresh all-231 run to scaled optimizer steps
 → package, upload, clean redownload and inference verification
 → final objective audit
+→ private completion-evidence backup
 ```
 
 ### Annotation and tensors

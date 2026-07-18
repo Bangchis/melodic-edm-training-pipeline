@@ -198,6 +198,11 @@ def main() -> int:
         root / "outputs" / "v2" / "final_acceptance_report.json",
         "final-objective-audit",
     )
+    run_stage(
+        "edm-v2-upload-completion",
+        root / "outputs" / "v2" / "completion_upload_report.json",
+        "private-completion-backup",
+    )
     print("[v2] COMPLETE", flush=True)
     return 0
 
