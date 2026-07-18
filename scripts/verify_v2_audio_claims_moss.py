@@ -28,14 +28,15 @@ CLAIM_DISCOVERY_TERMS = (
     "synth lead", "synth pluck", "supersaw", "sub bass", "synth bass",
     "electronic drums", "drum machine", "vocal chops", "choir texture",
     "bells", "taiko", "xiao", "acoustic guitar", "electric guitar", "percussion",
-    "synthesizer", "drums", "bass", "woodwinds", "synth texture",
+    "synthesizer", "drums", "bass", "woodwinds", "synth texture", "synth pad",
+    "recorder", "music box", "glockenspiel", "orchestral hits", "keyboard",
 )
 GENERIC_NAMES = {
     "", "unknown", "instrument", "instruments", "traditional instruments",
     "traditional chinese instruments", "electronic elements",
 }
 VIEW_NAMES = ("full_neutral", "full_challenge", "overview_montage")
-CLAIM_VERIFIER_REVISION = "multi-view-audio-claims-v2.4"
+CLAIM_VERIFIER_REVISION = "multi-view-audio-claims-v2.5"
 
 
 def normalize_claim(value: Any) -> str:
@@ -45,6 +46,21 @@ def normalize_claim(value: Any) -> str:
     text = re.sub(r"\s+", " ", text)
     text = re.sub(r"\bsynthesizers\b", "synthesizer", text)
     text = re.sub(r"\bsynth textures\b", "synth texture", text)
+    text = re.sub(r"\bsynth(?:esizer)? pads?\b", "synth pad", text)
+    text = re.sub(r"\bviolins\b", "violin", text)
+    text = re.sub(r"\bcellos\b", "cello", text)
+    text = re.sub(r"\bstring sections?\b", "orchestral strings", text)
+    text = re.sub(r"\bdrum kits?\b", "drums", text)
+    if re.fullmatch(r"bass\s*\(\s*synthesizer\s*\)?", text):
+        text = "synth bass"
+    if "vocal" in text and "chop" in text:
+        text = "vocal chops"
+    if text == "synth":
+        text = "synthesizer"
+    if text == "string":
+        text = "strings"
+    if text == "bell":
+        text = "bells"
     return text
 
 
@@ -66,7 +82,13 @@ def extract_instrument_claims(annotation: dict[str, Any]) -> list[str]:
                 raw_name = str(item.get("name") or "")
                 claim = normalize_claim(raw_name)
                 qualified = bool(re.search(r"(?:-like|\blike\b)", raw_name, re.IGNORECASE))
-                composite = "/" in raw_name or "," in raw_name or len(claim.split()) > 4
+                composite = (
+                    "/" in raw_name
+                    or "," in raw_name
+                    or "(" in raw_name
+                    or ")" in raw_name
+                    or len(claim.split()) > 4
+                )
                 if qualified:
                     # Keep only an unqualified source outside parenthetical ``...-like`` text.
                     unqualified = re.sub(
@@ -85,9 +107,9 @@ def extract_instrument_claims(annotation: dict[str, Any]) -> list[str]:
                         candidates.extend(discovered)
                     else:
                         candidates.extend(
-                            normalize_claim(part)
+                            normalize_claim(re.sub(r"[()]", " ", part))
                             for part in re.split(r"[/,]", raw_name)
-                            if normalize_claim(part)
+                            if normalize_claim(re.sub(r"[()]", " ", part))
                         )
                 else:
                     candidates.append(claim)

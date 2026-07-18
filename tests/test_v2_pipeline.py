@@ -207,6 +207,25 @@ class V2PipelineTest(unittest.TestCase):
             },
         }
         self.assertEqual(["synthesizer", "brass"], extract_instrument_claims(composite_only))
+        normalized_composites = {
+            "caption_variants": [],
+            "master_annotation": {
+                "moss_music_supplement": {
+                    "instruments_and_roles": [
+                        {"name": "String section (violins/cellos)"},
+                        {"name": "Bass (synthesizer)"},
+                        {"name": "Vocal samples (chops/vocal chops)"},
+                        {"name": "Synth pads"},
+                    ]
+                }
+            },
+        }
+        normalized = extract_instrument_claims(normalized_composites)
+        self.assertEqual(
+            ["orchestral strings", "violin", "cello", "synth bass", "vocal chops", "synth pad"],
+            normalized,
+        )
+        self.assertFalse(any("(" in claim or ")" in claim for claim in normalized))
 
     def test_claim_review_requires_exact_coverage(self) -> None:
         review, errors = parse_claim_review({"claims": [{
@@ -589,7 +608,7 @@ class V2PipelineTest(unittest.TestCase):
     def test_final_objective_audit_requires_new_prompt_fidelity_lineage(self) -> None:
         source = (SCRIPTS / "audit_v2_objective.py").read_text(encoding="utf-8")
         for revision in (
-            "multi-view-audio-claims-v2.4",
+            "multi-view-audio-claims-v2.5",
             "audio-grounded-caption-compiler-v2.5",
             "fixed-prompt-audio-judge-v2.2",
         ):
