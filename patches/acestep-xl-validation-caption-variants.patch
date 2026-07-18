@@ -847,7 +847,7 @@ new file mode 100644
 index 0000000..950d811
 --- /dev/null
 +++ b/acestep/training_v2/prompt_tracking.py
-@@ -0,0 +1,55 @@
+@@ -0,0 +1,67 @@
 +"""Track random caption selections without changing the training batch."""
 +
 +from __future__ import annotations
@@ -861,17 +861,29 @@ index 0000000..950d811
 +
 +def count_selected_variants(batch: dict[str, Any], counts: torch.Tensor) -> None:
 +    """Add selected caption indices from a collated batch to *counts*."""
-+    metadata = batch.get("metadata", {})
-+    if not isinstance(metadata, dict):
++    metadata = batch.get("metadata", [])
++    if isinstance(metadata, dict):
++        items = [metadata]
++    elif isinstance(metadata, (list, tuple)):
++        items = metadata
++    else:
 +        return
-+    selected = metadata.get("selected_caption_variant")
-+    if selected is None:
-+        return
-+    values = selected.reshape(-1).tolist() if torch.is_tensor(selected) else [selected]
-+    for value in values:
-+        index = int(value)
-+        if 0 <= index < counts.numel():
-+            counts[index] += 1
++    for item in items:
++        if not isinstance(item, dict):
++            continue
++        selected = item.get("selected_caption_variant")
++        if selected is None:
++            continue
++        if torch.is_tensor(selected):
++            values = selected.reshape(-1).tolist()
++        elif isinstance(selected, (list, tuple)):
++            values = selected
++        else:
++            values = [selected]
++        for value in values:
++            index = int(value)
++            if 0 <= index < counts.numel():
++                counts[index] += 1
 +
 +
 +def save_prompt_counts(
@@ -903,6 +915,43 @@ index 0000000..950d811
 +    temporary = path.with_suffix(".json.tmp")
 +    temporary.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
 +    temporary.replace(path)
+diff --git a/acestep/training_v2/prompt_tracking_test.py b/acestep/training_v2/prompt_tracking_test.py
+new file mode 100644
+index 0000000..8d42c2e
+--- /dev/null
++++ b/acestep/training_v2/prompt_tracking_test.py
+@@ -0,0 +1,31 @@
++"""Tests for prompt selection tracking after ACE-Step batch collation."""
++
++from __future__ import annotations
++
++import unittest
++
++import torch
++
++from acestep.training_v2.prompt_tracking import count_selected_variants
++
++
++class PromptTrackingTest(unittest.TestCase):
++    def test_counts_collated_metadata_list(self) -> None:
++        counts = torch.zeros(3, dtype=torch.int64)
++        batch = {"metadata": [
++            {"selected_caption_variant": 0},
++            {"selected_caption_variant": 2},
++            {"selected_caption_variant": 2},
++        ]}
++        count_selected_variants(batch, counts)
++        self.assertEqual([1, 0, 2], counts.tolist())
++
++    def test_counts_legacy_dictionary_tensor(self) -> None:
++        counts = torch.zeros(3, dtype=torch.int64)
++        batch = {"metadata": {"selected_caption_variant": torch.tensor([0, 1, 2])}}
++        count_selected_variants(batch, counts)
++        self.assertEqual([1, 1, 1], counts.tolist())
++
++
++if __name__ == "__main__":
++    unittest.main()
 diff --git a/acestep/training_v2/tensorboard_utils.py b/acestep/training_v2/tensorboard_utils.py
 index 64705cc..96f153e 100644
 --- a/acestep/training_v2/tensorboard_utils.py
