@@ -178,6 +178,36 @@ class V2PipelineTest(unittest.TestCase):
         }
         self.assertEqual(["synth lead"], extract_instrument_claims(annotation))
 
+    def test_composite_instrument_names_are_split_without_punctuation_or_like_hallucination(self) -> None:
+        annotation = {
+            "caption_variants": [],
+            "master_annotation": {
+                "moss_music_supplement": {
+                    "instruments_and_roles": [
+                        {"name": "Traditional Chinese instruments (guzheng/dizi)"},
+                        {"name": "Synthesizers/Orchestral strings"},
+                        {"name": "Synthesizer (oud-like)"},
+                    ]
+                }
+            },
+        }
+        claims = extract_instrument_claims(annotation)
+        self.assertIn("guzheng", claims)
+        self.assertIn("dizi", claims)
+        self.assertIn("synthesizer", claims)
+        self.assertIn("orchestral strings", claims)
+        self.assertNotIn("oud", claims)
+        self.assertFalse(any(")" in claim or "(" in claim for claim in claims))
+        composite_only = {
+            "caption_variants": [],
+            "master_annotation": {
+                "moss_music_supplement": {
+                    "instruments_and_roles": [{"name": "Synthesizers/Brass"}]
+                }
+            },
+        }
+        self.assertEqual(["synthesizer", "brass"], extract_instrument_claims(composite_only))
+
     def test_claim_review_requires_exact_coverage(self) -> None:
         review, errors = parse_claim_review({"claims": [{
             "claim": "pipa", "verdict": "present", "confidence": 0.9,

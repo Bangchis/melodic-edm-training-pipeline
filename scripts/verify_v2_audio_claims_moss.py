@@ -28,19 +28,24 @@ CLAIM_DISCOVERY_TERMS = (
     "synth lead", "synth pluck", "supersaw", "sub bass", "synth bass",
     "electronic drums", "drum machine", "vocal chops", "choir texture",
     "bells", "taiko", "xiao", "acoustic guitar", "electric guitar", "percussion",
+    "synthesizer", "drums", "bass", "woodwinds", "synth texture",
 )
 GENERIC_NAMES = {
     "", "unknown", "instrument", "instruments", "traditional instruments",
     "traditional chinese instruments", "electronic elements",
 }
 VIEW_NAMES = ("full_neutral", "full_challenge", "overview_montage")
-CLAIM_VERIFIER_REVISION = "multi-view-audio-claims-v2.3"
+CLAIM_VERIFIER_REVISION = "multi-view-audio-claims-v2.4"
 
 
 def normalize_claim(value: Any) -> str:
     """Normalize a structured instrument label without broadening its meaning."""
     text = re.sub(r"[_-]+", " ", str(value or "").strip().casefold())
-    return re.sub(r"\s+", " ", text)
+    text = re.sub(r"^[^\w]+|[^\w]+$", "", text)
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"\bsynthesizers\b", "synthesizer", text)
+    text = re.sub(r"\bsynth textures\b", "synth texture", text)
+    return text
 
 
 def extract_instrument_claims(annotation: dict[str, Any]) -> list[str]:
@@ -58,13 +63,32 @@ def extract_instrument_claims(annotation: dict[str, Any]) -> list[str]:
             continue
         for item in values:
             if isinstance(item, dict):
-                claim = normalize_claim(item.get("name"))
-                if "/" in str(item.get("name") or ""):
-                    candidates.extend(normalize_claim(part) for part in str(item["name"]).split("/"))
-                elif "," in str(item.get("name") or "") or len(claim.split()) > 4:
-                    for term in sorted(CLAIM_DISCOVERY_TERMS, key=len, reverse=True):
-                        if re.search(rf"(?<![a-z]){re.escape(term)}(?![a-z])", claim):
-                            candidates.append(term)
+                raw_name = str(item.get("name") or "")
+                claim = normalize_claim(raw_name)
+                qualified = bool(re.search(r"(?:-like|\blike\b)", raw_name, re.IGNORECASE))
+                composite = "/" in raw_name or "," in raw_name or len(claim.split()) > 4
+                if qualified:
+                    # Keep only an unqualified source outside parenthetical ``...-like`` text.
+                    unqualified = re.sub(
+                        r"\([^)]*(?:-like|\blike\b)[^)]*\)", "", raw_name,
+                        flags=re.IGNORECASE,
+                    )
+                    base = normalize_claim(unqualified)
+                    if base and base != claim:
+                        candidates.append(base)
+                elif composite:
+                    discovered = [
+                        term for term in sorted(CLAIM_DISCOVERY_TERMS, key=len, reverse=True)
+                        if re.search(rf"(?<![a-z]){re.escape(term)}(?![a-z])", claim)
+                    ]
+                    if discovered:
+                        candidates.extend(discovered)
+                    else:
+                        candidates.extend(
+                            normalize_claim(part)
+                            for part in re.split(r"[/,]", raw_name)
+                            if normalize_claim(part)
+                        )
                 else:
                     candidates.append(claim)
 
