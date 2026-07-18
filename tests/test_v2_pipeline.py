@@ -840,6 +840,15 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn("CUSTOM_SECTION_FIXTURE", source)
         self.assertIn("custom_section_hotfix_verification.json", source)
 
+    def test_annotation_wip_backup_excludes_audio_tokens_and_raw_responses(self) -> None:
+        source = (SCRIPTS / "upload_v2_annotation_wip.py").read_text(encoding="utf-8")
+        self.assertIn('"moss_annotations", "claim_consensus", "caption_repairs"', source)
+        self.assertIn('"raw_model_responses_included": False', source)
+        self.assertIn('"audio_included": False', source)
+        self.assertIn('"tokens_included": False', source)
+        self.assertIn("SECRET_PATTERNS", source)
+        self.assertIn("clean_download_hash_match", source)
+
     def test_colab_inference_overrides_notebook_only_matplotlib_backend(self) -> None:
         inference = (SCRIPTS / "infer_v2_release.py").read_text(encoding="utf-8")
         self.assertIn('os.environ["MPLBACKEND"] = "Agg"', inference)
