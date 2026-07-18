@@ -53,6 +53,12 @@ The strict LoRA gate requires the exact four projection names, verifies that the
 
 All long server jobs are managed by Supervisor.
 
+The resume-safe `edm-v2-orchestrator` waits for both MOSS shards and advances only when each JSON gate reports `pass`. It stops at the first failed gate. Individual commands below remain available for inspection or manual recovery.
+
+```bash
+supervisorctl start edm-v2-orchestrator
+```
+
 ```text
 MOSS annotation (2 shards)
 → merge annotations + grouped 196/35 split
