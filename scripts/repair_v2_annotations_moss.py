@@ -16,6 +16,7 @@ from typing import Any
 from v2_common import (
     CAPTION_COMPILER_REVISION,
     CAPTION_TYPES,
+    TRACK_STYLE_REFERENCE_REVISION,
     atomic_json,
     atomic_jsonl,
     caption_map,
@@ -23,6 +24,7 @@ from v2_common import (
     file_sha256,
     object_sha256,
     read_jsonl,
+    track_style_reference,
     validate_caption_set,
 )
 from verify_v2_audio_claims_moss import CLAIM_DISCOVERY_TERMS
@@ -313,7 +315,9 @@ def request_for(fusion_sources: dict[str, Any], decisions: list[dict[str, Any]])
         "not introduce any new exact named instrument that is absent from the "
         "binding decisions or their audible alternatives; use a non-physical timbre description "
         "instead. Never infer title, "
-        "artist, country, channel or intended media use. Avoid quality hype and "
+        "artist, country, channel or intended media use inside these audio-only caption bodies. "
+        "The deterministic dataset step will prepend the row's verified artist and track title as "
+        "a style reference after audible-fact validation. Avoid quality hype and "
         "boilerplate such as clean, polished, masterpiece, classic EDM structure, or professional. "
         "Select a small coherent set of the most audible and prompt-useful properties rather than "
         "maximizing keyword coverage. Across the three captions, preserve the strongest compatible "
@@ -327,7 +331,7 @@ def request_for(fusion_sources: dict[str, Any], decisions: list[dict[str, Any]])
         "Describe stable "
         "audible genre/style, mood, concrete melody or motif behavior, rhythm, arrangement development "
         "and production texture. Do not include BPM, exact key, time "
-        "signature, title, artist, or named-artist style. Return English captions with exact keys "
+        "signature, title, artist, or named-artist style in the audio-only body. Return English captions with exact keys "
         "canonical, composition and production. Canonical must be 40-80 words; composition and "
         "production must each be 25-80 words. They must be distinct and grounded. Return JSON only. "
         "Score the original proposals independently from 1 to 5 for audible_fidelity, specificity, "
@@ -452,6 +456,7 @@ def existing_valid(
     caption_hash: str,
     decisions_hash: str,
     fusion_sources_hash: str,
+    style_reference_hash: str,
     compiler_model: str,
 ) -> bool:
     """Return whether a resumable repair still matches exact input audio and captions."""
@@ -467,6 +472,7 @@ def existing_valid(
             and value.get("original_captions_sha256") == caption_hash
             and value.get("fusion_sources_sha256") == fusion_sources_hash
             and object_sha256(value.get("fusion_sources")) == fusion_sources_hash
+            and value.get("track_style_reference_sha256") == style_reference_hash
             and not parse_repair(value.get("repair", {}))[1]
         )
         return base_valid and value.get("claim_decisions_sha256") == decisions_hash
@@ -498,7 +504,7 @@ def main() -> int:
     pending: list[
         tuple[
             dict[str, Any], dict[str, str], str, str, list[dict[str, Any]], str,
-            dict[str, Any], str,
+            dict[str, Any], str, dict[str, str], str,
         ]
     ] = []
     skipped_missing_consensus = 0
@@ -528,13 +534,23 @@ def main() -> int:
         decisions_hash = object_sha256(decisions)
         fusion_sources = fusion_source_material(annotation, captions)
         fusion_sources_hash = object_sha256(fusion_sources)
+        style_reference = {
+            "revision": TRACK_STYLE_REFERENCE_REVISION,
+            "artist": " ".join(str(row.get("expected_artist") or "").split()),
+            "title": " ".join(str(row.get("expected_title") or "").split()),
+        }
+        style_reference["prefix"] = track_style_reference(
+            style_reference["artist"], style_reference["title"]
+        )
+        style_reference_hash = object_sha256(style_reference)
         path = output_dir / f"{row['sample_id']}.json"
         if not existing_valid(
-            path, audio_hash, caption_hash, decisions_hash, fusion_sources_hash, args.model
+            path, audio_hash, caption_hash, decisions_hash, fusion_sources_hash,
+            style_reference_hash, args.model
         ):
             pending.append((
                 row, captions, audio_hash, caption_hash, decisions, decisions_hash,
-                fusion_sources, fusion_sources_hash,
+                fusion_sources, fusion_sources_hash, style_reference, style_reference_hash,
             ))
     print(json.dumps({
         "shard": args.shard_index,
@@ -555,7 +571,7 @@ def main() -> int:
     errors = 0
     for index, (
         row, captions, audio_hash, caption_hash, decisions, decisions_hash,
-        fusion_sources, fusion_sources_hash,
+        fusion_sources, fusion_sources_hash, style_reference, style_reference_hash,
     ) in enumerate(pending, 1):
         sample_id = str(row["sample_id"])
         request = request_for(fusion_sources, decisions)
@@ -585,6 +601,8 @@ def main() -> int:
                     "original_captions_sha256": caption_hash,
                     "fusion_sources": fusion_sources,
                     "fusion_sources_sha256": fusion_sources_hash,
+                    "track_style_reference": style_reference,
+                    "track_style_reference_sha256": style_reference_hash,
                     "claim_decisions_sha256": decisions_hash,
                     "claim_decisions": decisions,
                     "raw_response_sha256": object_sha256(response),

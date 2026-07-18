@@ -10,7 +10,13 @@ from statistics import mean
 from typing import Any
 
 from annotate_moss_music import MODEL_REVISION, generate, load_runtime
-from v2_common import atomic_json, extract_json_object, object_sha256, read_jsonl
+from v2_common import (
+    atomic_json,
+    detach_track_style_reference,
+    extract_json_object,
+    object_sha256,
+    read_jsonl,
+)
 
 
 SCORE_FIELDS = (
@@ -121,11 +127,19 @@ def main() -> int:
     for index, row in enumerate(sample, 1):
         sample_id = str(row["sample_id"])
         annotation = json.loads(Path(row["v2_annotation_path"]).read_text(encoding="utf-8"))
-        captions = {
+        train_captions = {
             str(item["type"]): str(item["text"])
             for item in annotation["caption_variants"]
         }
-        captions_sha256 = object_sha256(captions)
+        captions_sha256 = object_sha256(train_captions)
+        captions = {
+            name: detach_track_style_reference(
+                text,
+                str(row.get("expected_artist") or ""),
+                str(row.get("expected_title") or ""),
+            )
+            for name, text in train_captions.items()
+        }
         cache_key = (sample_id, captions_sha256)
         if cache_key in cached:
             results.append(cached[cache_key])

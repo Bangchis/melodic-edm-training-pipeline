@@ -22,7 +22,16 @@ from repair_v2_annotations_moss import (
     parse_repair,
     validate_claim_constraints,
 )
-from v2_common import atomic_json, file_sha256, object_sha256, read_jsonl
+from v2_common import (
+    TRACK_STYLE_REFERENCE_REVISION,
+    atomic_json,
+    attach_track_style_reference,
+    file_sha256,
+    object_sha256,
+    read_jsonl,
+    track_style_reference,
+    validate_track_style_caption_set,
+)
 
 
 def archive_stale_model_outputs(root: Path, timestamp: str) -> dict[str, Any]:
@@ -101,6 +110,19 @@ def main() -> int:
                 raise ValueError("fusion_sources_sha256_mismatch")
             if record.get("fusion_sources") != current_fusion_sources:
                 raise ValueError("fusion_sources_content_mismatch")
+            style_reference = {
+                "revision": TRACK_STYLE_REFERENCE_REVISION,
+                "artist": " ".join(str(row.get("expected_artist") or "").split()),
+                "title": " ".join(str(row.get("expected_title") or "").split()),
+            }
+            style_reference["prefix"] = track_style_reference(
+                style_reference["artist"], style_reference["title"]
+            )
+            style_reference_hash = object_sha256(style_reference)
+            if record.get("track_style_reference") != style_reference:
+                raise ValueError("track_style_reference_content_mismatch")
+            if record.get("track_style_reference_sha256") != style_reference_hash:
+                raise ValueError("track_style_reference_sha256_mismatch")
             decisions = record.get("claim_decisions")
             if not isinstance(decisions, list):
                 raise ValueError("claim_decisions_missing")
@@ -113,15 +135,24 @@ def main() -> int:
             recommendations[repair["recommendation"]] += 1
             for field in SCORE_FIELDS:
                 scores[field].append(repair["scores"][field])
-            selected = repair["corrected_captions"]
+            selected = attach_track_style_reference(
+                repair["corrected_captions"],
+                style_reference["artist"],
+                style_reference["title"],
+            )
+            style_errors = validate_track_style_caption_set(
+                selected, style_reference["artist"], style_reference["title"]
+            )
+            if style_errors:
+                raise ValueError(",".join(style_errors))
             changed = object_sha256(selected) != object_sha256(original)
-            if changed:
-                annotation["caption"] = selected["canonical"]
-                annotation["caption_variants"] = [
-                    {"type": name, "text": selected[name]}
-                    for name in ("canonical", "composition", "production")
-                ]
-                annotation["master_annotation"]["merged_captions"] = selected
+            annotation["caption"] = selected["canonical"]
+            annotation["caption_variants"] = [
+                {"type": name, "text": selected[name]}
+                for name in ("canonical", "composition", "production")
+            ]
+            annotation["master_annotation"]["merged_captions"] = selected
+            annotation["master_annotation"]["track_style_reference"] = style_reference
             annotation["master_annotation"]["caption_fusion"] = {
                 "revision": record["caption_compiler_revision"],
                 "sources_sha256": record["fusion_sources_sha256"],
@@ -142,6 +173,8 @@ def main() -> int:
                 "claim_decisions_sha256": record["claim_decisions_sha256"],
                 "original_captions_sha256": record["original_captions_sha256"],
                 "fusion_sources_sha256": record["fusion_sources_sha256"],
+                "track_style_reference_revision": style_reference["revision"],
+                "track_style_reference_sha256": style_reference_hash,
                 "applied": changed,
             }
             staged_annotations.append((sample_id, annotation))
@@ -215,6 +248,9 @@ def main() -> int:
             "independent_audio_analysis",
             "binding_multi_view_claim_decisions",
         ],
+        "track_style_reference_revision": TRACK_STYLE_REFERENCE_REVISION,
+        "track_style_reference_records": len(results),
+        "track_style_reference_scope": ["canonical", "composition", "production"],
         "previous_annotations_backup": backup_path,
         "stale_model_outputs_reset": model_reset if status == "pass" else None,
         "original_caption_dimension_means": dimension_means,

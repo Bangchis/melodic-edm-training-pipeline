@@ -5,24 +5,27 @@
       "index": 0,
       "type": "canonical",
       "purpose": "whole-track summary",
-      "word_range": [40, 80]
+      "audible_body_word_range": [40, 80]
     },
     {
       "index": 1,
       "type": "composition",
       "purpose": "melody, motif, harmony and arrangement; fused from old prompt plus new MOSS evidence",
-      "word_range": [25, 80]
+      "audible_body_word_range": [25, 80]
     },
     {
       "index": 2,
       "type": "production",
       "purpose": "instruments, synths, bass, drums, texture and space; fused from old prompt plus new MOSS evidence",
-      "word_range": [25, 80]
+      "audible_body_word_range": [25, 80]
     }
   ],
   "training": {
     "audio_latents_per_record": 1,
     "prompt_embeddings_per_record": 3,
+    "required_style_reference_prefix": "Style inspired by the musical identity of {artist} and the reference track \"{title}\".",
+    "style_reference_revision": "artist-track-style-reference-v1",
+    "style_reference_scope": "prepended to canonical, composition and production after audio-only validation",
     "selection": "uniform random on every load",
     "cfg_dropout": 0.15
   },

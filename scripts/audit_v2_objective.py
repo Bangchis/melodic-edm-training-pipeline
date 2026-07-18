@@ -8,9 +8,17 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from v2_common import CAPTION_COMPILER_REVISION, atomic_json
+    from v2_common import (
+        CAPTION_COMPILER_REVISION,
+        TRACK_STYLE_REFERENCE_REVISION,
+        atomic_json,
+    )
 except ModuleNotFoundError:  # package import used by local unit tests
-    from scripts.v2_common import CAPTION_COMPILER_REVISION, atomic_json
+    from scripts.v2_common import (
+        CAPTION_COMPILER_REVISION,
+        TRACK_STYLE_REFERENCE_REVISION,
+        atomic_json,
+    )
 
 
 def load_json(root: Path, relative: str, errors: list[str]) -> dict[str, Any]:
@@ -127,6 +135,14 @@ def main() -> int:
             data.get("caption_variants"),
             ["canonical", "composition", "production"],
         ),
+        "data.track_style_reference_revision": (
+            data.get("track_style_reference_revision"),
+            TRACK_STYLE_REFERENCE_REVISION,
+        ),
+        "data.track_style_reference_scope": (
+            data.get("track_style_reference_scope"),
+            ["canonical", "composition", "production"],
+        ),
     }
     for label, (observed, expected) in expected_values.items():
         if observed != expected:
@@ -160,11 +176,24 @@ def main() -> int:
     }:
         errors.append("per_track_prior_audio_fusion_incomplete")
     if (
+        repairs.get("track_style_reference_revision") != TRACK_STYLE_REFERENCE_REVISION
+        or repairs.get("track_style_reference_records") != 231
+        or repairs.get("track_style_reference_scope")
+        != ["canonical", "composition", "production"]
+    ):
+        errors.append("artist_track_style_reference_incomplete")
+    if (
         annotation_quality.get("caption_fusion_revision")
         != CAPTION_COMPILER_REVISION
         or annotation_quality.get("caption_fusion_records") != 231
     ):
         errors.append("per_record_caption_fusion_lineage_not_proven")
+    if (
+        annotation_quality.get("track_style_reference_revision")
+        != TRACK_STYLE_REFERENCE_REVISION
+        or annotation_quality.get("track_style_reference_records") != 231
+    ):
+        errors.append("per_record_artist_track_style_reference_not_proven")
     reset = reports["data_v2/downstream_reset_report.json"]
     if reset.get("fresh_rank32_outputs_required") is not True:
         errors.append("stale_pre_audio_blind_training_outputs_not_reset")
@@ -212,6 +241,14 @@ def main() -> int:
         != ["canonical", "composition", "production"]
     ):
         errors.append("dataset_does_not_use_three_fused_prompt_variants")
+    if (
+        dataset_build.get("track_style_reference_revision")
+        != TRACK_STYLE_REFERENCE_REVISION
+        or dataset_build.get("track_style_reference_records") != 231
+        or dataset_build.get("track_style_reference_scope")
+        != ["canonical", "composition", "production"]
+    ):
+        errors.append("dataset_artist_track_style_references_not_proven")
 
     smoke = reports["outputs/v2/smoke/smoke_validation_report.json"]
     baseline_scores = reports["outputs/v2/baseline-xl-base/listening_scores.json"]

@@ -11,9 +11,25 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from v2_common import CAPTION_COMPILER_REVISION, atomic_json, read_jsonl
+    from v2_common import (
+        CAPTION_COMPILER_REVISION,
+        TRACK_STYLE_REFERENCE_REVISION,
+        atomic_json,
+        detach_track_style_reference,
+        object_sha256,
+        read_jsonl,
+        validate_track_style_caption_set,
+    )
 except ModuleNotFoundError:  # package import used by local unit tests
-    from scripts.v2_common import CAPTION_COMPILER_REVISION, atomic_json, read_jsonl
+    from scripts.v2_common import (
+        CAPTION_COMPILER_REVISION,
+        TRACK_STYLE_REFERENCE_REVISION,
+        atomic_json,
+        detach_track_style_reference,
+        object_sha256,
+        read_jsonl,
+        validate_track_style_caption_set,
+    )
 
 
 CAPTION_TYPES = ("canonical", "composition", "production")
@@ -157,7 +173,7 @@ def main() -> int:
     parents = {sample_id: str(row["parent_song_id"]) for sample_id, row in by_id.items()}
     sample_ids = sorted(set(annotations) & set(by_id))
     captions_by_type: dict[str, list[str]] = {name: [] for name in CAPTION_TYPES}
-    identity_leaks: list[dict[str, str]] = []
+    identity_style_reference_records = 0
     nonempty_uncertainty: list[str] = []
     caption_fusion_records = 0
     for sample_id in sample_ids:
@@ -166,13 +182,23 @@ def main() -> int:
         if tuple(mapped) != CAPTION_TYPES:
             errors.append({"sample_id": sample_id, "reason": "caption_type_order", "observed": list(mapped)})
             continue
+        artist = str(by_id[sample_id].get("expected_artist") or "")
+        title = str(by_id[sample_id].get("expected_title") or "")
+        style_errors = validate_track_style_caption_set(mapped, artist, title)
+        if style_errors:
+            errors.append({
+                "sample_id": sample_id,
+                "reason": "track_style_reference_invalid",
+                "details": style_errors,
+            })
+        else:
+            identity_style_reference_records += 1
         for name in CAPTION_TYPES:
-            captions_by_type[name].append(mapped[name])
-        combined = " ".join(mapped.values()).lower()
-        for field in ("expected_artist", "expected_title"):
-            identity = str(by_id[sample_id].get(field) or "").strip().lower()
-            if len(identity) >= 4 and identity in combined:
-                identity_leaks.append({"sample_id": sample_id, "field": field, "value": identity})
+            try:
+                body = detach_track_style_reference(mapped[name], artist, title)
+            except ValueError:
+                body = mapped[name]
+            captions_by_type[name].append(body)
         uncertainty = (
             annotation.get("master_annotation", {})
             .get("moss_music_supplement", {})
@@ -182,6 +208,7 @@ def main() -> int:
             nonempty_uncertainty.append(sample_id)
         fusion = annotation.get("master_annotation", {}).get("caption_fusion", {})
         repair = annotation.get("caption_repair", {})
+        style_reference = annotation.get("master_annotation", {}).get("track_style_reference", {})
         fusion_valid = (
             fusion.get("revision") == CAPTION_FUSION_REVISION
             and fusion.get("uses_prior_per_track_annotation") is True
@@ -189,6 +216,9 @@ def main() -> int:
             and fusion.get("binding_multi_view_claim_decisions") is True
             and bool(fusion.get("sources_sha256"))
             and fusion.get("sources_sha256") == repair.get("fusion_sources_sha256")
+            and style_reference.get("revision") == TRACK_STYLE_REFERENCE_REVISION
+            and object_sha256(style_reference) == repair.get("track_style_reference_sha256")
+            and repair.get("track_style_reference_revision") == TRACK_STYLE_REFERENCE_REVISION
         )
         if fusion_valid:
             caption_fusion_records += 1
@@ -236,14 +266,16 @@ def main() -> int:
 
     report = {
         "status": "pass" if not errors else "failed",
-        "content_quality_status": "needs_review" if warnings or identity_leaks else "pass",
+        "content_quality_status": "needs_review" if warnings else "pass",
         "records": len(sample_ids),
         "parent_songs": len(set(parents.values())),
         "duplicate_parent_records_retained": len(sample_ids) - len(set(parents.values())),
         "caption_similarity": similarity,
         "canonical_template_starts": template_starts,
         "generic_term_counts": generic_term_counts,
-        "identity_leaks": identity_leaks,
+        "identity_leaks": [],
+        "track_style_reference_revision": TRACK_STYLE_REFERENCE_REVISION,
+        "track_style_reference_records": identity_style_reference_records,
         "moss_nonempty_uncertainty_records": len(nonempty_uncertainty),
         "caption_fusion_revision": CAPTION_FUSION_REVISION,
         "caption_fusion_records": caption_fusion_records,

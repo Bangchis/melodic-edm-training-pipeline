@@ -12,7 +12,8 @@ from typing import Any, Iterable
 
 
 CAPTION_TYPES = ("canonical", "composition", "production")
-CAPTION_COMPILER_REVISION = "openrouter-per-track-salient-audio-fusion-v3.1"
+CAPTION_COMPILER_REVISION = "openrouter-per-track-salient-audio-fusion-v3.2"
+TRACK_STYLE_REFERENCE_REVISION = "artist-track-style-reference-v1"
 STRUCTURE_NORMALIZATION_REVISION = "sequence-safe-instrumental-v1"
 
 
@@ -70,6 +71,68 @@ def clean_caption(text: str) -> str:
     """Normalize a generated caption without changing its meaning."""
     value = re.sub(r"\s+", " ", str(text)).strip().strip('"`')
     return value[0].upper() + value[1:] if value else value
+
+
+def track_style_reference(artist: str, title: str) -> str:
+    """Return the exact artist/title style anchor prepended to every train caption."""
+    normalized_artist = " ".join(str(artist).split())
+    normalized_title = " ".join(str(title).split())
+    if not normalized_artist:
+        raise ValueError("track_style_reference_artist_missing")
+    if not normalized_title:
+        raise ValueError("track_style_reference_title_missing")
+    return (
+        f'Style inspired by the musical identity of {normalized_artist} '
+        f'and the reference track "{normalized_title}".'
+    )
+
+
+def attach_track_style_reference(
+    captions: dict[str, str], artist: str, title: str
+) -> dict[str, str]:
+    """Attach a deterministic identity anchor after audio-only caption validation."""
+    audio_only = caption_map(captions)
+    errors = validate_caption_set(audio_only, artist=artist, title=title)
+    if errors:
+        raise ValueError(";".join(errors))
+    prefix = track_style_reference(artist, title)
+    return {
+        name: f"{prefix} {audio_only[name]}"
+        for name in CAPTION_TYPES
+    }
+
+
+def detach_track_style_reference(text: str, artist: str, title: str) -> str:
+    """Return the audio-only body, rejecting a missing or substituted style anchor."""
+    cleaned = clean_caption(text)
+    prefix = track_style_reference(artist, title)
+    expected = prefix + " "
+    if not cleaned.startswith(expected):
+        raise ValueError("track_style_reference_prefix_mismatch")
+    body = cleaned[len(expected):].strip()
+    if not body:
+        raise ValueError("track_style_reference_body_missing")
+    return body
+
+
+def validate_track_style_caption_set(
+    captions: dict[str, str], artist: str, title: str
+) -> list[str]:
+    """Prove all three train captions use the exact row-bound style reference."""
+    errors: list[str] = []
+    bodies: dict[str, str] = {}
+    if set(captions) != set(CAPTION_TYPES):
+        errors.append("caption_types_must_be_exactly_canonical_composition_production")
+    for name in CAPTION_TYPES:
+        try:
+            bodies[name] = detach_track_style_reference(
+                captions.get(name, ""), artist, title
+            )
+        except ValueError as exc:
+            errors.append(f"{name}_{exc}")
+    if len(bodies) == len(CAPTION_TYPES):
+        errors.extend(validate_caption_set(bodies, artist=artist, title=title))
+    return errors
 
 
 def normalize_instrumental_structure(lyrics: str) -> tuple[str, list[dict[str, Any]]]:

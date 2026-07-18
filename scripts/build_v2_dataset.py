@@ -11,10 +11,12 @@ from typing import Any
 from v2_common import (
     CAPTION_TYPES,
     STRUCTURE_NORMALIZATION_REVISION,
+    TRACK_STYLE_REFERENCE_REVISION,
     atomic_json,
     atomic_jsonl,
     normalize_instrumental_structure,
     read_jsonl,
+    validate_track_style_caption_set,
 )
 
 
@@ -36,6 +38,14 @@ def metadata_for(root: Path, row: dict[str, Any]) -> tuple[dict[str, Any], str]:
     variants = annotation["caption_variants"]
     if [item["type"] for item in variants] != list(CAPTION_TYPES):
         raise ValueError(f"{row['sample_id']}: caption order is not canonical/composition/production")
+    captions = {str(item["type"]): str(item["text"]) for item in variants}
+    style_errors = validate_track_style_caption_set(
+        captions,
+        str(row.get("expected_artist") or ""),
+        str(row.get("expected_title") or ""),
+    )
+    if style_errors:
+        raise ValueError(f"{row['sample_id']}: " + ";".join(style_errors))
     mir = json.loads((root / "data" / "mir" / f"{row['sample_id']}.json").read_text(encoding="utf-8"))
     source_lyrics = Path(row["final_lyrics_path"]).read_text(encoding="utf-8")
     lyrics, structure_changes = normalize_instrumental_structure(source_lyrics)
@@ -104,6 +114,7 @@ def write_index(path: Path, samples: list[dict[str, Any]], split: str) -> None:
             "tag_position": "prepend",
             "custom_tag": "",
             "caption_variant_types": list(CAPTION_TYPES),
+            "track_style_reference_revision": TRACK_STYLE_REFERENCE_REVISION,
             "training_prompt_selection": "uniform_random",
             "validation_prompt_selection": "canonical_index_0",
         },
@@ -182,6 +193,9 @@ def main() -> int:
         "test_records": 0,
         "caption_variants_per_record": 3,
         "training_prompt_types": list(CAPTION_TYPES),
+        "track_style_reference_revision": TRACK_STYLE_REFERENCE_REVISION,
+        "track_style_reference_records": len(rows),
+        "track_style_reference_scope": list(CAPTION_TYPES),
         "audio_storage": "relative_symlinks_to_validated_v1_audio",
         "deduplication_performed": False,
         "structure_normalization_revision": STRUCTURE_NORMALIZATION_REVISION,

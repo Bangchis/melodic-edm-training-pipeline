@@ -16,11 +16,16 @@ sys.path.insert(0, str(SCRIPTS))
 from v2_common import (  # noqa: E402
     CAPTION_COMPILER_REVISION,
     CAPTION_TYPES,
+    TRACK_STYLE_REFERENCE_REVISION,
+    attach_track_style_reference,
     caption_map,
+    detach_track_style_reference,
     extract_json_object,
     grouped_split,
     parent_song_id,
+    track_style_reference,
     validate_caption_set,
+    validate_track_style_caption_set,
 )
 from annotate_moss_music import MODEL_REVISION, build_prompt, validate_supplement  # noqa: E402
 from score_v2_checkpoints_moss import parse_score  # noqa: E402
@@ -1042,6 +1047,34 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn("canonical_word_count_39_outside_40_80", errors)
         self.assertIn("canonical_contains_artist_identity", errors)
 
+    def test_exact_artist_track_style_reference_is_attached_to_all_three_views(self) -> None:
+        audio_only = {
+            "canonical": words("instrumental", 45),
+            "composition": words("motif", 30),
+            "production": words("synth", 30),
+        }
+        artist = "YUAN / 徐梦圆"
+        title = "China-A"
+        captions = attach_track_style_reference(audio_only, artist, title)
+        prefix = track_style_reference(artist, title)
+        self.assertEqual("artist-track-style-reference-v1", TRACK_STYLE_REFERENCE_REVISION)
+        self.assertTrue(all(text.startswith(prefix + " ") for text in captions.values()))
+        self.assertEqual([], validate_track_style_caption_set(captions, artist, title))
+        self.assertEqual(
+            caption_map(audio_only)["canonical"],
+            detach_track_style_reference(captions["canonical"], artist, title),
+        )
+
+    def test_substituted_artist_or_title_style_reference_is_rejected(self) -> None:
+        audio_only = {
+            "canonical": words("instrumental", 45),
+            "composition": words("motif", 30),
+            "production": words("synth", 30),
+        }
+        captions = attach_track_style_reference(audio_only, "Xomu", "Lanterns")
+        errors = validate_track_style_caption_set(captions, "TheFatRat", "Unity")
+        self.assertEqual(3, sum("prefix_mismatch" in error for error in errors))
+
     def test_moss_supplement_rejects_missing_confidence(self) -> None:
         value = {
             "audible_facts": {
@@ -1226,9 +1259,10 @@ class V2PipelineTest(unittest.TestCase):
             "fixed-prompt-audio-judge-v2.2",
         ):
             self.assertIn(revision, source)
-        self.assertEqual("openrouter-per-track-salient-audio-fusion-v3.1", CAPTION_COMPILER_REVISION)
+        self.assertEqual("openrouter-per-track-salient-audio-fusion-v3.2", CAPTION_COMPILER_REVISION)
         self.assertIn("CAPTION_COMPILER_REVISION", source)
         self.assertIn("per_record_caption_fusion_lineage_not_proven", source)
+        self.assertIn("per_record_artist_track_style_reference_not_proven", source)
         self.assertIn("caption_compiler_provider_is_not_openrouter", source)
         self.assertIn("checkpoint_evaluation_scale_is_not_fixed_0_5", source)
         self.assertIn("dataset_does_not_use_three_fused_prompt_variants", source)

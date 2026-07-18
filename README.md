@@ -43,6 +43,10 @@ annotation views (canonical, composition and production), fused from its own old
 and an independent audio reading. All three per-track views—canonical, composition,
 and production—independently fuse the old prompt with the new MOSS evidence and are embedded.
 Training samples one of the three uniformly; validation always uses canonical index 0.
+After audio-only validation, all three views receive the exact row-bound prefix
+`Style inspired by the musical identity of {artist} and the reference track "{title}".`;
+the dataset audit rejects a missing or substituted artist/title. The independent MOSS
+listener remains identity-blind so these names cannot bias its audible-fact decisions.
 MOSS-Music-8B-Thinking is used only
 as an audio annotation/listening model; it is never part of ACE-Step training.
 

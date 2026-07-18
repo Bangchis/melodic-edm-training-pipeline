@@ -31,6 +31,9 @@
     "test_records": 0,
     "group_key": "parent_song_id",
     "caption_variants": ["canonical", "composition", "production"],
+    "track_style_reference_revision": "artist-track-style-reference-v1",
+    "track_style_reference_template": "Style inspired by the musical identity of {artist} and the reference track \"{title}\".",
+    "track_style_reference_scope": ["canonical", "composition", "production"],
     "train_prompt_selection": "uniform_random_per_load",
     "validation_prompt_selection": "canonical_index_0"
   },
