@@ -1,7 +1,9 @@
 """Focused invariants for the second grouped multi-prompt training release."""
 from __future__ import annotations
 
+import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -19,6 +21,7 @@ from v2_common import (  # noqa: E402
 )
 from annotate_moss_music import validate_supplement  # noqa: E402
 from score_v2_checkpoints_moss import parse_score  # noqa: E402
+from merge_v2_tensors import hardlink_tensor  # noqa: E402
 
 
 def words(prefix: str, count: int) -> str:
@@ -28,6 +31,31 @@ def words(prefix: str, count: int) -> str:
 
 class V2PipelineTest(unittest.TestCase):
     """Protect grouping, prompt coverage and MOSS response parsing."""
+
+    def test_tensor_merger_replaces_unsafe_symlink_with_hardlink(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source_dir = root / "source"
+            destination = root / "merged"
+            source_dir.mkdir()
+            destination.mkdir()
+            source = source_dir / "sample.pt"
+            source.write_bytes(b"tensor")
+            target = destination / source.name
+            target.symlink_to(os.path.relpath(source, destination))
+            hardlink_tensor(source, target)
+            self.assertFalse(target.is_symlink())
+            self.assertTrue(os.path.samefile(source, target))
+
+    def test_tensor_merger_refuses_unrelated_existing_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.pt"
+            target = root / "target.pt"
+            source.write_bytes(b"source")
+            target.write_bytes(b"different")
+            with self.assertRaisesRegex(FileExistsError, "unrelated tensor"):
+                hardlink_tensor(source, target)
 
     def test_exact_grouped_split_never_crosses_parent(self) -> None:
         rows = [
