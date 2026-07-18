@@ -499,27 +499,33 @@ new file mode 100644
 index 0000000..90a42e9
 --- /dev/null
 +++ b/acestep/training_v2/lora_scope.py
-@@ -0,0 +1,56 @@
-+"""Strictly verify ACE-Step's shared self/cross attention LoRA scope."""
+@@ -0,0 +1,99 @@
++"""Strictly verify ACE-Step self- and cross-attention LoRA scope."""
 +
 +from __future__ import annotations
 +
 +import inspect
++import re
 +from typing import Any
 +
 +import torch.nn as nn
 +
 +
 +REQUIRED_PROJECTIONS = {"q_proj", "k_proj", "v_proj", "o_proj"}
++ATTENTION_PARAMETER = re.compile(
++    r"(?:^|\.)(self_attn|cross_attn)\.(q_proj|k_proj|v_proj|o_proj)\.lora_"
++)
++
++
++def _is_linear_projection(module: nn.Module) -> bool:
++    """Accept a raw Linear or PEFT's Linear wrapper around one."""
++    return isinstance(module, nn.Linear) or isinstance(
++        getattr(module, "base_layer", None), nn.Linear
++    )
 +
 +
 +def verify_shared_attention_scope(model: nn.Module, config: Any) -> dict[str, Any]:
-+    """Verify exact q/k/v/o coverage on attention blocks used for both paths.
-+
-+    ACE-Step attention uses one projection set for ordinary self-attention and
-+    for the encoder-hidden-state branch (cross-attention). There is no separate
-+    ``cross_attn`` module, so targeting these shared projections affects both.
-+    """
++    """Verify exact q/k/v/o LoRA coverage on XL self and cross attention."""
 +    requested = {str(value).rsplit(".", 1)[-1] for value in config.target_modules}
 +    if requested != REQUIRED_PROJECTIONS:
 +        raise ValueError(
@@ -527,33 +533,70 @@ index 0000000..90a42e9
 +            f"received {sorted(requested)}"
 +        )
 +
-+    blocks = []
++    scope_blocks: dict[str, list[str]] = {"self_attn": [], "cross_attn": []}
++    unexpected_blocks: list[str] = []
++    missing_lora: list[str] = []
 +    for name, module in model.named_modules():
-+        if not all(isinstance(getattr(module, field, None), nn.Linear) for field in REQUIRED_PROJECTIONS):
++        projections = {field: getattr(module, field, None) for field in REQUIRED_PROJECTIONS}
++        if not all(_is_linear_projection(value) for value in projections.values()):
++            continue
++        scope = name.rsplit(".", 1)[-1]
++        if scope not in scope_blocks:
++            unexpected_blocks.append(name)
 +            continue
 +        parameters = inspect.signature(module.forward).parameters
 +        if "encoder_hidden_states" not in parameters:
-+            raise RuntimeError(f"attention block {name} lacks encoder_hidden_states cross path")
-+        blocks.append(name)
-+    if not blocks:
-+        raise RuntimeError("no shared self/cross attention blocks found")
++            raise RuntimeError(f"attention block {name} lacks encoder_hidden_states input")
++        scope_blocks[scope].append(name)
++        for projection, layer in projections.items():
++            if not any(
++                "lora_" in parameter_name and parameter.requires_grad
++                for parameter_name, parameter in layer.named_parameters()
++            ):
++                missing_lora.append(f"{name}.{projection}")
++
++    if unexpected_blocks:
++        raise RuntimeError(f"q/k/v/o projection block outside attention scope: {unexpected_blocks[:10]}")
++    self_count = len(scope_blocks["self_attn"])
++    cross_count = len(scope_blocks["cross_attn"])
++    if self_count == 0 or cross_count == 0 or self_count != cross_count:
++        raise RuntimeError(
++            "incomplete self/cross attention block coverage: "
++            f"self={self_count}, cross={cross_count}"
++        )
++    if missing_lora:
++        raise RuntimeError(f"attention projections missing trainable LoRA: {missing_lora[:10]}")
 +
 +    trainable = [name for name, parameter in model.named_parameters() if parameter.requires_grad]
 +    unexpected = [name for name in trainable if "lora_" not in name]
 +    if unexpected:
 +        raise RuntimeError(f"non-LoRA parameters are trainable: {unexpected[:10]}")
-+    missing = [
-+        projection
-+        for projection in sorted(REQUIRED_PROJECTIONS)
-+        if not any(f".{projection}." in name and "lora_" in name for name in trainable)
-+    ]
-+    if missing:
-+        raise RuntimeError(f"LoRA trainable parameters missing projections: {missing}")
++    wrong_scope = [name for name in trainable if ATTENTION_PARAMETER.search(name) is None]
++    if wrong_scope:
++        raise RuntimeError(f"trainable LoRA outside self/cross q/k/v/o scope: {wrong_scope[:10]}")
++
++    observed = {
++        (match.group(1), match.group(2))
++        for name in trainable
++        if (match := ATTENTION_PARAMETER.search(name)) is not None
++    }
++    expected = {
++        (scope, projection)
++        for scope in scope_blocks
++        for projection in REQUIRED_PROJECTIONS
++    }
++    if observed != expected:
++        raise RuntimeError(
++            "LoRA trainable scope mismatch: "
++            f"missing={sorted(expected - observed)}, extra={sorted(observed - expected)}"
++        )
 +    return {
-+        "attention_blocks": len(blocks),
-+        "projection_modules": len(blocks) * len(REQUIRED_PROJECTIONS),
++        "attention_blocks": self_count + cross_count,
++        "self_attention_blocks": self_count,
++        "cross_attention_blocks": cross_count,
++        "projection_modules": (self_count + cross_count) * len(REQUIRED_PROJECTIONS),
 +        "target_modules": sorted(REQUIRED_PROJECTIONS),
-+        "attention_semantics": "shared_projections_cover_self_and_cross_attention",
++        "attention_semantics": "separate_self_and_cross_attention_projections",
 +        "trainable_parameter_tensors": len(trainable),
 +    }
 diff --git a/acestep/training_v2/lora_scope_test.py b/acestep/training_v2/lora_scope_test.py
@@ -561,8 +604,8 @@ new file mode 100644
 index 0000000..af03796
 --- /dev/null
 +++ b/acestep/training_v2/lora_scope_test.py
-@@ -0,0 +1,48 @@
-+"""Tests for strict shared self/cross attention LoRA verification."""
+@@ -0,0 +1,67 @@
++"""Tests for strict self- and cross-attention LoRA verification."""
 +
 +from __future__ import annotations
 +
@@ -575,36 +618,55 @@ index 0000000..af03796
 +from acestep.training_v2.lora_scope import verify_shared_attention_scope
 +
 +
-+class SharedAttention(nn.Module):
-+    """Minimal ACE-like attention block with shared cross inputs."""
++class PeftLikeLinear(nn.Module):
++    """Minimal PEFT-style wrapper used to reproduce the XL runtime shape."""
 +
 +    def __init__(self) -> None:
 +        super().__init__()
++        self.base_layer = nn.Linear(2, 2)
++        self.base_layer.requires_grad_(False)
++        self.lora_A = nn.ParameterDict({"adapter": nn.Parameter(torch.ones(1))})
++
++
++class Attention(nn.Module):
++    def __init__(self) -> None:
++        super().__init__()
 +        for name in ("q_proj", "k_proj", "v_proj", "o_proj"):
-+            layer = nn.Linear(2, 2)
-+            layer.requires_grad_(False)
-+            layer.register_parameter("lora_A", nn.Parameter(torch.ones(1)))
-+            setattr(self, name, layer)
++            setattr(self, name, PeftLikeLinear())
 +
 +    def forward(self, hidden_states, encoder_hidden_states=None):
-+        """Return hidden states; signature is the behavior under test."""
 +        return hidden_states
 +
 +
-+class LoraScopeTest(unittest.TestCase):
-+    """Hard-gate exact projection and shared-cross semantics."""
++def complete_model() -> nn.Module:
++    return nn.ModuleDict({
++        "layers": nn.ModuleDict({
++            "0": nn.ModuleDict({
++                "self_attn": Attention(),
++                "cross_attn": Attention(),
++            })
++        })
++    })
 +
-+    def test_accepts_exact_shared_attention_scope(self) -> None:
-+        model = nn.ModuleDict({"self_attn": SharedAttention()})
++
++class LoraScopeTest(unittest.TestCase):
++    def test_accepts_peft_wrapped_self_and_cross_attention(self) -> None:
 +        config = SimpleNamespace(target_modules=["q_proj", "k_proj", "v_proj", "o_proj"])
-+        info = verify_shared_attention_scope(model, config)
-+        self.assertEqual(1, info["attention_blocks"])
-+        self.assertEqual(4, info["projection_modules"])
++        info = verify_shared_attention_scope(complete_model(), config)
++        self.assertEqual(1, info["self_attention_blocks"])
++        self.assertEqual(1, info["cross_attention_blocks"])
++        self.assertEqual(8, info["projection_modules"])
 +
 +    def test_rejects_incomplete_projection_set(self) -> None:
-+        model = nn.ModuleDict({"self_attn": SharedAttention()})
 +        config = SimpleNamespace(target_modules=["q_proj", "v_proj"])
 +        with self.assertRaisesRegex(ValueError, "requires exactly"):
++            verify_shared_attention_scope(complete_model(), config)
++
++    def test_rejects_missing_cross_attention(self) -> None:
++        model = complete_model()
++        del model["layers"]["0"]["cross_attn"]
++        config = SimpleNamespace(target_modules=["q_proj", "k_proj", "v_proj", "o_proj"])
++        with self.assertRaisesRegex(RuntimeError, "incomplete self/cross"):
 +            verify_shared_attention_scope(model, config)
 +
 +
