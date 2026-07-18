@@ -868,7 +868,8 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn("never changed from the section count", controls[0])
         self.assertIn("0–3 is safer than a long list", controls[0])
         payload_builder = "\n".join(code_cells)
-        self.assertIn("CUSTOM_LYRICS.strip() or music_conditions['lyrics']", payload_builder)
+        self.assertIn("STRUCTURE_LYRICS = CUSTOM_LYRICS.strip() or sections_to_lyrics(SECTIONS)", payload_builder)
+        self.assertIn("music_conditions['lyrics'] = STRUCTURE_LYRICS", payload_builder)
         self.assertIn("Values are unchanged", payload_builder)
         self.assertIn(
             "Bangchis/melodic-edm-core-v2-r32-experimental",

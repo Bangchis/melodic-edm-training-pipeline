@@ -129,6 +129,17 @@ class RecordPreservingTests(unittest.TestCase):
             sections_to_lyrics(["Intro", "Drop"]),
             "[Intro]\n[Instrumental]\n\n[Drop]\n[Instrumental]\n",
         )
+        self.assertEqual(
+            sections_to_lyrics(["Atmospheric Intro", "First Melodic Drop", "Outro"]),
+            "[Atmospheric Intro]\n[Instrumental]\n\n"
+            "[First Melodic Drop]\n[Instrumental]\n\n[Outro]\n[Instrumental]\n",
+        )
+
+    def test_custom_section_labels_reject_only_structurally_unsafe_values(self) -> None:
+        with self.assertRaisesRegex(ValueError, "duplicate labels"):
+            sections_to_lyrics(["Main Theme", "main theme"])
+        with self.assertRaisesRegex(ValueError, "cannot contain"):
+            sections_to_lyrics(["Intro]\\n[Vocals"])
 
     def test_openrouter_enhancer_rejects_weakened_required_instrument(self) -> None:
         self.assertTrue(contains_required_term("A pipa hook answers a dizi phrase.", "pipa"))

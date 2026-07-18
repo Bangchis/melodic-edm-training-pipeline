@@ -16,7 +16,6 @@ from prompt_enhancer import compile_caption
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_MODEL = "~google/gemini-flash-latest"
 DEFAULT_SECTIONS = ["Intro", "Theme", "Build", "Drop", "Break", "Final Drop", "Outro"]
-ALLOWED_SECTIONS = tuple(DEFAULT_SECTIONS)
 MUSIC_FIELDS = ("genre", "mood", "melody", "arrangement", "production")
 
 OUTPUT_SCHEMA = {
@@ -76,13 +75,25 @@ def _parse_json_content(content: Any) -> dict[str, Any]:
 
 
 def sections_to_lyrics(sections: list[str]) -> str:
-    """Compile section labels into the instrumental structure expected by ACE-Step."""
-    if not sections or len(sections) != len(set(sections)):
-        raise ValueError("sections must be a non-empty list without duplicates")
-    invalid = [section for section in sections if section not in ALLOWED_SECTIONS]
-    if invalid:
-        raise ValueError(f"unsupported sections: {', '.join(invalid)}")
-    return "\n\n".join(f"[{section}]\n[Instrumental]" for section in sections) + "\n"
+    """Compile user-defined safe section labels into instrumental ACE text."""
+    if not sections:
+        raise ValueError("sections must be a non-empty list")
+    normalized: list[str] = []
+    for raw_section in sections:
+        section = " ".join(str(raw_section).split())
+        if not section:
+            raise ValueError("section labels cannot be empty")
+        if len(section) > 80:
+            raise ValueError(f"section label is longer than 80 characters: {section!r}")
+        if "[" in section or "]" in section:
+            raise ValueError(f"section labels cannot contain '[' or ']': {section!r}")
+        if any(ord(character) < 32 for character in section):
+            raise ValueError(f"section labels cannot contain control characters: {section!r}")
+        normalized.append(section)
+    folded = [section.casefold() for section in normalized]
+    if len(folded) != len(set(folded)):
+        raise ValueError("sections must not contain duplicate labels")
+    return "\n\n".join(f"[{section}]\n[Instrumental]" for section in normalized) + "\n"
 
 
 def contains_required_term(caption: str, term: str) -> bool:
