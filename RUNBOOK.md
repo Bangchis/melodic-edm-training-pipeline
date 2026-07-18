@@ -154,7 +154,7 @@ git -C vendor/ACE-Step-1.5 apply \
 The patch adds four-caption sampling within one sample, deterministic validation,
 XL-Base CLI path validation, periodic global DDP validation loss, `best_val` saving
 and early stopping. Its SHA-256 is
-`f6f7e2b1a1aaa49db5573be67862579df2f4c758a973c7cc96c0e24b9ecaf257`.
+`33b862caf23ac348e3808fa8ea7a3b49e59a85fca25f21cc1496c3f5d1235ccd`.
 
 Preprocess train part 0 on GPU 0 and part 1 on GPU 1, then preprocess validation and
 merge with `scripts/merge_tensors.py`. Run `edm-validate-tensors` and require its
@@ -173,7 +173,9 @@ project-relative paths to the two real shards. The training wrappers start ACE-S
 from the project root, so its path guard permits only project data/output paths while
 still rejecting paths outside the project. ACE-Step saves PEFT files one level below
 each checkpoint (`<checkpoint>/adapter/`); validation, evaluation and packaging use
-that actual adapter directory.
+that actual adapter directory. The patch also verifies the nested final adapter,
+preserves the completed epoch in the final progress event and suppresses the empty
+rank-one DDP summary so a successful run cannot be mislabeled as “0 steps”.
 
 ## 6. Release and backup
 
