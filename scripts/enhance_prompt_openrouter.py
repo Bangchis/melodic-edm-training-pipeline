@@ -159,7 +159,8 @@ def _request_once(
             {"role": "user", "content": json.dumps(user, ensure_ascii=False)},
         ],
         "temperature": 0.2,
-        "max_tokens": 900,
+        "max_tokens": 2400,
+        "reasoning": {"effort": "minimal", "exclude": True},
         "response_format": {"type": "json_schema", "json_schema": OUTPUT_SCHEMA},
         "provider": {"require_parameters": True},
     }
@@ -202,16 +203,16 @@ def enhance_prompt(
     explicit = dict(explicit_conditions or {})
     correction = ""
     for attempt in range(1, max_attempts + 1):
-        raw, body = _request_once(
-            idea=idea,
-            api_key=api_key,
-            model=model,
-            explicit_conditions=explicit,
-            correction=correction,
-            timeout=timeout,
-            opener=opener,
-        )
         try:
+            raw, body = _request_once(
+                idea=idea,
+                api_key=api_key,
+                model=model,
+                explicit_conditions=explicit,
+                correction=correction,
+                timeout=timeout,
+                opener=opener,
+            )
             validated = validate_conditions(raw, explicit)
         except (TypeError, ValueError) as error:
             correction = str(error)

@@ -106,6 +106,8 @@ class RecordPreservingTests(unittest.TestCase):
         self.assertEqual(result["resolved_model"], "google/gemini-test-resolved")
         self.assertEqual(captured["payload"]["response_format"]["type"], "json_schema")
         self.assertTrue(captured["payload"]["response_format"]["json_schema"]["strict"])
+        self.assertEqual(captured["payload"]["reasoning"], {"effort": "minimal", "exclude": True})
+        self.assertGreaterEqual(captured["payload"]["max_tokens"], 2000)
         self.assertEqual(
             captured["payload"]["response_format"]["json_schema"]["schema"]["required"],
             ["genre", "mood", "melody", "arrangement", "production"],
