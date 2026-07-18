@@ -20,6 +20,7 @@ from v2_common import (
     read_jsonl,
     validate_caption_set,
 )
+from verify_v2_audio_claims_moss import CLAIM_DISCOVERY_TERMS
 
 
 SCORE_FIELDS = (
@@ -28,7 +29,7 @@ SCORE_FIELDS = (
     "melody_arrangement_accuracy",
     "production_accuracy",
 )
-CAPTION_COMPILER_REVISION = "audio-grounded-caption-compiler-v2.5"
+CAPTION_COMPILER_REVISION = "audio-grounded-caption-compiler-v2.6"
 FORBIDDEN_TRAINING_CAPTION_PATTERNS = {
     "embedded_bpm": re.compile(r"\b\d{2,3}\s*bpm\b", re.IGNORECASE),
     "embedded_time_signature": re.compile(r"\b[2-7]\s*/\s*(?:2|4|8|16)\b"),
@@ -76,6 +77,22 @@ def validate_training_caption_policy(captions: dict[str, str]) -> list[str]:
     return errors
 
 
+def unverified_new_claims(text: str, decisions: list[dict[str, Any]]) -> list[str]:
+    """Find exact controlled names introduced after the audible claim-verification stage."""
+    allowed = {str(item.get("claim") or "").casefold() for item in decisions}
+    for item in decisions:
+        claim = str(item.get("claim") or "")
+        alternative = str(item.get("audible_alternative") or "")
+        allowed.update(
+            term for term in CLAIM_DISCOVERY_TERMS
+            if exact_claim_asserted(claim, term) or exact_claim_asserted(alternative, term)
+        )
+    return [
+        term for term in CLAIM_DISCOVERY_TERMS
+        if term not in allowed and exact_claim_asserted(text, term)
+    ]
+
+
 def request_for(captions: dict[str, str], decisions: list[dict[str, Any]]) -> str:
     """Ask MOSS to compile captions while obeying multi-view audible decisions."""
     return (
@@ -86,7 +103,9 @@ def request_for(captions: dict[str, str], decisions: list[dict[str, Any]]) -> st
         "token at least once with a -like qualifier, followed by its audible alternative; for example, "
         "pipa-like plucked lead or dizi-like airy flute lead. Never replace an unresolved named claim "
         "with only a generic phrase, because the qualified vocabulary remains useful for prompt "
-        "conditioning. Never infer title, "
+        "conditioning. Do not introduce any new exact named instrument that is absent from the "
+        "binding decisions or their audible alternatives; use a non-physical timbre description "
+        "instead. Never infer title, "
         "artist, country, channel or intended media use. Avoid quality hype and "
         "boilerplate such as clean, polished, masterpiece, classic EDM structure, or professional. "
         "Describe stable audible genre/style, mood, concrete melody or motif behavior, rhythm, "
@@ -245,6 +264,8 @@ def main() -> int:
                         validation_errors.append(f"uncertain_claim_asserted_as_exact:{claim}")
                     if decision["decision"] == "uncertain" and not qualified_claim_mentioned(corrected_text, claim):
                         validation_errors.append(f"uncertain_claim_qualified_token_missing:{claim}")
+                for claim in unverified_new_claims(corrected_text, decisions):
+                    validation_errors.append(f"unverified_new_claim_introduced:{claim}")
                 if validation_errors:
                     raise ValueError(",".join(validation_errors))
                 record = {

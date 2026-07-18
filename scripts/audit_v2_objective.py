@@ -130,8 +130,8 @@ def main() -> int:
     if claims.get("claim_verifier_revision") != "multi-view-audio-claims-v2.5":
         errors.append("claim_verifier_revision_not_v2_5")
     repairs = reports["data_v2/caption_repair_report.json"]
-    if repairs.get("caption_compiler_revision") != "audio-grounded-caption-compiler-v2.5":
-        errors.append("caption_compiler_revision_not_v2_5")
+    if repairs.get("caption_compiler_revision") != "audio-grounded-caption-compiler-v2.6":
+        errors.append("caption_compiler_revision_not_v2_6")
     reset = reports["data_v2/downstream_reset_report.json"]
     if reset.get("fresh_rank32_outputs_required") is not True:
         errors.append("stale_pre_audio_blind_training_outputs_not_reset")

@@ -29,6 +29,7 @@ from repair_v2_annotations_moss import (  # noqa: E402
     exact_claim_asserted,
     parse_repair,
     qualified_claim_mentioned,
+    unverified_new_claims,
     validate_training_caption_policy,
 )
 from verify_v2_audio_claims_moss import (  # noqa: E402
@@ -272,6 +273,19 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn("canonical_contains_quality_hype", errors)
         self.assertIn("composition_contains_generic_edm_structure", errors)
         self.assertIn("production_contains_embedded_bpm", errors)
+
+    def test_caption_compiler_cannot_introduce_unverified_exact_instrument(self) -> None:
+        decisions = [{
+            "claim": "pipa", "decision": "uncertain", "audible_alternative": "plucked lead",
+        }]
+        self.assertEqual(
+            ["piano"],
+            unverified_new_claims("A pipa-like plucked hook is doubled by piano.", decisions),
+        )
+        self.assertEqual(
+            [],
+            unverified_new_claims("A pipa-like plucked hook has no newly named source.", decisions),
+        )
 
     def test_preview_is_verified_before_final_training(self) -> None:
         source = (SCRIPTS / "orchestrate_v2.py").read_text(encoding="utf-8")
@@ -639,7 +653,7 @@ class V2PipelineTest(unittest.TestCase):
         source = (SCRIPTS / "audit_v2_objective.py").read_text(encoding="utf-8")
         for revision in (
             "multi-view-audio-claims-v2.5",
-            "audio-grounded-caption-compiler-v2.5",
+            "audio-grounded-caption-compiler-v2.6",
             "fixed-prompt-audio-judge-v2.2",
         ):
             self.assertIn(revision, source)

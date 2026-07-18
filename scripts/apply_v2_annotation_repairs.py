@@ -20,6 +20,7 @@ from repair_v2_annotations_moss import (
     exact_claim_asserted,
     parse_repair,
     qualified_claim_mentioned,
+    unverified_new_claims,
 )
 from v2_common import atomic_json, file_sha256, object_sha256, read_jsonl
 
@@ -79,6 +80,9 @@ def main() -> int:
                     raise ValueError(f"uncertain_claim_asserted_as_exact:{claim}")
                 if resolution == "uncertain" and not qualified_claim_mentioned(corrected_text, claim):
                     raise ValueError(f"uncertain_claim_qualified_token_missing:{claim}")
+            introduced = unverified_new_claims(corrected_text, decisions)
+            if introduced:
+                raise ValueError(f"unverified_new_claims_introduced:{introduced}")
             recommendations[repair["recommendation"]] += 1
             for field in SCORE_FIELDS:
                 scores[field].append(repair["scores"][field])
