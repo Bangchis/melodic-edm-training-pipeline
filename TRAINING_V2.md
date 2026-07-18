@@ -70,6 +70,8 @@ MOSS annotation (2 shards)
 → fixed-prompt checkpoint generation
 → MOSS listening score + feature checks
 → select best optimizer step
+→ package + upload best-val preview
+→ clean immutable preview download + inference gate
 → fresh all-231 run to scaled optimizer steps
 → package, upload, clean redownload and inference verification
 → final objective audit
@@ -113,6 +115,9 @@ supervisorctl start edm-v2-evaluate-checkpoints
 supervisorctl start edm-v2-score-moss
 supervisorctl start edm-v2-select-checkpoint
 supervisorctl start edm-v2-upload-evaluation
+supervisorctl start edm-v2-package-preview
+supervisorctl start edm-v2-upload-preview
+supervisorctl start edm-v2-verify-preview
 ```
 
 Validation, logging and checkpointing occur every five epochs. Every tenth checkpoint is synchronized to the private training repository and later receives the same three fixed prompt/seed audio samples plus MOSS listening evidence.
@@ -141,6 +146,8 @@ The final job refuses to resume or overwrite an existing final run. It reloads t
 - `outputs/v2/best-val/`: selected adapter from the grouped train/validation run.
 - `outputs/v2/final-all-data/final/`: fresh adapter trained on all 231 records.
 - `outputs/v2/checkpoint-evaluation/selection.json`: selected epoch and optimizer step.
+- `outputs/release/melodic-edm-core-v2-preview/`: checksum-verified, inference-ready `best-val` preview published before final retraining.
+- `outputs/v2/checkpoint-evaluation/preview_clean_verification_report.json`: immutable preview redownload, adapter-hash match and 48 kHz stereo inference evidence.
 - `outputs/v2/final_plan.json`: exact scaling formula and final step count.
 - `outputs/release/melodic-edm-core-v2/`: checksum-verified release folder.
 - `outputs/release/melodic-edm-core-v2/clean_verification_report.json`: immutable Hub redownload, adapter-hash match and 48 kHz stereo inference evidence.
