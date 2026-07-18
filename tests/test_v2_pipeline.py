@@ -29,6 +29,7 @@ from repair_v2_annotations_moss import (  # noqa: E402
     exact_claim_asserted,
     parse_repair,
     qualified_claim_mentioned,
+    validate_training_caption_policy,
 )
 from verify_v2_audio_claims_moss import (  # noqa: E402
     consensus_for,
@@ -209,6 +210,18 @@ class V2PipelineTest(unittest.TestCase):
         self.assertFalse(exact_claim_asserted("A pipa-like plucked lead carries the hook.", "pipa"))
         self.assertTrue(qualified_claim_mentioned("A pipa-like plucked lead carries the hook.", "pipa"))
         self.assertFalse(qualified_claim_mentioned("A generic plucked-string lead carries the hook.", "pipa"))
+
+    def test_final_training_caption_policy_rejects_metadata_and_hype(self) -> None:
+        errors = validate_training_caption_policy({
+            "canonical": "A polished 4/4 EDM track in F# minor.",
+            "composition": "A standard EDM structure supports the motif.",
+            "production": "The lead moves over a professional 128 BPM mix.",
+        })
+        self.assertIn("canonical_contains_embedded_time_signature", errors)
+        self.assertIn("canonical_contains_embedded_exact_key", errors)
+        self.assertIn("canonical_contains_quality_hype", errors)
+        self.assertIn("composition_contains_generic_edm_structure", errors)
+        self.assertIn("production_contains_embedded_bpm", errors)
 
     def test_preview_is_verified_before_final_training(self) -> None:
         source = (SCRIPTS / "orchestrate_v2.py").read_text(encoding="utf-8")

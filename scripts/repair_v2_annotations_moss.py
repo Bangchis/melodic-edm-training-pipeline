@@ -28,7 +28,23 @@ SCORE_FIELDS = (
     "melody_arrangement_accuracy",
     "production_accuracy",
 )
-CAPTION_COMPILER_REVISION = "audio-grounded-caption-compiler-v2.4"
+CAPTION_COMPILER_REVISION = "audio-grounded-caption-compiler-v2.5"
+FORBIDDEN_TRAINING_CAPTION_PATTERNS = {
+    "embedded_bpm": re.compile(r"\b\d{2,3}\s*bpm\b", re.IGNORECASE),
+    "embedded_time_signature": re.compile(r"\b[2-7]\s*/\s*(?:2|4|8|16)\b"),
+    "embedded_exact_key": re.compile(
+        r"\b(?:in|key(?:\s+is|\s+of)?)\s+[A-G](?:#|b)?\s+(?:major|minor)\b",
+        re.IGNORECASE,
+    ),
+    "quality_hype": re.compile(
+        r"\b(?:masterpiece|polished|professional|extremely beautiful|best song ever)\b",
+        re.IGNORECASE,
+    ),
+    "generic_edm_structure": re.compile(
+        r"\b(?:classic|standard|typical)\s+EDM\s+structure\b",
+        re.IGNORECASE,
+    ),
+}
 
 
 def exact_claim_asserted(text: str, claim: str) -> bool:
@@ -48,6 +64,16 @@ def qualified_claim_mentioned(text: str, claim: str) -> bool:
         rf"(?<![a-z]){re.escape(claim.casefold())}(?:-like|\s+like)(?![a-z])"
     )
     return bool(pattern.search(text.casefold()))
+
+
+def validate_training_caption_policy(captions: dict[str, str]) -> list[str]:
+    """Reject metadata leakage and boilerplate from final trainable captions."""
+    errors: list[str] = []
+    for caption_type, text in captions.items():
+        for label, pattern in FORBIDDEN_TRAINING_CAPTION_PATTERNS.items():
+            if pattern.search(text):
+                errors.append(f"{caption_type}_contains_{label}")
+    return errors
 
 
 def request_for(captions: dict[str, str], decisions: list[dict[str, Any]]) -> str:
@@ -111,6 +137,7 @@ def parse_repair(value: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
         errors.append("recommendation_invalid")
     captions = caption_map(value.get("corrected_captions"))
     errors.extend(validate_caption_set(captions))
+    errors.extend(validate_training_caption_policy(captions))
     return {
         "scores": scores,
         "evidence": normalized_evidence,
