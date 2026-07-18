@@ -12,12 +12,18 @@ try:
         CAPTION_COMPILER_REVISION,
         TRACK_STYLE_REFERENCE_REVISION,
         atomic_json,
+        object_sha256,
+        read_jsonl,
+        track_style_reference,
     )
 except ModuleNotFoundError:  # package import used by local unit tests
     from scripts.v2_common import (
         CAPTION_COMPILER_REVISION,
         TRACK_STYLE_REFERENCE_REVISION,
         atomic_json,
+        object_sha256,
+        read_jsonl,
+        track_style_reference,
     )
 
 
@@ -64,6 +70,12 @@ def main() -> int:
         "outputs/v2/baseline-xl-base/listening_quality_report.json",
         "outputs/v2/smoke/smoke_validation_report.json",
         "outputs/v2/train-validation/training_validation_report.json",
+        "outputs/v2/robust-evaluation/generation_report.json",
+        "outputs/v2/robust-evaluation/listening_scores.json",
+        "outputs/v2/robust-evaluation/seed_robustness.json",
+        "outputs/v2/robust-base-evaluation/generation_report.json",
+        "outputs/v2/robust-base-evaluation/listening_scores.json",
+        "outputs/v2/robust-comparison.json",
         "outputs/v2/checkpoint-evaluation/generation_report.json",
         "outputs/v2/checkpoint-evaluation/listening_scores.json",
         "outputs/v2/checkpoint-evaluation/selection.json",
@@ -268,6 +280,66 @@ def main() -> int:
     if training.get("checkpoint_epochs") != [5, 10, 15, 20, 25, 30]:
         errors.append("required_checkpoint_epochs_missing")
     selection = reports["outputs/v2/checkpoint-evaluation/selection.json"]
+    robust_prompts = load_json(root, "configs/v2/robust_eval_prompts.json", errors)
+    manifest_rows = {
+        str(row["sample_id"]): row
+        for row in read_jsonl(root / "data_v2" / "manifest.jsonl")
+    }
+    prompt_rows = robust_prompts.get("prompts", [])
+    if len(prompt_rows) != 3:
+        errors.append("held_out_style_reference_prompt_count_invalid")
+    for prompt in prompt_rows:
+        sample_id = str(prompt.get("reference_sample_id") or "")
+        row = manifest_rows.get(sample_id, {})
+        artist = str(prompt.get("reference_artist") or "")
+        title = str(prompt.get("reference_track") or "")
+        try:
+            required_prefix = track_style_reference(artist, title)
+        except ValueError:
+            required_prefix = ""
+        if (
+            row.get("split") != "validation"
+            or row.get("expected_artist") != artist
+            or row.get("expected_title") != title
+            or prompt.get("reference_split") != "validation"
+            or prompt.get("conditioning_mode") != "held_out_artist_track_style_reference"
+            or not required_prefix
+            or not str(prompt.get("caption") or "").startswith(required_prefix)
+        ):
+            errors.append(f"held_out_style_reference_prompt_invalid:{sample_id}")
+    robust_generation = reports["outputs/v2/robust-evaluation/generation_report.json"]
+    robust_scores = reports["outputs/v2/robust-evaluation/listening_scores.json"]
+    robust_seeds = reports["outputs/v2/robust-evaluation/seed_robustness.json"]
+    robust_base_generation = reports[
+        "outputs/v2/robust-base-evaluation/generation_report.json"
+    ]
+    robust_comparison = reports["outputs/v2/robust-comparison.json"]
+    prompt_hash = object_sha256(robust_prompts)
+    if (
+        robust_generation.get("checkpoint_mode") != "selected_only"
+        or robust_generation.get("fixed_prompt_count") != 15
+        or robust_generation.get("generated_outputs") != 15
+        or robust_generation.get("prompt_document_sha256") != prompt_hash
+        or robust_generation.get("checkpoint_selection_sha256")
+        != object_sha256(selection)
+    ):
+        errors.append("selected_checkpoint_multi_seed_generation_invalid")
+    if (
+        robust_base_generation.get("checkpoint_mode") != "base_only"
+        or robust_base_generation.get("fixed_prompt_count") != 15
+        or robust_base_generation.get("generated_outputs") != 15
+        or robust_base_generation.get("prompt_document_sha256") != prompt_hash
+    ):
+        errors.append("paired_base_multi_seed_generation_invalid")
+    if (
+        len(robust_scores.get("results", [])) != 15
+        or robust_seeds.get("records") != 15
+        or robust_seeds.get("expected_seeds_per_prompt") != 5
+        or len(robust_seeds.get("prompts", {})) != 3
+        or robust_seeds.get("passed_seeds", 0) < 12
+        or robust_comparison.get("paired_records") != 15
+    ):
+        errors.append("multi_style_multi_seed_quality_evidence_incomplete")
     checkpoint_generation = reports["outputs/v2/checkpoint-evaluation/generation_report.json"]
     checkpoint_scores = reports["outputs/v2/checkpoint-evaluation/listening_scores.json"]
     if checkpoint_scores.get("scorer_revision") != "fixed-prompt-audio-judge-v2.2":

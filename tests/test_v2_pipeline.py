@@ -201,10 +201,32 @@ class V2PipelineTest(unittest.TestCase):
         for prompt in config["prompts"]:
             words_in_caption = len(prompt["caption"].split())
             section_count = prompt["lyrics"].count("[Instrumental]")
+            self.assertEqual("held_out_artist_track_style_reference", prompt["conditioning_mode"])
+            self.assertEqual("validation", prompt["reference_split"])
+            self.assertTrue(
+                prompt["caption"].startswith(
+                    track_style_reference(prompt["reference_artist"], prompt["reference_track"])
+                )
+            )
             self.assertGreaterEqual(words_in_caption, 40)
             self.assertLessEqual(words_in_caption, 80)
             self.assertGreaterEqual(prompt["duration"] / section_count, 20)
             self.assertNotIn(" - ", prompt["lyrics"])
+
+    def test_robust_evaluation_runs_after_quality_gated_checkpoint_selection(self) -> None:
+        orchestrator = (SCRIPTS / "orchestrate_v2.py").read_text(encoding="utf-8")
+        self.assertLess(
+            orchestrator.index('"edm-v2-select-checkpoint"'),
+            orchestrator.index('run_parallel(["edm-v2-evaluate-robust"'),
+        )
+        launcher = (
+            SCRIPTS.parent / "server" / "supervisor" / "edm-v2-evaluate-robust.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn("--selected-only", launcher)
+        self.assertNotIn("--final-only", launcher)
+        evaluator = (SCRIPTS / "evaluate_v2_checkpoints.py").read_text(encoding="utf-8")
+        self.assertIn('selection.get("quality_accepted") is not True', evaluator)
+        self.assertIn('"checkpoint_selection_sha256": selection_sha256', evaluator)
 
     def test_pristine_baseline_uses_the_same_instrumental_structure_fallback(self) -> None:
         source = (SCRIPTS / "evaluate_v2_baseline.py").read_text(encoding="utf-8")
@@ -1268,6 +1290,8 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn("checkpoint_evaluation_scale_is_not_fixed_0_5", source)
         self.assertIn("dataset_does_not_use_three_fused_prompt_variants", source)
         self.assertIn("prompt_alignment_not_authoritative_in_checkpoint_selection", source)
+        self.assertIn("selected_checkpoint_multi_seed_generation_invalid", source)
+        self.assertIn("multi_style_multi_seed_quality_evidence_incomplete", source)
 
 
 if __name__ == "__main__":

@@ -12,7 +12,7 @@ from typing import Any
 
 import torch
 
-from v2_common import atomic_json
+from v2_common import atomic_json, object_sha256
 
 
 LORA_SCALES = (0.5,)
@@ -152,6 +152,11 @@ def main() -> int:
         help="Generate only from the lowest-validation-loss adapter.",
     )
     parser.add_argument(
+        "--selected-only",
+        action="store_true",
+        help="Generate only from the checkpoint selected by the full quality/alignment gate.",
+    )
+    parser.add_argument(
         "--evaluation-dir",
         default="outputs/v2/checkpoint-evaluation",
         help="Output directory, relative to the project root by default.",
@@ -180,8 +185,10 @@ def main() -> int:
         help="Prompt JSON file, relative to the project root by default.",
     )
     args = parser.parse_args()
-    if args.final_only and args.best_only:
-        parser.error("--final-only and --best-only are mutually exclusive")
+    if sum((args.final_only, args.best_only, args.selected_only)) > 1:
+        parser.error("--final-only, --best-only and --selected-only are mutually exclusive")
+    if args.base_only and any((args.final_only, args.best_only, args.selected_only)):
+        parser.error("--base-only cannot be combined with a LoRA checkpoint selector")
     root = Path(args.project_root).resolve()
     output = root / "outputs" / "v2" / "train-validation"
     gate = json.loads((output / "training_validation_report.json").read_text(encoding="utf-8"))
@@ -190,7 +197,8 @@ def main() -> int:
     prompts_path = Path(args.prompts_file)
     if not prompts_path.is_absolute():
         prompts_path = root / prompts_path
-    prompts = json.loads(prompts_path.read_text(encoding="utf-8"))["prompts"]
+    prompt_document = json.loads(prompts_path.read_text(encoding="utf-8"))
+    prompts = prompt_document["prompts"]
     if args.prompt_id:
         prompts = [prompt for prompt in prompts if prompt["id"] == args.prompt_id]
         if len(prompts) != 1:
@@ -213,11 +221,28 @@ def main() -> int:
                 expanded["duration"] = float(args.duration_override)
             expanded_prompts.append(expanded)
     prompts = expanded_prompts
-    checkpoints = (
-        [{"label": "base_xl", "path": None, "epoch": 0, "optimizer_step": 0}]
-        if args.base_only
-        else candidates(output, final_only=args.final_only, best_only=args.best_only)
-    )
+    selection_sha256 = None
+    if args.base_only:
+        checkpoints = [{"label": "base_xl", "path": None, "epoch": 0, "optimizer_step": 0}]
+    elif args.selected_only:
+        selection_path = root / "outputs" / "v2" / "checkpoint-evaluation" / "selection.json"
+        selection = json.loads(selection_path.read_text(encoding="utf-8"))
+        if selection.get("status") != "pass" or selection.get("quality_accepted") is not True:
+            raise RuntimeError("quality-gated checkpoint selection has not passed")
+        adapter_path = Path(str(selection.get("best_val_output") or ""))
+        if not adapter_path.is_absolute():
+            adapter_path = root / adapter_path
+        if not adapter_path.is_dir():
+            raise RuntimeError(f"selected best-val adapter is missing: {adapter_path}")
+        selection_sha256 = object_sha256(selection)
+        checkpoints = [{
+            "label": "selected_best",
+            "path": adapter_path,
+            "epoch": int(selection["selected_epoch"]),
+            "optimizer_step": int(selection["best_optimizer_step"]),
+        }]
+    else:
+        checkpoints = candidates(output, final_only=args.final_only, best_only=args.best_only)
 
     from acestep.handler import AceStepHandler
     from acestep.inference import GenerationConfig, GenerationParams, generate_music
@@ -349,6 +374,8 @@ def main() -> int:
         "checkpoint_mode": (
             "base_only"
             if args.base_only
+            else "selected_only"
+            if args.selected_only
             else "final_only"
             if args.final_only
             else "best_only"
@@ -362,6 +389,8 @@ def main() -> int:
         "seed_offsets": seed_offsets,
         "duration_override": args.duration_override,
         "prompts_file": str(prompts_path),
+        "prompt_document_sha256": object_sha256(prompt_document),
+        "checkpoint_selection_sha256": selection_sha256,
         "lora_scales": [0.0] if args.base_only else list(LORA_SCALES),
         "expected_outputs": expected,
         "generated_outputs": len(results),

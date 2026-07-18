@@ -12,7 +12,7 @@ export PYTHONPATH="$ace${PYTHONPATH:+:$PYTHONPATH}"
 cd "$project"
 exec "$ace/.venv/bin/python" -u scripts/evaluate_v2_checkpoints.py \
   --project-root "$project" \
-  --final-only \
+  --selected-only \
   --prompts-file configs/v2/robust_eval_prompts.json \
   --seed-offsets 0,1,2,3,4 \
   --evaluation-dir outputs/v2/robust-evaluation

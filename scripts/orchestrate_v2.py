@@ -345,6 +345,23 @@ def main() -> int:
     if not sync_complete(sync_gate):
         raise RuntimeError("private checkpoint sync did not complete")
 
+    evaluation = root / "outputs" / "v2" / "checkpoint-evaluation"
+    run_stage(
+        "edm-v2-evaluate-checkpoints",
+        evaluation / "generation_report.json",
+        "fixed-checkpoint-audio",
+    )
+    run_stage(
+        "edm-v2-score-moss",
+        evaluation / "listening_scores.json",
+        "checkpoint-listening",
+    )
+    run_stage(
+        "edm-v2-select-checkpoint",
+        evaluation / "selection.json",
+        "best-step-selection",
+    )
+
     robust_lora = root / "outputs" / "v2" / "robust-evaluation"
     robust_base = root / "outputs" / "v2" / "robust-base-evaluation"
     if not (
@@ -370,22 +387,6 @@ def main() -> int:
         "paired-five-seed-base-lora-comparison",
     )
 
-    evaluation = root / "outputs" / "v2" / "checkpoint-evaluation"
-    run_stage(
-        "edm-v2-evaluate-checkpoints",
-        evaluation / "generation_report.json",
-        "fixed-checkpoint-audio",
-    )
-    run_stage(
-        "edm-v2-score-moss",
-        evaluation / "listening_scores.json",
-        "checkpoint-listening",
-    )
-    run_stage(
-        "edm-v2-select-checkpoint",
-        evaluation / "selection.json",
-        "best-step-selection",
-    )
     run_stage(
         "edm-v2-upload-evaluation",
         evaluation / "hf_evaluation_upload_report.json",
