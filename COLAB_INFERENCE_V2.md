@@ -10,14 +10,14 @@ Consumer Colab Pro runs from the Colab website in a browser. It does not provide
 - do not copy a Google password, browser cookie or Google OAuth refresh token to Vast;
 - sign in to the Google account that owns Colab Pro in the browser, open the notebook, select an NVIDIA GPU and run it there;
 - put a Hugging Face **read** token in Colab Secrets as `HF_TOKEN` so the notebook can download the private release;
-- put an OpenRouter key in Colab Secrets as `OPENROUTER_API_KEY` so the notebook can enhance a free-form idea before inference.
+- optionally put an OpenRouter key in Colab Secrets as `OPENROUTER_API_KEY` when the prompt enhancer is enabled.
 
 The notebook and inference script are published by GitHub/Hugging Face. The Colab VM pulls the immutable release directly from Hugging Face; Vast does not push a process into Colab.
 
-After this branch is merged, open the notebook from:
+Open the current reviewed V2 branch from:
 
 ```text
-https://colab.research.google.com/github/Bangchis/melodic-edm-training-pipeline/blob/main/notebooks/melodic_edm_core_v2_colab.ipynb
+https://colab.research.google.com/github/Bangchis/melodic-edm-training-pipeline/blob/agent/training-v2-r48/notebooks/melodic_edm_core_v2_colab.ipynb
 ```
 
 While the GitHub repository is private, first authorize GitHub access from Colab's **File → Open notebook → GitHub** tab. Once the repository is public, the direct URL works without GitHub authorization.
@@ -31,9 +31,9 @@ If unattended server-side submission is required, that is a separate Google Clou
 - At least 20 GB GPU memory is preferred for XL-Base. A 12–16 GB GPU may work with CPU offload and will be slower.
 - Roughly 35–45 GB free disk for the ACE-Step environment, XL-Base checkpoints and the private adapter release.
 - A Hugging Face read token stored in Colab Secrets as `HF_TOKEN`.
-- An OpenRouter API key stored in Colab Secrets as `OPENROUTER_API_KEY`.
+- An OpenRouter API key stored in Colab Secrets as `OPENROUTER_API_KEY` only when `USE_OPENROUTER_ENHANCER = True`.
 
-Never paste either token into a notebook cell or commit it to GitHub. In Colab, open the key icon, create `HF_TOKEN` and `OPENROUTER_API_KEY`, and enable notebook access for both. Only the text idea and explicit music conditions are sent to OpenRouter; no audio, adapter or Hugging Face token is sent there.
+Never paste either token into a notebook cell or commit it to GitHub. In Colab, open the key icon, create `HF_TOKEN` and, if needed, `OPENROUTER_API_KEY`, then enable notebook access. Only the text idea and explicit music conditions are sent to OpenRouter; no audio, adapter or Hugging Face token is sent there. With the enhancer disabled, no OpenRouter request is made.
 
 No Google authentication is required on the local machine beyond the browser session, and no Google authentication is required on Vast.
 
@@ -53,15 +53,15 @@ At the beginning of one Colab run, the notebook resolves the model repository's 
 Use `notebooks/melodic_edm_core_v2_colab.ipynb`. It performs these gates in order:
 
 1. Confirm NVIDIA GPU, VRAM and disk space.
-2. Read `HF_TOKEN` and `OPENROUTER_API_KEY` from Colab Secrets into memory without displaying them.
+2. Read required `HF_TOKEN` and optional `OPENROUTER_API_KEY` from Colab Secrets without displaying them.
 3. Clone ACE-Step at the pinned source revision.
 4. Install the official environment with `uv sync`.
 5. Download the core ACE-Step checkpoints and pinned XL-Base weights.
 6. Resolve the private V2 release to one immutable commit and download exactly that revision.
 7. Verify every release file with `SHA256SUMS`.
 8. Load `final-all-data` when present, otherwise fall back explicitly to the verified `best-val` preview.
-9. Send the free-form text idea to an OpenRouter LLM using strict JSON Schema output.
-10. Validate and compile the returned music fields locally, then generate a deterministic 48 kHz stereo WAV.
+9. Either enhance the free-form idea through OpenRouter or use the direct caption unchanged, according to one switch.
+10. Pass every user-selected sampling/output setting to ACE-Step, then validate each generated audio file.
 11. Inspect and play the result inside Colab.
 
 Inference first passes the free-form idea through `scripts/enhance_prompt_openrouter.py`. The default route is `~google/gemini-flash-latest`, configurable with an exact OpenRouter model slug. OpenRouter returns exactly five strict JSON description fields; the included deterministic `prompt_enhancer.py` then enforces a 40–300 word caption. ACE-Step itself runs with `thinking=False`, so the ACE 5 Hz language model is not used for prompt planning. BPM, key, time signature and instrumental section markers remain explicit separate conditions and are never overwritten by the LLM.
@@ -76,11 +76,32 @@ free-form idea + explicit BPM/key/time/sections
 → ACE-Step XL-Base + selected LoRA
 ```
 
-The LLM is the enhancer; the deterministic stage is only a safety/format gate. Explicit BPM, key, time signature and sections always overwrite any LLM guess. The notebook records the requested model route, OpenRouter's resolved model name and the complete secret-free conditioning payload in `/content/v2_prompt_enhancement.json` for reproducibility.
+The LLM is the optional enhancer; the deterministic stage is only a safety/format gate. Explicit BPM, key, time signature and sections always overwrite any LLM guess. Set `USE_OPENROUTER_ENHANCER = False` to send `DIRECT_CAPTION` straight to ACE-Step without needing an OpenRouter secret. The notebook records the complete secret-free conditioning payload in `/content/v2_prompt_enhancement.json` for reproducibility.
+
+## One generation-control cell
+
+Edit only the notebook cell titled **All generation controls**. It contains the adapter choice, LoRA enable/scale, enhancer switch, musical conditions, duration, seed(s), diffusion steps, guidance, shift, ADG/CFG interval, ODE/SDE method, Euler/Heun sampler, velocity controls, custom timesteps, DCW controls, normalization, fades, latent post-processing, batch size and output encoding. The inference script validates and uses those values; it does not replace them with hidden quality settings.
+
+For a controlled diagnosis, keep the prompt and seed unchanged and compare:
+
+```python
+USE_LORA = False   # pristine XL-Base baseline
+
+USE_LORA = True
+LORA_SCALE = 0.25
+
+USE_LORA = True
+LORA_SCALE = 0.5
+
+USE_LORA = True
+LORA_SCALE = 1.0
+```
+
+If the base output is coherent while higher LoRA scales become noisy, the adapter is the cause; mastering or normalization will not repair it. If the base is also broken, investigate the pinned base/checkpoint/sampling path first.
 
 ## Prompt format
 
-Use 40–300 audible words. A concise 60–150 word prompt is the practical default; 300 is a hard maximum for unusually detailed requests. Describe melody, composition and production; keep BPM/key/time signature in their fields. Do not use artist names or vague quality claims. Training captions remain 40–80 words; only this inference enhancer has the wider limit.
+The enhancer accepts 40–300 audible words, but ACE-Step documents its main caption as a short input, so begin with roughly 40–80 words for diagnosis. Increase detail only after a short prompt generates coherently. Describe melody, composition and production; keep BPM/key/time signature in their fields. Do not use artist names or vague quality claims. Training captions remain 40–80 words.
 
 The notebook accepts a free-form idea plus optional fixed conditions:
 
@@ -178,13 +199,15 @@ The notebook displays the generated WAV only after these checks pass.
 
 `401/403 from Hugging Face`: verify that `HF_TOKEN` can read the private repo and that notebook access is enabled in Colab Secrets.
 
-`401/402/429 from OpenRouter`: verify `OPENROUTER_API_KEY`, available credits and rate limits. Rerun only the enhancer cell; do not redownload the model.
+`401/402/429 from OpenRouter`: verify `OPENROUTER_API_KEY`, available credits and rate limits, or set `USE_OPENROUTER_ENHANCER = False`. Do not redownload the model.
 
 `OpenRouter output failed the deterministic gate`: rerun the enhancer cell or make the idea more concrete. ACE-Step is not called when the caption or structured fields fail validation.
 
 `matplotlib ... backend_inline is not a valid value`: use the latest notebook, which forces the headless `MPLBACKEND=Agg` for the ACE-Step subprocess. On an already-running older notebook, run `os.environ["MPLBACKEND"] = "Agg"` and rerun only the inference cell.
 
 `CUDA out of memory`: restart the runtime, set `offload_to_cpu=True`, and rerun from model initialization with batch size 1.
+
+`Audio is chaotic or distorted`: do not add mastering first. Keep prompt/seed/sampling fixed, disable LoRA for a base-model control, then compare LoRA scales 0.25, 0.5 and 1.0. Post-processing changes level/tone but cannot restore missing melody or structure.
 
 `adapter_config.json missing`: confirm the chosen subdirectory is exactly `final-all-data` or `best-val` under the downloaded release.
 

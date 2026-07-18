@@ -23,6 +23,7 @@ from v2_common import (  # noqa: E402
 from annotate_moss_music import validate_supplement  # noqa: E402
 from score_v2_checkpoints_moss import parse_score  # noqa: E402
 from merge_v2_tensors import hardlink_tensor  # noqa: E402
+from infer_v2_release import merged_generation_settings  # noqa: E402
 
 
 def words(prefix: str, count: int) -> str:
@@ -85,6 +86,49 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn('os.environ["MPLBACKEND"] = "Agg"', inference)
         notebook = (SCRIPTS.parent / "notebooks" / "melodic_edm_core_v2_colab.ipynb").read_text(encoding="utf-8")
         self.assertIn("'MPLBACKEND': 'Agg'", notebook)
+
+    def test_colab_exposes_sampling_lora_and_optional_enhancer_in_one_cell(self) -> None:
+        notebook_path = SCRIPTS.parent / "notebooks" / "melodic_edm_core_v2_colab.ipynb"
+        notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
+        code_cells = ["".join(cell.get("source", [])) for cell in notebook["cells"] if cell["cell_type"] == "code"]
+        controls = [cell for cell in code_cells if "INFERENCE_STEPS =" in cell]
+        self.assertEqual(1, len(controls))
+        for setting in (
+            "USE_OPENROUTER_ENHANCER =",
+            "USE_LORA =",
+            "LORA_SCALE =",
+            "GUIDANCE_SCALE =",
+            "SAMPLER_MODE =",
+            "DCW_ENABLED =",
+            "ENABLE_NORMALIZATION =",
+            "BATCH_SIZE =",
+            "AUDIO_FORMAT =",
+        ):
+            self.assertIn(setting, controls[0])
+        self.assertIn("if USE_OPENROUTER_ENHANCER:", "\n".join(code_cells))
+        self.assertIn("if not USE_LORA or LORA_SCALE == 0:", "\n".join(code_cells))
+
+    def test_release_inference_accepts_user_sampling_and_output_settings(self) -> None:
+        sampling, output = merged_generation_settings({
+            "sampling": {
+                "inference_steps": 72,
+                "guidance_scale": 5.5,
+                "sampler_mode": "heun",
+                "dcw_enabled": False,
+            },
+            "output": {
+                "batch_size": 2,
+                "use_random_seed": False,
+                "seeds": [11, 22],
+                "audio_format": "flac",
+            },
+        })
+        self.assertEqual(72, sampling["inference_steps"])
+        self.assertEqual(5.5, sampling["guidance_scale"])
+        self.assertEqual("heun", sampling["sampler_mode"])
+        self.assertFalse(sampling["dcw_enabled"])
+        self.assertEqual([11, 22], output["seeds"])
+        self.assertEqual("flac", output["audio_format"])
 
     def test_tensor_merger_replaces_unsafe_symlink_with_hardlink(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

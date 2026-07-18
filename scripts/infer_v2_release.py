@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run deterministic ACE-Step XL-Base inference with a packaged v2 adapter."""
+"""Run configurable ACE-Step XL-Base inference with a packaged v2 adapter."""
 from __future__ import annotations
 
 import argparse
@@ -32,6 +32,48 @@ DEFAULT_LYRICS = """[Intro]
 [Outro]
 [Instrumental]
 """
+
+
+# These are backward-compatible defaults for older prompt files. The Colab
+# notebook writes every value explicitly, so sampling quality is controlled by
+# the user-facing configuration cell instead of being locked in this script.
+SAMPLING_DEFAULTS: dict[str, Any] = {
+    "inference_steps": 50,
+    "guidance_scale": 7.0,
+    "shift": 1.0,
+    "use_adg": False,
+    "cfg_interval_start": 0.0,
+    "cfg_interval_end": 1.0,
+    "infer_method": "ode",
+    "sampler_mode": "euler",
+    "velocity_norm_threshold": 0.0,
+    "velocity_ema_factor": 0.0,
+    "dcw_enabled": True,
+    "dcw_mode": "double",
+    "dcw_scaler": 0.05,
+    "dcw_high_scaler": 0.02,
+    "dcw_wavelet": "haar",
+    "timesteps": None,
+    "enable_normalization": True,
+    "normalization_db": -1.0,
+    "fade_in_duration": 0.0,
+    "fade_out_duration": 0.0,
+    "latent_shift": 0.0,
+    "latent_rescale": 1.0,
+}
+
+OUTPUT_DEFAULTS: dict[str, Any] = {
+    "batch_size": 1,
+    "use_random_seed": False,
+    "seeds": None,
+    "audio_format": "wav",
+    "mp3_bitrate": "320k",
+    "mp3_sample_rate": 48000,
+}
+
+SAMPLING_KEYS = frozenset(SAMPLING_DEFAULTS)
+OUTPUT_KEYS = frozenset(OUTPUT_DEFAULTS)
+OUTPUT_FORMATS = frozenset(("mp3", "wav", "flac", "wav32", "opus", "aac"))
 
 
 def atomic_json(path: Path, value: Any) -> None:
@@ -92,6 +134,60 @@ def validate_audio(path: Path) -> dict[str, Any]:
     return {"duration": duration, "sample_rate": sample_rate, "channels": channels}
 
 
+def merged_generation_settings(document: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Validate and merge user-controlled sampling and output settings."""
+    sampling_input = document.get("sampling", {})
+    output_input = document.get("output", {})
+    if not isinstance(sampling_input, dict) or not isinstance(output_input, dict):
+        raise ValueError("sampling and output settings must be JSON objects")
+    unknown_sampling = sorted(set(sampling_input) - SAMPLING_KEYS)
+    unknown_output = sorted(set(output_input) - OUTPUT_KEYS)
+    if unknown_sampling:
+        raise ValueError(f"unsupported sampling settings: {unknown_sampling}")
+    if unknown_output:
+        raise ValueError(f"unsupported output settings: {unknown_output}")
+
+    sampling = {**SAMPLING_DEFAULTS, **sampling_input}
+    output = {**OUTPUT_DEFAULTS, **output_input}
+    if int(sampling["inference_steps"]) < 1:
+        raise ValueError("inference_steps must be at least 1")
+    if float(sampling["guidance_scale"]) < 0:
+        raise ValueError("guidance_scale must be non-negative")
+    if float(sampling["shift"]) <= 0:
+        raise ValueError("shift must be greater than zero")
+    start = float(sampling["cfg_interval_start"])
+    end = float(sampling["cfg_interval_end"])
+    if not 0.0 <= start <= end <= 1.0:
+        raise ValueError("CFG interval must satisfy 0 <= start <= end <= 1")
+    if sampling["infer_method"] not in ("ode", "sde"):
+        raise ValueError("infer_method must be 'ode' or 'sde'")
+    if sampling["sampler_mode"] not in ("euler", "heun"):
+        raise ValueError("sampler_mode must be 'euler' or 'heun'")
+    if sampling["dcw_mode"] not in ("low", "high", "double", "pix"):
+        raise ValueError("dcw_mode must be low, high, double or pix")
+    timesteps = sampling["timesteps"]
+    if timesteps is not None:
+        if not isinstance(timesteps, list) or len(timesteps) < 2:
+            raise ValueError("timesteps must be null or a list with at least two values")
+        sampling["timesteps"] = [float(value) for value in timesteps]
+
+    batch_size = int(output["batch_size"])
+    if batch_size < 1:
+        raise ValueError("batch_size must be at least 1")
+    output["batch_size"] = batch_size
+    if output["audio_format"] not in OUTPUT_FORMATS:
+        raise ValueError(f"audio_format must be one of {sorted(OUTPUT_FORMATS)}")
+    seeds = output["seeds"]
+    if seeds is not None:
+        if not isinstance(seeds, list):
+            raise ValueError("seeds must be null or a list of integers")
+        output["seeds"] = [int(seed) for seed in seeds]
+    if not bool(output["use_random_seed"]):
+        if output["seeds"] is not None and len(output["seeds"]) != batch_size:
+            raise ValueError("deterministic seeds must contain exactly batch_size values")
+    return sampling, output
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--ace-root", required=True)
@@ -106,7 +202,11 @@ def main() -> int:
     parser.add_argument("--prompt-index", type=int, default=0)
     parser.add_argument("--output-dir", default="generated-v2")
     parser.add_argument("--offload-to-cpu", action="store_true")
+    parser.add_argument("--disable-lora", action="store_true")
+    parser.add_argument("--lora-scale", type=float, default=1.0)
     args = parser.parse_args()
+    if not 0.0 <= args.lora_scale <= 1.0:
+        parser.error("--lora-scale must be between 0 and 1")
 
     # Colab exports its notebook-only matplotlib_inline backend to subprocesses.
     # The isolated ACE-Step venv does not include that backend, and Lightning's
@@ -123,6 +223,9 @@ def main() -> int:
     prompt_document = json.loads(prompts_path.read_text(encoding="utf-8"))
     prompts = prompt_document.get("prompts", prompt_document)
     prompt = prompts[args.prompt_index]
+    sampling, output_settings = merged_generation_settings(prompt_document)
+    if output_settings["seeds"] is None and not output_settings["use_random_seed"]:
+        output_settings["seeds"] = [int(prompt["seed"])] * output_settings["batch_size"]
     sys.path.insert(0, str(ace_root))
 
     from acestep.handler import AceStepHandler
@@ -140,12 +243,16 @@ def main() -> int:
     if not loaded:
         raise RuntimeError(f"XL-Base initialization failed: {message}")
     adapter_name = f"melodic_edm_core_v2_{args.adapter_subdirectory.replace('-', '_')}"
-    load_message = handler.add_lora(str(adapter), adapter_name=adapter_name)
-    if not load_message.startswith("✅"):
-        raise RuntimeError(load_message)
-    active_message = handler.set_active_lora_adapter(adapter_name)
-    if not active_message.startswith("✅"):
-        raise RuntimeError(active_message)
+    if not args.disable_lora:
+        load_message = handler.add_lora(str(adapter), adapter_name=adapter_name)
+        if not load_message.startswith("✅"):
+            raise RuntimeError(load_message)
+        active_message = handler.set_active_lora_adapter(adapter_name)
+        if not active_message.startswith("✅"):
+            raise RuntimeError(active_message)
+        scale_message = handler.set_lora_scale(adapter_name, args.lora_scale)
+        if not scale_message.startswith("✅"):
+            raise RuntimeError(scale_message)
 
     params = GenerationParams(
         caption=prompt["caption"],
@@ -155,9 +262,7 @@ def main() -> int:
         keyscale=prompt["keyscale"],
         timesignature=str(prompt["timesignature"]),
         duration=float(prompt["duration"]),
-        inference_steps=50,
-        guidance_scale=7.0,
-        shift=1.0,
+        **sampling,
         seed=int(prompt["seed"]),
         thinking=False,
         use_cot_metas=False,
@@ -166,25 +271,31 @@ def main() -> int:
         use_cot_lyrics=False,
     )
     config = GenerationConfig(
-        batch_size=1,
-        use_random_seed=False,
-        seeds=[int(prompt["seed"])],
-        audio_format="wav",
+        **output_settings,
     )
     output = Path(args.output_dir).resolve()
     generated = generate_music(handler, None, params, config, save_dir=str(output))
-    if not generated.success or len(generated.audios) != 1:
+    if not generated.success or len(generated.audios) != output_settings["batch_size"]:
         raise RuntimeError(generated.error or generated.status_message)
-    path = audio_path(generated.audios[0])
-    if path is None or not path.is_file():
-        raise RuntimeError("generated audio path missing")
+    verified_audio = []
+    for index, audio in enumerate(generated.audios):
+        path = audio_path(audio)
+        if path is None or not path.is_file():
+            raise RuntimeError(f"generated audio path missing for output {index}")
+        verified_audio.append({"audio_path": str(path), "probe": validate_audio(path)})
     report = {
         "status": "pass",
-        "adapter": args.adapter_subdirectory,
+        "adapter": args.adapter_subdirectory if not args.disable_lora else "base-xl-no-lora",
+        "lora_enabled": not args.disable_lora,
+        "lora_scale": args.lora_scale if not args.disable_lora else 0.0,
         "prompt_id": prompt["id"],
         "seed": prompt["seed"],
-        "audio_path": str(path),
-        "probe": validate_audio(path),
+        "seeds": output_settings["seeds"],
+        "sampling": sampling,
+        "output": output_settings,
+        "audio_path": verified_audio[0]["audio_path"],
+        "probe": verified_audio[0]["probe"],
+        "audios": verified_audio,
     }
     atomic_json(output / "inference_report.json", report)
     print(json.dumps(report, ensure_ascii=False, indent=2))
