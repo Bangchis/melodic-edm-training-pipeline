@@ -292,7 +292,7 @@ index 988ff2a..3368bb8 100644
 +    g_lora.add_argument(
 +        "--strict-attention-scope",
 +        action="store_true",
-+        help="Hard-fail unless exact q/k/v/o shared self/cross projections receive LoRA",
++        help="Hard-fail unless exact q/k/v/o projections cover separate self/cross attention",
 +    )
  
      # -- LoKR hyperparams ---------------------------------------------------

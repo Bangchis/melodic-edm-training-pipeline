@@ -10,7 +10,7 @@
     "alpha": 96,
     "dropout": 0.1,
     "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
-    "attention_scope": "shared_projections_cover_self_and_cross_attention",
+    "attention_scope": "separate_self_and_cross_attention_projections",
     "strict_scope_gate": true
   },
   "frozen": [

@@ -1,6 +1,7 @@
 """Focused invariants for the second grouped multi-prompt training release."""
 from __future__ import annotations
 
+import json
 import os
 import sys
 import tempfile
@@ -31,6 +32,15 @@ def words(prefix: str, count: int) -> str:
 
 class V2PipelineTest(unittest.TestCase):
     """Protect grouping, prompt coverage and MOSS response parsing."""
+
+    def test_training_config_names_separate_self_and_cross_attention_scope(self) -> None:
+        config = json.loads(
+            (SCRIPTS.parent / "configs" / "v2" / "train_val.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            "separate_self_and_cross_attention_projections",
+            config["adapter"]["attention_scope"],
+        )
 
     def test_tensor_merger_replaces_unsafe_symlink_with_hardlink(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

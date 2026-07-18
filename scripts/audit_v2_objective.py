@@ -76,6 +76,10 @@ def main() -> int:
         "adapter.alpha": (adapter.get("alpha"), 96),
         "adapter.dropout": (adapter.get("dropout"), 0.1),
         "adapter.targets": (adapter.get("target_modules"), ["q_proj", "k_proj", "v_proj", "o_proj"]),
+        "adapter.attention_scope": (
+            adapter.get("attention_scope"),
+            "separate_self_and_cross_attention_projections",
+        ),
         "optimization.learning_rate": (optimization.get("learning_rate"), 0.000075),
         "optimization.cfg_dropout": (optimization.get("cfg_dropout"), 0.15),
         "optimization.warmup": (optimization.get("warmup_optimizer_steps"), 75),
