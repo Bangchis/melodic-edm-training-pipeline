@@ -55,6 +55,9 @@ class RecordPreservingTests(unittest.TestCase):
             "scripts/infer_release.py",
             "scripts/prompt_enhancer.py",
             "scripts/download_and_infer.py",
+            "scripts/backup_resume_hf.py",
+            "server/supervisor/edm-backup-resume.sh",
+            "server/supervisor/edm-backup-resume.conf",
         )
         self.assertEqual([name for name in required if not (ROOT / name).is_file()], [])
 

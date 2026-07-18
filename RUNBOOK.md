@@ -213,3 +213,9 @@ release, logs, manifests and training state must be uploaded before instance rem
 Run `edm-backup-metadata` at major gates to update the private Hugging Face dataset
 `Bangchis/melodic-edm-training-metadata`. The uploader uses an explicit text-file
 allowlist and fails closed if its secret scan finds a token or private key.
+
+After the main training validation gate passes, run `edm-backup-resume`. It uploads
+only the newest complete adapter plus optimizer/scheduler training state, logs,
+configuration and trainer patch to the private dataset
+`Bangchis/melodic-edm-training-resume`. It hashes and secret-scans every selected
+file; audio and preprocessed tensors remain excluded.
