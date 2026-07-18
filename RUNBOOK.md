@@ -199,6 +199,11 @@ examples to the private model repo `Bangchis/melodic-edm-core-v1`, then redownlo
 it into a clean directory, verifies every packaged file against `SHA256SUMS`, and
 requires one valid 48 kHz stereo WAV.
 
+The release also includes `requirements.txt`, `inference_config.json`, the fixed
+prompt set, a direct inference entrypoint, a revision-pinned download-and-infer
+helper and a structured prompt compiler. These are delivery helpers only; they do
+not add more training configurations or alter checkpoint selection.
+
 ## Resume safety
 
 Long server jobs run through Supervisor and write checkpoints/manifests atomically.

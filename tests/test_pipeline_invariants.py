@@ -17,6 +17,7 @@ from analyze_mir import map_sections, normalize_edm_bpm, prepare_unique_inputs  
 from annotate_openrouter import parse_json_content, sanitize_annotation, sanitize_caption_text, validate_annotation  # noqa: E402
 from build_acestep_dataset import choose_splits, choose_window, render_audio  # noqa: E402
 from merge_tensors import write_loader_manifest  # noqa: E402
+from prompt_enhancer import compile_caption  # noqa: E402
 from validate_tensors import expected_by_split  # noqa: E402
 from validate_smoke import resolve_adapter_dir  # noqa: E402
 from validate_training import select_checkpoints  # noqa: E402
@@ -28,6 +29,35 @@ from annotate_qwen_local import (  # noqa: E402
 
 
 class RecordPreservingTests(unittest.TestCase):
+    def test_prompt_compiler_uses_only_structured_musical_facts(self) -> None:
+        caption = compile_caption({
+            "genre": "Chinese melodic gaming EDM",
+            "mood": "uplifting and adventurous",
+            "melody": "A bright two-bar pentatonic pipa hook repeats with altered endings and short dizi responses",
+            "arrangement": "An atmospheric intro rises through a compact build into an energetic four-on-the-floor drop",
+            "production": "Wide supersaw chords, clean sub bass, punchy electronic drums and spacious fantasy reverb support the melody",
+        })
+        self.assertTrue(40 <= len(caption.split()) <= 80)
+        self.assertTrue(caption.startswith("Instrumental Chinese melodic gaming EDM"))
+        with self.assertRaisesRegex(ValueError, "artist-name shortcuts"):
+            compile_caption({
+                "genre": "TheFatRat style EDM",
+                "mood": "uplifting",
+                "melody": "A detailed repeating melodic hook with several audible variations across each phrase",
+                "arrangement": "An atmospheric intro develops into a short build and energetic melodic drop",
+                "production": "Wide layered chords, sub bass, electronic drums and spacious reverb support the arrangement",
+            })
+
+    def test_release_delivery_sources_are_present(self) -> None:
+        required = (
+            "configs/inference_config.json",
+            "configs/release_requirements.txt",
+            "scripts/infer_release.py",
+            "scripts/prompt_enhancer.py",
+            "scripts/download_and_infer.py",
+        )
+        self.assertEqual([name for name in required if not (ROOT / name).is_file()], [])
+
     def test_only_clear_edm_half_time_bpm_is_doubled(self) -> None:
         self.assertEqual(normalize_edm_bpm(75), (150, "double_half_time_below_80"))
         self.assertEqual(normalize_edm_bpm(85), (85, None))

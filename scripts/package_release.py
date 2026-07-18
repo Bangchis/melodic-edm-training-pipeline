@@ -56,8 +56,13 @@ def main() -> int:
         copy_file(adapter / name, release / name)
     copy_file(root / "MODEL_CARD.md", release / "README.md")
     copy_file(root / "configs" / "train_lora_2x4090.json", release / "training_config.json")
+    copy_file(root / "configs" / "inference_config.json", release / "inference_config.json")
     copy_file(root / "configs" / "inference_prompts.json", release / "inference_prompts.json")
+    copy_file(root / "configs" / "release_requirements.txt", release / "requirements.txt")
     copy_file(root / "scripts" / "infer_release.py", release / "infer_release.py")
+    copy_file(root / "scripts" / "infer_release.py", release / "scripts" / "infer.py")
+    copy_file(root / "scripts" / "prompt_enhancer.py", release / "scripts" / "prompt_enhancer.py")
+    copy_file(root / "scripts" / "download_and_infer.py", release / "scripts" / "download_and_infer.py")
     atomic_json(release / "training_validation_report.json", {
         key: train_gate.get(key) for key in (
             "status", "configuration", "completed_epoch", "global_step",

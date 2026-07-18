@@ -43,6 +43,12 @@ python infer_release.py \
   --output-dir ./generated
 ```
 
+For a clean private-Hub download pinned to an immutable model revision, use
+`scripts/download_and_infer.py`. It verifies every packaged file against
+`SHA256SUMS` before inference. `scripts/prompt_enhancer.py` compiles structured,
+audible musical facts into the same 40–80 word caption vocabulary used in training;
+it does not invent artist-style shortcuts.
+
 ## Limitations
 
 This is a small, style-specific research dataset. Outputs may be inconsistent,
