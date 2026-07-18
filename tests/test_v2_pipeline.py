@@ -139,6 +139,11 @@ class V2PipelineTest(unittest.TestCase):
         self.assertNotIn("128", prompt)
         self.assertIn("independently from the waveform", prompt)
 
+    def test_moss_repair_forces_json_before_reasoning(self) -> None:
+        source = (SCRIPTS / "annotate_moss_music.py").read_text(encoding="utf-8")
+        self.assertIn("first output character must be {", source)
+        self.assertIn("emit no reasoning or markdown outside the object", source)
+
     def test_annotation_fidelity_review_requires_grounded_fields(self) -> None:
         review, errors = parse_review({
             "audible_fidelity": 4,

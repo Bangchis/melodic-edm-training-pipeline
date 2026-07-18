@@ -327,7 +327,9 @@ def main() -> int:
                 f"\nRepair round {repair_round}: a prior complete run exhausted retries with "
                 f"{prior_failure_error}. Do not reuse that response. Keep canonical between "
                 "50 and 70 words and both composition and production between 30 and 60 words. "
-                "Count conservatively and return a newly worded complete JSON object."
+                "Count conservatively and return a newly worded complete JSON object. Do not "
+                "emit analysis, reasoning, markdown, or a thinking block before the object. The "
+                "first output character must be { and the final output character must be }."
             )
         last_error = "unknown"
         last_response_hash = ""
@@ -368,7 +370,8 @@ def main() -> int:
                 last_error = f"{type(exc).__name__}:{exc}"
                 prompt += (
                     "\nYour previous answer failed validation: " + last_error +
-                    ". Return a corrected JSON object only."
+                    ". Return a corrected JSON object only. Start immediately with {, end with }, "
+                    "and emit no reasoning or markdown outside the object."
                 )
         else:
             failures += 1
