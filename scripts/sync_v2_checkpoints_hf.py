@@ -90,6 +90,54 @@ def sync_once(api: HfApi, repo_id: str, root: Path, state: dict[str, Any]) -> bo
     return changed
 
 
+def sync_best(api: HfApi, repo_id: str, root: Path, state: dict[str, Any]) -> bool:
+    """Upload a newly improved best-val checkpoint even between tenth epochs."""
+    output = root / "outputs" / "v2" / "train-validation"
+    validation_path = output / "validation_state.json"
+    best_path = output / "checkpoints" / "best_val"
+    state_path = best_path / "training_state.pt"
+    if not validation_path.is_file() or not state_path.is_file():
+        return False
+    validation = json.loads(validation_path.read_text(encoding="utf-8"))
+    best_epoch = int(validation.get("best_epoch") or 0)
+    best_step = int(validation.get("best_optimizer_step") or 0)
+    if best_epoch <= 0 or best_step <= 0:
+        return False
+    uploaded = state.get("uploaded_best") or {}
+    if (int(uploaded.get("epoch") or 0), int(uploaded.get("optimizer_step") or 0)) == (
+        best_epoch,
+        best_step,
+    ):
+        return False
+    info = api.upload_folder(
+        folder_path=str(best_path),
+        path_in_repo="checkpoints/best_val",
+        repo_id=repo_id,
+        repo_type="model",
+        commit_message=f"Upload v2 best-val epoch {best_epoch} step {best_step}",
+    )
+    # Re-read after upload. If validation improved during transfer, leave the
+    # old state unrecorded so the next watch iteration replaces it immediately.
+    current = json.loads(validation_path.read_text(encoding="utf-8"))
+    if (
+        int(current.get("best_epoch") or 0) != best_epoch
+        or int(current.get("best_optimizer_step") or 0) != best_step
+    ):
+        print("best-val changed during upload; scheduling immediate replacement", flush=True)
+        return True
+    state["uploaded_best"] = {
+        "epoch": best_epoch,
+        "optimizer_step": best_step,
+        "source": str(best_path),
+        "commit": str(info.oid),
+        "uploaded_at": datetime.now(timezone.utc).isoformat(),
+    }
+    state["commits"].append(str(info.oid))
+    upload_metrics(api, repo_id, output)
+    print(f"uploaded best-val epoch {best_epoch} step {best_step} commit {info.oid}", flush=True)
+    return True
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project-root", default=".")
@@ -109,7 +157,9 @@ def main() -> int:
     state = load_state(state_path)
     last_change = time.monotonic()
     while True:
-        if sync_once(api, args.repo_id, root, state):
+        changed = sync_once(api, args.repo_id, root, state)
+        changed = sync_best(api, args.repo_id, root, state) or changed
+        if changed:
             last_change = time.monotonic()
             atomic_json(state_path, state)
         gate = output / "training_validation_report.json"

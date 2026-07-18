@@ -47,6 +47,11 @@ class V2PipelineTest(unittest.TestCase):
         self.assertLess(source.index('"edm-v2-upload-preview"'), source.index('"edm-v2-train-final"'))
         self.assertLess(source.index('"edm-v2-verify-preview"'), source.index('"edm-v2-train-final"'))
 
+    def test_checkpoint_sync_includes_non_tenth_best_val(self) -> None:
+        source = (SCRIPTS / "sync_v2_checkpoints_hf.py").read_text(encoding="utf-8")
+        self.assertIn("def sync_best", source)
+        self.assertIn('path_in_repo="checkpoints/best_val"', source)
+
     def test_tensor_merger_replaces_unsafe_symlink_with_hardlink(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
