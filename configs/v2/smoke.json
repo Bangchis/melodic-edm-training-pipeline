@@ -1,0 +1,18 @@
+{
+  "phase": "smoke",
+  "optimizer_steps": 66,
+  "first_stage_epochs": 5,
+  "resume_stage_max_steps": 66,
+  "checks": [
+    "two_gpu_ddp",
+    "finite_loss",
+    "no_oom_or_nan",
+    "three_prompt_randomization",
+    "canonical_only_validation",
+    "validation_without_cfg_dropout",
+    "checkpoint_save",
+    "checkpoint_resume",
+    "adapter_reload",
+    "strict_lora_scope"
+  ]
+}
