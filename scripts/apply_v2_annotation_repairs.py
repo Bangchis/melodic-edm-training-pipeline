@@ -14,7 +14,13 @@ from statistics import mean
 from typing import Any
 
 from annotate_moss_music import MODEL_REVISION
-from repair_v2_annotations_moss import SCORE_FIELDS, exact_claim_asserted, parse_repair
+from repair_v2_annotations_moss import (
+    CAPTION_COMPILER_REVISION,
+    SCORE_FIELDS,
+    exact_claim_asserted,
+    parse_repair,
+    qualified_claim_mentioned,
+)
 from v2_common import atomic_json, file_sha256, object_sha256, read_jsonl
 
 
@@ -48,6 +54,8 @@ def main() -> int:
                 raise ValueError(",".join(validation_errors))
             if record.get("model_revision") != MODEL_REVISION:
                 raise ValueError("model_revision_mismatch")
+            if record.get("caption_compiler_revision") != CAPTION_COMPILER_REVISION:
+                raise ValueError("caption_compiler_revision_mismatch")
             if record.get("audio_sha256") != file_sha256(Path(row["final_audio_path"])):
                 raise ValueError("audio_sha256_mismatch")
             if record.get("original_captions_sha256") != object_sha256(original):
@@ -69,6 +77,8 @@ def main() -> int:
                     raise ValueError(f"verified_absent_claim_retained:{claim}")
                 if resolution == "uncertain" and exact_claim_asserted(corrected_text, claim):
                     raise ValueError(f"uncertain_claim_asserted_as_exact:{claim}")
+                if resolution == "uncertain" and not qualified_claim_mentioned(corrected_text, claim):
+                    raise ValueError(f"uncertain_claim_qualified_token_missing:{claim}")
             recommendations[repair["recommendation"]] += 1
             for field in SCORE_FIELDS:
                 scores[field].append(repair["scores"][field])
@@ -84,6 +94,7 @@ def main() -> int:
             annotation["caption_repair"] = {
                 "model": record["model_id"],
                 "model_revision": record["model_revision"],
+                "caption_compiler_revision": record["caption_compiler_revision"],
                 "repaired_at": record["repaired_at"],
                 "recommendation": repair["recommendation"],
                 "original_scores": repair["scores"],

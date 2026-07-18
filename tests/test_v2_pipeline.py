@@ -25,7 +25,11 @@ from score_v2_checkpoints_moss import parse_score  # noqa: E402
 from merge_v2_tensors import hardlink_tensor  # noqa: E402
 from infer_v2_release import merged_generation_settings  # noqa: E402
 from audit_v2_annotation_fidelity_moss import parse_review, stratified_rows  # noqa: E402
-from repair_v2_annotations_moss import exact_claim_asserted, parse_repair  # noqa: E402
+from repair_v2_annotations_moss import (  # noqa: E402
+    exact_claim_asserted,
+    parse_repair,
+    qualified_claim_mentioned,
+)
 from verify_v2_audio_claims_moss import (  # noqa: E402
     consensus_for,
     extract_instrument_claims,
@@ -203,6 +207,8 @@ class V2PipelineTest(unittest.TestCase):
     def test_like_qualifier_is_not_an_exact_instrument_assertion(self) -> None:
         self.assertTrue(exact_claim_asserted("A pipa carries the hook.", "pipa"))
         self.assertFalse(exact_claim_asserted("A pipa-like plucked lead carries the hook.", "pipa"))
+        self.assertTrue(qualified_claim_mentioned("A pipa-like plucked lead carries the hook.", "pipa"))
+        self.assertFalse(qualified_claim_mentioned("A generic plucked-string lead carries the hook.", "pipa"))
 
     def test_preview_is_verified_before_final_training(self) -> None:
         source = (SCRIPTS / "orchestrate_v2.py").read_text(encoding="utf-8")
@@ -248,6 +254,9 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn('"tensors_train"', apply_script)
         self.assertIn('"tensor_validation_report.json"', apply_script)
         self.assertIn('"build_v2_dataset.py"', apply_script)
+        self.assertIn("CAPTION_COMPILER_REVISION", apply_script)
+        verifier = (SCRIPTS / "verify_v2_audio_claims_moss.py").read_text(encoding="utf-8")
+        self.assertIn("CLAIM_VERIFIER_REVISION", verifier)
 
     def test_checkpoint_sync_includes_non_fifth_best_val(self) -> None:
         source = (SCRIPTS / "sync_v2_checkpoints_hf.py").read_text(encoding="utf-8")
@@ -291,6 +300,7 @@ class V2PipelineTest(unittest.TestCase):
         self.assertEqual(1, len(controls))
         for setting in (
             "USE_OPENROUTER_ENHANCER =",
+            "REQUIRED_PROMPT_TERMS =",
             "USE_LORA =",
             "LORA_SCALE =",
             "GUIDANCE_SCALE =",
@@ -303,6 +313,16 @@ class V2PipelineTest(unittest.TestCase):
             self.assertIn(setting, controls[0])
         self.assertIn("if USE_OPENROUTER_ENHANCER:", "\n".join(code_cells))
         self.assertIn("if not USE_LORA or LORA_SCALE == 0:", "\n".join(code_cells))
+
+    def test_absolute_quality_gate_requires_each_sample_to_follow_prompt(self) -> None:
+        quality = summarize_quality([{
+            "scores": {
+                "prompt_alignment": 2, "melody": 5, "structure": 5, "audio_quality": 5,
+            },
+            "failure_modes": {"distorted": False, "collapsed": False, "static_loop": False},
+        }])
+        self.assertFalse(quality["quality_accepted"])
+        self.assertIn("individual_score_below_minimum:prompt_alignment:2:3", quality["errors"])
 
     def test_release_inference_accepts_user_sampling_and_output_settings(self) -> None:
         sampling, output = merged_generation_settings({

@@ -34,6 +34,7 @@ GENERIC_NAMES = {
     "traditional chinese instruments", "electronic elements",
 }
 VIEW_NAMES = ("full_neutral", "full_challenge", "overview_montage")
+CLAIM_VERIFIER_REVISION = "multi-view-audio-claims-v2.3"
 
 
 def normalize_claim(value: Any) -> str:
@@ -288,12 +289,20 @@ def main() -> int:
     for row in rows:
         annotation = json.loads(Path(row["v2_annotation_path"]).read_text(encoding="utf-8"))
         claims = extract_instrument_claims(annotation)
-        input_hash = object_sha256({"audio": file_sha256(Path(row["final_audio_path"])), "claims": claims})
+        input_hash = object_sha256({
+            "audio": file_sha256(Path(row["final_audio_path"])),
+            "claims": claims,
+            "claim_verifier_revision": CLAIM_VERIFIER_REVISION,
+        })
         output = output_dir / f"{row['sample_id']}.json"
         if output.is_file():
             try:
                 cached = json.loads(output.read_text(encoding="utf-8"))
-                if cached.get("input_sha256") == input_hash and cached.get("model_revision") == MODEL_REVISION:
+                if (
+                    cached.get("input_sha256") == input_hash
+                    and cached.get("model_revision") == MODEL_REVISION
+                    and cached.get("claim_verifier_revision") == CLAIM_VERIFIER_REVISION
+                ):
                     continue
             except (OSError, json.JSONDecodeError):
                 pass
@@ -305,6 +314,7 @@ def main() -> int:
                 "verified_at": datetime.now(timezone.utc).isoformat(),
                 "model_id": MODEL_ID,
                 "model_revision": MODEL_REVISION,
+                "claim_verifier_revision": CLAIM_VERIFIER_REVISION,
                 "audio_sha256": file_sha256(Path(row["final_audio_path"])),
                 "input_sha256": input_hash,
                 "claims": [],
@@ -355,6 +365,7 @@ def main() -> int:
             "verified_at": datetime.now(timezone.utc).isoformat(),
             "model_id": MODEL_ID,
             "model_revision": MODEL_REVISION,
+            "claim_verifier_revision": CLAIM_VERIFIER_REVISION,
             "audio_sha256": file_sha256(audio),
             "input_sha256": input_hash,
             "claims": claims,

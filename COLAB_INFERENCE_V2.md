@@ -17,7 +17,7 @@ The notebook and inference script are published by GitHub/Hugging Face. The Cola
 Open the current reviewed V2 branch from:
 
 ```text
-https://colab.research.google.com/github/Bangchis/melodic-edm-training-pipeline/blob/agent/training-v2-r48/notebooks/melodic_edm_core_v2_colab.ipynb
+https://colab.research.google.com/github/Bangchis/melodic-edm-training-pipeline/blob/agent/training-v2-r32/notebooks/melodic_edm_core_v2_colab.ipynb
 ```
 
 While the GitHub repository is private, first authorize GitHub access from Colab's **File → Open notebook → GitHub** tab. Once the repository is public, the direct URL works without GitHub authorization.
@@ -76,7 +76,7 @@ free-form idea + explicit BPM/key/time/sections
 → ACE-Step XL-Base + selected LoRA
 ```
 
-The LLM is the optional enhancer; the deterministic stage is only a safety/format gate. Explicit BPM, key, time signature and sections always overwrite any LLM guess. Set `USE_OPENROUTER_ENHANCER = False` to send `DIRECT_CAPTION` straight to ACE-Step without needing an OpenRouter secret. The notebook records the complete secret-free conditioning payload in `/content/v2_prompt_enhancement.json` for reproducibility.
+The LLM is the optional enhancer; the deterministic stage is only a safety/format gate. The inference idea is authoritative and is never passed through the conservative audio-annotation claim policy. Exact instruments or other phrases listed in `REQUIRED_PROMPT_TERMS` must survive in the compiled caption or the enhancer retries/fails before ACE-Step runs. For example, requiring `pipa` and `dizi` prevents the LLM from weakening them to generic `plucked-string-like` and `flute-like` terms. This list is user-controlled and may be empty. Explicit BPM, key, time signature and sections always overwrite any LLM guess. Set `USE_OPENROUTER_ENHANCER = False` to send `DIRECT_CAPTION` straight to ACE-Step without needing an OpenRouter secret. The notebook records the complete secret-free conditioning payload in `/content/v2_prompt_enhancement.json` for reproducibility.
 
 ## One generation-control cell
 
@@ -112,6 +112,7 @@ EXPLICIT_CONDITIONS = {
     "keyscale": "F# minor",
     "timesignature": "4",
     "sections": ["Intro", "Theme", "Build", "Drop", "Break", "Final Drop", "Outro"],
+    "required_terms": ["pipa", "dizi"],
 }
 enhancement = enhance_prompt(
     USER_IDEA,

@@ -10,7 +10,7 @@ from typing import Any
 
 from annotate_moss_music import MODEL_REVISION
 from v2_common import atomic_json, file_sha256, object_sha256, read_jsonl
-from verify_v2_audio_claims_moss import extract_instrument_claims
+from verify_v2_audio_claims_moss import CLAIM_VERIFIER_REVISION, extract_instrument_claims
 
 
 def main() -> int:
@@ -28,12 +28,18 @@ def main() -> int:
             annotation = json.loads(Path(row["v2_annotation_path"]).read_text(encoding="utf-8"))
             claims = extract_instrument_claims(annotation)
             audio_hash = file_sha256(Path(row["final_audio_path"]))
-            expected_input = object_sha256({"audio": audio_hash, "claims": claims})
+            expected_input = object_sha256({
+                "audio": audio_hash,
+                "claims": claims,
+                "claim_verifier_revision": CLAIM_VERIFIER_REVISION,
+            })
             record = json.loads(
                 (root / "data_v2" / "claim_consensus" / f"{sample_id}.json").read_text(encoding="utf-8")
             )
             if record.get("model_revision") != MODEL_REVISION:
                 raise ValueError("model_revision_mismatch")
+            if record.get("claim_verifier_revision") != CLAIM_VERIFIER_REVISION:
+                raise ValueError("claim_verifier_revision_mismatch")
             if record.get("audio_sha256") != audio_hash:
                 raise ValueError("audio_sha256_mismatch")
             if record.get("input_sha256") != expected_input:
@@ -59,6 +65,7 @@ def main() -> int:
         "records": len(rows) - len(errors),
         "catalog_records": len(rows),
         "claim_total": claim_total,
+        "claim_verifier_revision": CLAIM_VERIFIER_REVISION,
         "decisions": dict(counts),
         "errors": errors,
     }

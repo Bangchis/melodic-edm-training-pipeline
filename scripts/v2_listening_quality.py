@@ -9,6 +9,12 @@ from typing import Any
 SCORE_FIELDS = ("prompt_alignment", "melody", "structure", "audio_quality")
 MINIMUM_DIMENSION_MEAN = 3.0
 MINIMUM_INDIVIDUAL_SCORE = 2
+MINIMUM_INDIVIDUAL_BY_DIMENSION = {
+    "prompt_alignment": 3,
+    "melody": 2,
+    "structure": 2,
+    "audio_quality": 2,
+}
 
 
 def summarize_quality(records: list[dict[str, Any]]) -> dict[str, Any]:
@@ -48,9 +54,10 @@ def summarize_quality(records: list[dict[str, Any]]) -> dict[str, Any]:
                 f"dimension_mean_below_minimum:{field}:{mean:.3f}:{MINIMUM_DIMENSION_MEAN:.3f}"
             )
         minimum = min(values.get(field, [0]))
-        if minimum < MINIMUM_INDIVIDUAL_SCORE:
+        required_minimum = MINIMUM_INDIVIDUAL_BY_DIMENSION[field]
+        if minimum < required_minimum:
             errors.append(
-                f"individual_score_below_minimum:{field}:{minimum}:{MINIMUM_INDIVIDUAL_SCORE}"
+                f"individual_score_below_minimum:{field}:{minimum}:{required_minimum}"
             )
     all_scores = [score for field_values in values.values() for score in field_values]
     overall_mean = sum(all_scores) / len(all_scores) if all_scores else 0.0
@@ -62,5 +69,6 @@ def summarize_quality(records: list[dict[str, Any]]) -> dict[str, Any]:
         "overall_mean": overall_mean,
         "minimum_dimension_mean": MINIMUM_DIMENSION_MEAN,
         "minimum_individual_score": MINIMUM_INDIVIDUAL_SCORE,
+        "minimum_individual_by_dimension": MINIMUM_INDIVIDUAL_BY_DIMENSION,
         "errors": errors,
     }

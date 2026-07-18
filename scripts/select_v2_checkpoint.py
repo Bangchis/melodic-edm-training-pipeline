@@ -14,7 +14,12 @@ import librosa
 import numpy as np
 
 from v2_common import atomic_json, read_jsonl
-from v2_listening_quality import summarize_quality
+from v2_listening_quality import (
+    MINIMUM_DIMENSION_MEAN,
+    MINIMUM_INDIVIDUAL_BY_DIMENSION,
+    MINIMUM_INDIVIDUAL_SCORE,
+    summarize_quality,
+)
 
 
 def feature(path: Path) -> np.ndarray:
@@ -135,8 +140,9 @@ def main() -> int:
             "selected_epoch": None,
             "selection_method": {
                 "absolute_listening_gate_required": True,
-                "minimum_dimension_mean": 3.0,
-                "minimum_individual_score": 2,
+                "minimum_dimension_mean": MINIMUM_DIMENSION_MEAN,
+                "minimum_individual_score": MINIMUM_INDIVIDUAL_SCORE,
+                "minimum_individual_by_dimension": MINIMUM_INDIVIDUAL_BY_DIMENSION,
                 "human_listening_completed": False,
                 "listening_proxy": "OpenMOSS-Team/MOSS-Music-8B-Thinking",
             },
@@ -178,6 +184,8 @@ def main() -> int:
             "fixed_prompt_diversity_weight": 0.10,
             "diversity_minimum_meaningful_range": 0.01,
             "training_similarity_penalty_weight": 0.05,
+            "minimum_dimension_mean": MINIMUM_DIMENSION_MEAN,
+            "minimum_individual_by_dimension": MINIMUM_INDIVIDUAL_BY_DIMENSION,
             "human_listening_completed": False,
             "listening_proxy": "OpenMOSS-Team/MOSS-Music-8B-Thinking"
         },

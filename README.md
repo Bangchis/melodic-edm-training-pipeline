@@ -46,8 +46,11 @@ as an audio annotation/listening model; it is never part of ACE-Step training.
 Before preprocessing, MOSS first annotates without title, artist, MIR or prior
 instrument claims. A multi-view verifier then checks each named sound source with
 two full-track prompts plus an intro/middle/late montage. Verified exact names are
-preserved; only absent or unresolved claims are removed or softened. A stratified
-listening gate checks the complete caption fidelity. The run is capped at 20 epochs
+preserved; absent claims are removed and unresolved names retain a qualified
+`name-like` token instead of collapsing to an unrelated generic label. A stratified
+listening gate checks the complete caption fidelity. Checkpoint acceptance also
+requires every generated evaluation sample to reach at least 3/5 prompt alignment,
+so clean but off-prompt audio is rejected. The run is capped at 20 epochs
 and evaluates epochs 5/10/15/20 at LoRA scales 0.25/0.5/1.0.
 
 V2 produces both a validation-selected `best-val` adapter and a fresh

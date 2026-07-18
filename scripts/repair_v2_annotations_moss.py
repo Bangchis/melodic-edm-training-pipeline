@@ -28,6 +28,7 @@ SCORE_FIELDS = (
     "melody_arrangement_accuracy",
     "production_accuracy",
 )
+CAPTION_COMPILER_REVISION = "audio-grounded-caption-compiler-v2.4"
 
 
 def exact_claim_asserted(text: str, claim: str) -> bool:
@@ -41,14 +42,25 @@ def exact_claim_asserted(text: str, claim: str) -> bool:
     return False
 
 
+def qualified_claim_mentioned(text: str, claim: str) -> bool:
+    """Keep an unresolved vocabulary token, but only with an explicit ``-like`` qualifier."""
+    pattern = re.compile(
+        rf"(?<![a-z]){re.escape(claim.casefold())}(?:-like|\s+like)(?![a-z])"
+    )
+    return bool(pattern.search(text.casefold()))
+
+
 def request_for(captions: dict[str, str], decisions: list[dict[str, Any]]) -> str:
     """Ask MOSS to compile captions while obeying multi-view audible decisions."""
     return (
         "Listen to the complete supplied instrumental audio and compile accurate, prompt-useful "
         "training captions. Exact named instruments are valuable and must remain specific when the "
         "multi-view verifier marks them present. Remove claims marked absent. For claims marked "
-        "uncertain, do not assert the physical instrument as fact; use its supplied audible "
-        "alternative or a precise timbre phrase such as pipa-like plucked lead. Never infer title, "
+        "uncertain, do not assert the physical instrument as fact, but preserve the exact vocabulary "
+        "token at least once with a -like qualifier, followed by its audible alternative; for example, "
+        "pipa-like plucked lead or dizi-like airy flute lead. Never replace an unresolved named claim "
+        "with only a generic phrase, because the qualified vocabulary remains useful for prompt "
+        "conditioning. Never infer title, "
         "artist, country, channel or intended media use. Avoid quality hype and "
         "boilerplate such as clean, polished, masterpiece, classic EDM structure, or professional. "
         "Describe stable audible genre/style, mood, concrete melody or motif behavior, rhythm, "
@@ -121,6 +133,7 @@ def existing_valid(
         value = json.loads(path.read_text(encoding="utf-8"))
         base_valid = (
             value.get("model_revision") == MODEL_REVISION
+            and value.get("caption_compiler_revision") == CAPTION_COMPILER_REVISION
             and value.get("audio_sha256") == audio_hash
             and value.get("original_captions_sha256") == caption_hash
             and not parse_repair(value.get("repair", {}))[1]
@@ -203,6 +216,8 @@ def main() -> int:
                         validation_errors.append(f"verified_absent_claim_retained:{claim}")
                     if decision["decision"] == "uncertain" and exact_claim_asserted(corrected_text, claim):
                         validation_errors.append(f"uncertain_claim_asserted_as_exact:{claim}")
+                    if decision["decision"] == "uncertain" and not qualified_claim_mentioned(corrected_text, claim):
+                        validation_errors.append(f"uncertain_claim_qualified_token_missing:{claim}")
                 if validation_errors:
                     raise ValueError(",".join(validation_errors))
                 record = {
@@ -211,6 +226,7 @@ def main() -> int:
                     "parent_song_id": row["parent_song_id"],
                     "model_id": MODEL_ID,
                     "model_revision": MODEL_REVISION,
+                    "caption_compiler_revision": CAPTION_COMPILER_REVISION,
                     "repaired_at": datetime.now(timezone.utc).isoformat(),
                     "audio_sha256": audio_hash,
                     "original_captions_sha256": caption_hash,

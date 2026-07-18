@@ -17,6 +17,7 @@ API_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_MODEL = "~google/gemini-flash-latest"
 DEFAULT_SECTIONS = ["Intro", "Theme", "Build", "Drop", "Break", "Final Drop", "Outro"]
 ALLOWED_SECTIONS = tuple(DEFAULT_SECTIONS)
+MUSIC_FIELDS = ("genre", "mood", "melody", "arrangement", "production")
 
 OUTPUT_SCHEMA = {
     "name": "ace_step_music_conditions",
@@ -84,25 +85,45 @@ def sections_to_lyrics(sections: list[str]) -> str:
     return "\n\n".join(f"[{section}]\n[Instrumental]" for section in sections) + "\n"
 
 
+def contains_required_term(caption: str, term: str) -> bool:
+    """Require the exact phrase, not a weakened ``term-like`` substitution."""
+    normalized = " ".join(term.casefold().split())
+    phrase = re.escape(normalized).replace(r"\ ", r"\s+")
+    return bool(re.search(rf"(?<![\w]){phrase}(?![\w-])", caption.casefold()))
+
+
 def validate_conditions(
     value: dict[str, Any],
     explicit_conditions: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Validate provider output and add the deterministic training-style caption."""
-    text_fields = ("genre", "mood", "melody", "arrangement", "production")
-    if set(value) != set(text_fields):
-        missing = sorted(set(text_fields) - set(value))
-        extra = sorted(set(value) - set(text_fields))
+    """Validate provider output without weakening user-authoritative prompt terms."""
+    if set(value) != set(MUSIC_FIELDS):
+        missing = sorted(set(MUSIC_FIELDS) - set(value))
+        extra = sorted(set(value) - set(MUSIC_FIELDS))
         raise ValueError(f"expected exactly five music fields; missing={missing}, extra={extra}")
-    conditions = {field: str(value.get(field, "")).strip() for field in text_fields}
+    conditions = {field: str(value.get(field, "")).strip() for field in MUSIC_FIELDS}
     caption = compile_caption(conditions, min_words=40, max_words=300)
+    explicit = dict(explicit_conditions or {})
+    required_terms = explicit.pop("required_terms", [])
+    if isinstance(required_terms, str) or not isinstance(required_terms, list):
+        raise ValueError("required_terms must be a list of exact user-authoritative phrases")
+    required_terms = [str(term).strip() for term in required_terms if str(term).strip()]
+    missing_terms = [
+        term for term in required_terms
+        if not contains_required_term(caption, term)
+    ]
+    if missing_terms:
+        raise ValueError(
+            "enhanced caption weakened or omitted required user terms: "
+            + ", ".join(missing_terms)
+        )
     metadata = {
         "bpm": 128,
         "keyscale": "C minor",
         "timesignature": "4",
         "sections": list(DEFAULT_SECTIONS),
     }
-    metadata.update(explicit_conditions or {})
+    metadata.update(explicit)
     bpm = int(metadata["bpm"])
     if not 60 <= bpm <= 200:
         raise ValueError(f"bpm must be in 60..200, got {bpm}")
@@ -125,6 +146,7 @@ def validate_conditions(
         "timesignature": timesignature,
         "sections": sections,
         "lyrics": lyrics,
+        "required_terms": required_terms,
     }
 
 
@@ -140,7 +162,11 @@ def _request_once(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     system = (
         "You are a music prompt enhancer for an instrumental ACE-Step model. Convert the user's idea "
-        "into concrete audible musical attributes. Preserve every explicit user condition. Do not use "
+        "into concrete audible musical attributes. The user's idea is authoritative: preserve every "
+        "explicit condition, exact named instrument, genre, mood, arrangement request, production "
+        "request and negative condition. Never weaken or generalize a named instrument; for example, "
+        "do not replace pipa with plucked-string-like or dizi with flute-like. Add detail only when it "
+        "is compatible with the request. This is inference conditioning, not uncertain audio annotation. Do not use "
         "artist names, 'in the style of', quality hype, use cases, or claims that cannot be heard. Treat BPM, "
         "key, time signature and sections as external fixed conditions; do not repeat them as JSON fields. "
         "The five prose fields "
@@ -236,6 +262,12 @@ def main() -> int:
     parser.add_argument("--bpm", type=int)
     parser.add_argument("--keyscale")
     parser.add_argument("--timesignature")
+    parser.add_argument(
+        "--require-term",
+        action="append",
+        default=[],
+        help="Exact user-authoritative term that the enhanced caption must retain; repeatable.",
+    )
     parser.add_argument("--output")
     args = parser.parse_args()
     explicit = {
@@ -245,6 +277,7 @@ def main() -> int:
             "timesignature": args.timesignature,
         }.items() if value is not None
     }
+    explicit["required_terms"] = args.require_term
     result = enhance_prompt(
         args.idea,
         os.environ.get("OPENROUTER_API_KEY", ""),

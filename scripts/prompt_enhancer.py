@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compile only user-supplied musical facts into a 40-80 word training-style prompt."""
+"""Compile user-authoritative inference conditions without audio-annotation softening."""
 from __future__ import annotations
 
 import argparse

@@ -18,7 +18,12 @@ from annotate_openrouter import parse_json_content, sanitize_annotation, sanitiz
 from build_acestep_dataset import choose_splits, choose_window, render_audio  # noqa: E402
 from merge_tensors import write_loader_manifest  # noqa: E402
 from prompt_enhancer import compile_caption  # noqa: E402
-from enhance_prompt_openrouter import enhance_prompt, sections_to_lyrics  # noqa: E402
+from enhance_prompt_openrouter import (  # noqa: E402
+    contains_required_term,
+    enhance_prompt,
+    sections_to_lyrics,
+    validate_conditions,
+)
 from validate_tensors import expected_by_split  # noqa: E402
 from validate_smoke import resolve_adapter_dir  # noqa: E402
 from validate_training import select_checkpoints  # noqa: E402
@@ -98,12 +103,18 @@ class RecordPreservingTests(unittest.TestCase):
         result = enhance_prompt(
             "Chinese fantasy EDM with a pipa hook",
             "secret-test-key",
-            explicit_conditions={"bpm": 128, "keyscale": "F# minor", "timesignature": "4"},
+            explicit_conditions={
+                "bpm": 128,
+                "keyscale": "F# minor",
+                "timesignature": "4",
+                "required_terms": ["pipa", "dizi"],
+            },
             opener=fake_open,
         )
         self.assertEqual(result["conditions"]["bpm"], 128)
         self.assertEqual(result["conditions"]["keyscale"], "F# minor")
         self.assertEqual(result["resolved_model"], "google/gemini-test-resolved")
+        self.assertEqual(result["conditions"]["required_terms"], ["pipa", "dizi"])
         self.assertEqual(captured["payload"]["response_format"]["type"], "json_schema")
         self.assertTrue(captured["payload"]["response_format"]["json_schema"]["strict"])
         self.assertEqual(captured["payload"]["reasoning"], {"effort": "minimal", "exclude": True})
@@ -118,6 +129,18 @@ class RecordPreservingTests(unittest.TestCase):
             sections_to_lyrics(["Intro", "Drop"]),
             "[Intro]\n[Instrumental]\n\n[Drop]\n[Instrumental]\n",
         )
+
+    def test_openrouter_enhancer_rejects_weakened_required_instrument(self) -> None:
+        self.assertTrue(contains_required_term("A pipa hook answers a dizi phrase.", "pipa"))
+        self.assertFalse(contains_required_term("A pipa-like plucked hook answers a flute.", "pipa"))
+        with self.assertRaisesRegex(ValueError, "omitted required user terms: pipa"):
+            validate_conditions({
+                "genre": "Chinese melodic gaming EDM",
+                "mood": "uplifting and adventurous",
+                "melody": "A bright pentatonic plucked-string hook repeats with altered endings and airy flute responses",
+                "arrangement": "An atmospheric intro rises through a compact build into an energetic four-on-the-floor melodic drop",
+                "production": "Wide supersaw chords, clean sub bass, punchy electronic drums and spacious fantasy reverb support the melody",
+            }, {"required_terms": ["pipa"]})
 
     def test_release_delivery_sources_are_present(self) -> None:
         required = (

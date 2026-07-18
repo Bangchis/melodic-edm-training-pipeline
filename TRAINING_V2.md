@@ -25,7 +25,7 @@ Every record has one master annotation and exactly three captions in this fixed 
 
 Artist names and source titles are rejected from captions. BPM, key and time signature remain structured fields. Song form remains in the instrumental lyrics sidecar.
 
-MOSS prompt revision `audio-blind-v2.2` receives no title, artist, filename, MIR or prior annotation. This prevents plausible catalog context from anchoring the listener on instruments it has not actually heard. Before tensors are accepted, every named sound-source claim is checked by two differently worded full-track passes and an intro/middle/late montage. An exact name is retained when at least two views support it without a strong full-track contradiction; an absent claim is removed, while conflicting evidence is expressed as a precise `-like` timbre rather than asserted as a physical instrument. A final full-track compiler writes prompt-useful captions and a stratified listening audit requires acceptable fidelity and specificity.
+MOSS prompt revision `audio-blind-v2.2` receives no title, artist, filename, MIR or prior annotation. This prevents plausible catalog context from anchoring the listener on instruments it has not actually heard. Before tensors are accepted, every named sound-source claim is checked by two differently worded full-track passes and an intro/middle/late montage. An exact name is retained when at least two views support it without a strong full-track contradiction; an absent claim is removed. Conflicting evidence keeps the vocabulary token with an explicit `-like` qualifier, such as `pipa-like plucked lead`, rather than either asserting a physical pipa as fact or collapsing the label to a generic `plucked-string-like` phrase. A final full-track compiler writes prompt-useful captions and a stratified listening audit requires acceptable fidelity and specificity.
 
 Preprocessing stores one audio latent and three prompt embeddings per record. During training, the dataset chooses caption index 0, 1 or 2 uniformly at each load. CFG dropout is `0.15`. Validation always uses canonical index 0 and CFG dropout `0.0`.
 
@@ -131,7 +131,7 @@ Validation, logging, checkpointing and fixed-prompt sampling occur every five ep
 
 After checkpoint selection, the deployable `best-val` adapter, its three fixed audio examples, metrics, scripts and Colab notebook are packaged and uploaded to the private model repository. A clean immutable redownload must pass checksum verification and 48 kHz stereo inference before the fresh all-231 run is allowed to start. This provides an inference-ready preview while final retraining continues.
 
-Selection is not “last checkpoint wins.” Candidate ranking combines validation loss, MOSS audio-grounded listening scores, output diversity and a conservative training-feature similarity penalty. The machine report records that human listening was not completed, so the automated listener is never presented as a human judgment.
+Selection is not “last checkpoint wins.” Candidate ranking combines validation loss, MOSS audio-grounded listening scores, output diversity and a conservative training-feature similarity penalty. Every generated sample must score at least `3/5` for prompt alignment; a clean but off-prompt result is rejected even when its melody, structure and mix score highly. The machine report records that human listening was not completed, so the automated listener is never presented as a human judgment.
 
 ### Fresh all-data run
 
