@@ -830,6 +830,16 @@ class V2PipelineTest(unittest.TestCase):
             self.assertIn('scripts" / "prompt_enhancer.py', source)
             self.assertIn('scripts" / "enhance_prompt_openrouter.py', source)
 
+    def test_experimental_inference_hotfix_is_clean_verified(self) -> None:
+        source = (SCRIPTS / "publish_experimental_inference_hotfix.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("CommitOperationAdd", source)
+        self.assertIn("snapshot_download", source)
+        self.assertIn("SHA256SUMS", source)
+        self.assertIn("CUSTOM_SECTION_FIXTURE", source)
+        self.assertIn("custom_section_hotfix_verification.json", source)
+
     def test_colab_inference_overrides_notebook_only_matplotlib_backend(self) -> None:
         inference = (SCRIPTS / "infer_v2_release.py").read_text(encoding="utf-8")
         self.assertIn('os.environ["MPLBACKEND"] = "Agg"', inference)
