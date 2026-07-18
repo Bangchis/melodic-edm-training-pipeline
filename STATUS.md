@@ -67,19 +67,18 @@ is the best-validation checkpoint from epoch 45:
   tensors; the final adapter hash exactly matches the epoch-70 adapter.
 - The main training validator reports `status=pass`, and both RTX 4090s were
   observed at 100% utilization.
-- The final private metadata backup completed with 1,201 files at commit `6d4f061`
-  and zero secret findings; audio, tensors, model checkpoints and tokens were
-  excluded.
+- The final private metadata backup contains 1,201 files with zero secret findings;
+  audio, tensors, model checkpoints and tokens were excluded.
 - A 252 MB resumable epoch-70 checkpoint was uploaded to the private dataset
   `Bangchis/melodic-edm-training-resume` at commit `349b0ac`; it contains the LoRA,
   optimizer/scheduler state and safety metadata, with zero secret findings and no
   audio or preprocessed tensors.
 - Fixed-prompt comparison produced 9/9 distinct, fully decodable 30-second WAVs:
   three prompts across middle, best-validation and final checkpoints.
-- The 19-file `best_val` release passed its secret scan and every SHA-256 check, then
+- The 20-file `best_val` release passed its secret scan and every SHA-256 check, then
   uploaded to the private model repo `Bangchis/melodic-edm-core-v1` at commit
-  `4ca7240`.
-- A clean 20-file Hub snapshot (19 release files plus `.gitattributes`) was downloaded,
+  `4f73e54`.
+- A clean 21-file Hub snapshot (20 release files plus `.gitattributes`) was downloaded,
   its adapter hash matched the packaged adapter, every checksum passed, and clean
   inference produced a fully decodable 30-second 48 kHz stereo WAV.
 - The instance had about 217 GiB free after clean release verification.

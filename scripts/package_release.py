@@ -58,6 +58,7 @@ def main() -> int:
     copy_file(root / "configs" / "train_lora_2x4090.json", release / "training_config.json")
     copy_file(root / "configs" / "inference_config.json", release / "inference_config.json")
     copy_file(root / "configs" / "inference_prompts.json", release / "inference_prompts.json")
+    copy_file(root / "configs" / "inference_prompts.json", release / "examples" / "prompts.json")
     copy_file(root / "configs" / "release_requirements.txt", release / "requirements.txt")
     copy_file(root / "scripts" / "infer_release.py", release / "infer_release.py")
     copy_file(root / "scripts" / "infer_release.py", release / "scripts" / "infer.py")

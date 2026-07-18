@@ -202,7 +202,7 @@ it into a clean directory, verifies every packaged file against `SHA256SUMS`, an
 requires one valid 48 kHz stereo WAV.
 
 The release also includes `requirements.txt`, `inference_config.json`, the fixed
-prompt set, a direct inference entrypoint, a revision-pinned download-and-infer
+prompt set at both the inference root and `examples/prompts.json`, a direct inference entrypoint, a revision-pinned download-and-infer
 helper and a structured prompt compiler. These are delivery helpers only; they do
 not add more training configurations or alter checkpoint selection.
 
