@@ -1,0 +1,51 @@
+{
+  "release": "melodic-edm-core-v2",
+  "phase": "train-validation",
+  "base_model": "ACE-Step 1.5 XL-Base",
+  "base_model_variant": "xl_base",
+  "training_mode": "fixed",
+  "adapter": {
+    "type": "lora",
+    "rank": 48,
+    "alpha": 96,
+    "dropout": 0.1,
+    "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
+    "attention_scope": "shared_projections_cover_self_and_cross_attention",
+    "strict_scope_gate": true
+  },
+  "frozen": [
+    "xl_base_weights",
+    "vae",
+    "text_condition_encoder",
+    "ace_5hz_lm",
+    "moss_music"
+  ],
+  "data": {
+    "records": 231,
+    "train_records": 196,
+    "validation_records": 35,
+    "test_records": 0,
+    "group_key": "parent_song_id",
+    "caption_variants": ["canonical", "composition", "production"],
+    "train_prompt_selection": "uniform_random_per_load",
+    "validation_prompt_selection": "canonical_index_0"
+  },
+  "optimization": {
+    "learning_rate": 0.000075,
+    "cfg_dropout": 0.15,
+    "precision": "bf16",
+    "optimizer": "adamw",
+    "scheduler": "cosine",
+    "warmup_optimizer_steps": 75,
+    "gradient_checkpointing": true,
+    "batch_per_gpu": 1,
+    "gradient_accumulation": 8,
+    "gpus": 2,
+    "strategy": "ddp",
+    "effective_batch": 16,
+    "save_every_epochs": 5,
+    "validate_every_epochs": 5,
+    "sample_and_upload_every_epochs": 10,
+    "early_stopping_validation_checks": 5
+  }
+}
