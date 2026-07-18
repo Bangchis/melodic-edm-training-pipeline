@@ -38,6 +38,12 @@ def main() -> int:
     validation_losses = [float(value) for value in re.findall(r"Validation epoch \d+: ([0-9.eE+-]+)", log)]
     if not validation_losses or not all(math.isfinite(value) for value in validation_losses):
         errors.append("finite_validation_loss_history_missing")
+    validation_epochs = {
+        int(value) for value in re.findall(r"Validation epoch (\d+):", log)
+    }
+    required_epochs = {5, 10, 15, 20}
+    if validation_epochs != required_epochs:
+        errors.append(f"validation_epochs_invalid:{sorted(validation_epochs)}")
     if re.search(r"\b(?:OOM|out of memory|NaN|Inf)\b", log, flags=re.IGNORECASE):
         errors.append("fatal_numeric_or_memory_marker_in_log")
 
@@ -68,10 +74,15 @@ def main() -> int:
         path for path in (output / "checkpoints").glob("epoch_*_loss_*")
         if re.match(r"epoch_\d+_loss_", path.name)
     )
+    checkpoint_epochs: set[int] = set()
     for path in checkpoints:
         match = re.match(r"epoch_(\d+)_loss_", path.name)
         if not match or int(match.group(1)) % 5 != 0:
             errors.append(f"unexpected_checkpoint_epoch:{path.name}")
+        else:
+            checkpoint_epochs.add(int(match.group(1)))
+    if checkpoint_epochs != required_epochs:
+        errors.append(f"checkpoint_epochs_invalid:{sorted(checkpoint_epochs)}")
 
     stop_override_path = output / "training_stop_override.json"
     stop_override = (
@@ -92,6 +103,8 @@ def main() -> int:
         "best_validation_loss": validation.get("best_loss"),
         "latest_validation_loss": validation.get("latest_loss"),
         "validation_losses": validation_losses,
+        "validation_epochs": sorted(validation_epochs),
+        "checkpoint_epochs": sorted(checkpoint_epochs),
         "checkpoint_count": len(checkpoints),
         "best_adapter": adapter_summary,
         "last_adapter": final_summary,

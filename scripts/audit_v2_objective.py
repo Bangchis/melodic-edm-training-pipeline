@@ -77,7 +77,7 @@ def main() -> int:
     sync_state = load_json(root, sync_relative, errors)
     reports[sync_relative] = sync_state
     uploaded_epochs = {int(epoch) for epoch in sync_state.get("uploaded_epochs", {})}
-    if not sync_state.get("completed_at") or not uploaded_epochs:
+    if not sync_state.get("completed_at") or uploaded_epochs != {5, 10, 15, 20}:
         errors.append("private_checkpoint_sync_incomplete")
     if any(epoch % 5 for epoch in uploaded_epochs):
         errors.append(f"non_fifth_epoch_uploaded:{sorted(uploaded_epochs)}")
@@ -138,6 +138,11 @@ def main() -> int:
     smoke = reports["outputs/v2/smoke/smoke_validation_report.json"]
     if smoke.get("optimizer_steps") != 66 or not smoke.get("adapter_reload_verified"):
         errors.append("smoke_resume_or_reload_evidence_invalid")
+    training = reports["outputs/v2/train-validation/training_validation_report.json"]
+    if training.get("validation_epochs") != [5, 10, 15, 20]:
+        errors.append("required_validation_epochs_missing")
+    if training.get("checkpoint_epochs") != [5, 10, 15, 20]:
+        errors.append("required_checkpoint_epochs_missing")
     selection = reports["outputs/v2/checkpoint-evaluation/selection.json"]
     if (
         int(selection.get("best_optimizer_step", 0)) <= 0

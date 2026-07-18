@@ -54,6 +54,11 @@ class V2PipelineTest(unittest.TestCase):
         self.assertEqual(32, config["adapter"]["alpha"])
         self.assertEqual(20, config["optimization"]["maximum_epochs"])
         self.assertEqual(0.00005, config["optimization"]["learning_rate"])
+        trainer_patch = (
+            SCRIPTS.parent / "patches" / "acestep-xl-validation-caption-variants.patch"
+        ).read_text(encoding="utf-8")
+        self.assertIn("min(int(warmup_steps), max(1, int(total_steps) - 1))", trainer_patch)
+        self.assertIn("-    warmup_steps = min(warmup_steps, max(1, total_steps // 10))", trainer_patch)
 
     def test_orchestrator_json_gate_helpers(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -236,6 +241,8 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn("def sync_best", source)
         self.assertIn('path_in_repo="checkpoints/best_val"', source)
         self.assertIn("epoch % 5 == 0", source)
+        validator = (SCRIPTS / "validate_training_v2.py").read_text(encoding="utf-8")
+        self.assertIn("{5, 10, 15, 20}", validator)
 
     def test_user_cutoff_excludes_later_evaluation_checkpoints(self) -> None:
         source = (SCRIPTS / "evaluate_v2_checkpoints.py").read_text(encoding="utf-8")

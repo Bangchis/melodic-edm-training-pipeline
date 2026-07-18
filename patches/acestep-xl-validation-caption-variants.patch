@@ -232,6 +232,21 @@ index 0000000..545f17d
 +
 +if __name__ == "__main__":
 +    unittest.main()
+diff --git a/acestep/training_v2/optim.py b/acestep/training_v2/optim.py
+--- a/acestep/training_v2/optim.py
++++ b/acestep/training_v2/optim.py
+@@ -140,8 +140,9 @@ def build_scheduler(
+         scheduler_type = "constant"
+ 
+-    # Clamp warmup to avoid exceeding total
+-    warmup_steps = min(warmup_steps, max(1, total_steps // 10))
++    # Honor the configured optimizer-step warmup exactly. Only shorten it when
++    # the complete run itself is too short to leave at least one main-schedule step.
++    warmup_steps = max(1, min(int(warmup_steps), max(1, int(total_steps) - 1)))
+ 
+     warmup_sched = LinearLR(
+         optimizer,
+         start_factor=0.1,
 diff --git a/acestep/training_v2/cli/args.py b/acestep/training_v2/cli/args.py
 index 988ff2a..3368bb8 100644
 --- a/acestep/training_v2/cli/args.py
