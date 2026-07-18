@@ -23,7 +23,11 @@ def prompt_for(record: dict[str, Any]) -> str:
         "Prompt alignment means audible compliance, melody means coherence and memorability, "
         "structure means clear development and section contrast, and audio quality means absence "
         "of clipping, collapse, harsh artifacts or obvious generation failures. Do not reward "
-        "artist similarity and do not infer hidden metadata.\nRequested prompt: " + record["prompt"]
+        "artist similarity and do not infer hidden metadata. Return a single JSON object without "
+        "Markdown or commentary. Required shape: "
+        '{"prompt_alignment": 1, "melody": 1, "structure": 1, "audio_quality": 1, '
+        '"evidence": {"prompt_alignment": "...", "melody": "...", "structure": "...", '
+        '"audio_quality": "..."}}.\nRequested prompt: ' + record["prompt"]
     )
 
 
@@ -51,6 +55,7 @@ def parse_score(value: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project-root", default=".")
+    parser.add_argument("--attempts", type=int, default=4)
     args = parser.parse_args()
     root = Path(args.project_root).resolve()
     evaluation = root / "outputs" / "v2" / "checkpoint-evaluation"
@@ -59,12 +64,29 @@ def main() -> int:
         raise RuntimeError("checkpoint generation gate has not passed")
     model_path = root / "checkpoints" / "MOSS-Music-8B-Thinking"
     model, processor = load_runtime(model_path)
+    report_path = evaluation / "listening_scores.json"
+    previous = {}
+    if report_path.is_file():
+        try:
+            previous = json.loads(report_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            previous = {}
+    cached = {
+        (row.get("checkpoint"), row.get("prompt_id")): row
+        for row in previous.get("results", [])
+        if isinstance(row, dict) and row.get("checkpoint") and row.get("prompt_id")
+    }
     results = []
     errors = []
     for index, record in enumerate(generation["results"], 1):
+        cache_key = (record["checkpoint"], record["prompt_id"])
+        if cache_key in cached:
+            results.append(cached[cache_key])
+            print(f"[{index}/{len(generation['results'])}] {record['checkpoint']} {record['prompt_id']} CACHED", flush=True)
+            continue
         request = prompt_for(record)
         last_error = ""
-        for attempt in range(1, 3):
+        for attempt in range(1, max(1, args.attempts) + 1):
             response = generate(model, processor, Path(record["audio_path"]), request, 700)
             try:
                 score, validation_errors = parse_score(extract_json_object(response))
@@ -81,6 +103,14 @@ def main() -> int:
                     **score,
                 }
                 results.append(result)
+                atomic_json(report_path, {
+                    "status": "in_progress",
+                    "judge": "MOSS-Music-8B-Thinking audio-grounded fixed-prompt scoring",
+                    "score_scale": [1, 5],
+                    "dimensions": list(SCORE_FIELDS),
+                    "results": results,
+                    "errors": [],
+                })
                 print(f"[{index}/{len(generation['results'])}] {record['checkpoint']} {record['prompt_id']} PASS", flush=True)
                 break
             except (ValueError, KeyError, TypeError) as exc:
@@ -100,7 +130,7 @@ def main() -> int:
         "results": results,
         "errors": errors,
     }
-    atomic_json(evaluation / "listening_scores.json", report)
+    atomic_json(report_path, report)
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0 if report["status"] == "pass" else 1
 

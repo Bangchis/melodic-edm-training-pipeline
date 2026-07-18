@@ -187,6 +187,12 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn("evidence_structure_missing", errors)
         self.assertIn("evidence_audio_quality_missing", errors)
 
+    def test_moss_checkpoint_scoring_is_resumable(self) -> None:
+        source = (SCRIPTS / "score_v2_checkpoints_moss.py").read_text(encoding="utf-8")
+        self.assertIn('previous.get("results", [])', source)
+        self.assertIn('status": "in_progress"', source)
+        self.assertIn(" CACHED", source)
+
 
 if __name__ == "__main__":
     unittest.main()
