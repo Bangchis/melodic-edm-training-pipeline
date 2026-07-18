@@ -40,7 +40,7 @@ The five persistent-vocal rejects are:
   Three malformed-schema cases passed after a supervised 90-second representative
   audio-window retry; all other local windows used up to 240 seconds.
 - MOSS-Music was not used, is not loaded, and is not part of ACE-Step training or
-  the planned release.
+  the release.
 - Every record has exactly four variants (`full`, `composition`, `production`,
   `tags`). The full variant exactly equals its canonical caption.
 - Final canonical captions range from 43 to 76 words (mean 59.06).
@@ -50,25 +50,39 @@ The five persistent-vocal rejects are:
   rejected or sanitized from training captions.
 - Final annotation gate: `status=pass`, 0 errors and 0 warnings.
 
-## Active stage
+## Completed training and release
 
-`edm-train-main` is running the single fixed two-GPU LoRA configuration. The
-one-epoch DDP smoke gate passed before main training was allowed to start.
+`edm-train-main` completed the single fixed two-GPU LoRA configuration and exited
+normally after early stopping at epoch 70 / global step 910. The one-epoch DDP smoke
+gate passed before main training was allowed to start.
 
-The latest verified resumable main checkpoint is epoch 45 / global step 585:
+The latest verified resumable checkpoint is epoch 70; the selected release adapter
+is the best-validation checkpoint from epoch 45:
 
-- Train loss: 0.7085 (down from 1.4926 at epoch 1).
-- Validation loss: 0.6984, current best at epoch 45; the early-stopping counter
-  reset to zero at this checkpoint.
+- Epoch-70 train loss: 0.7344 (down from 1.4926 at epoch 1).
+- Epoch-70 validation loss: 0.7282. Best validation loss: 0.6984 at epoch 45.
+- Early stopping triggered after five validation checks without improvement.
 - Training state contains optimizer and scheduler state.
-- Both the epoch and `best_val` adapters contain 512/512 finite, nonzero tensors.
-- Main output size was 2.4 GiB and the instance had about 219 GiB free.
-- A fresh private metadata backup completed with 1,200 files and zero secret
-  findings; audio, tensors, model checkpoints and tokens were excluded.
-- A 252 MB resumable epoch-45 checkpoint was also uploaded to the private dataset
-  `Bangchis/melodic-edm-training-resume` at commit `5566dd2`; it contains the LoRA,
+- The middle, `best_val` and final adapters each contain 512/512 finite, nonzero
+  tensors; the final adapter hash exactly matches the epoch-70 adapter.
+- The main training validator reports `status=pass`, and both RTX 4090s were
+  observed at 100% utilization.
+- The final private metadata backup completed with 1,201 files at commit `6d4f061`
+  and zero secret findings; audio, tensors, model checkpoints and tokens were
+  excluded.
+- A 252 MB resumable epoch-70 checkpoint was uploaded to the private dataset
+  `Bangchis/melodic-edm-training-resume` at commit `349b0ac`; it contains the LoRA,
   optimizer/scheduler state and safety metadata, with zero secret findings and no
   audio or preprocessed tensors.
+- Fixed-prompt comparison produced 9/9 distinct, fully decodable 30-second WAVs:
+  three prompts across middle, best-validation and final checkpoints.
+- The 19-file `best_val` release passed its secret scan and every SHA-256 check, then
+  uploaded to the private model repo `Bangchis/melodic-edm-core-v1` at commit
+  `4ca7240`.
+- A clean 20-file Hub snapshot (19 release files plus `.gitattributes`) was downloaded,
+  its adapter hash matched the packaged adapter, every checksum passed, and clean
+  inference produced a fully decodable 30-second 48 kHz stereo WAV.
+- The instance had about 217 GiB free after clean release verification.
 
 Dataset construction and preprocessing are complete:
 
@@ -94,8 +108,8 @@ at major gates before later destructive instance actions.
   `6d467e4b5081ccb0abf1ec1bf4fdf9051a2d34b0`.
 - XL-Base, VAE, Qwen embedding checkpoints and the pinned Qwen2.5-Omni annotator are
   downloaded on the server only.
-- Focused pipeline tests: 26 passed on Vast. Full ACE-Step training-v2
-  tests: 37 passed.
+- Focused pipeline tests: 26 passed on Vast. Full ACE-Step training-v2 tests:
+  38 passed plus 8 subtests.
 - The fixed training config is XL-Base LoRA rank 32 / alpha 64 / dropout 0.1,
   learning rate 1e-4, effective batch 16, CFG dropout 0.15 and two-GPU DDP.
 - Smoke passed after 13 optimizer steps: finite train loss 1.3718, validation loss
@@ -104,12 +118,10 @@ at major gates before later destructive instance actions.
 - Smoke and main training gates verify both GPUs, finite loss, readable/non-empty
   adapters, resumable state and the real nested PEFT adapter layout.
 
-## Remaining sequence
+## Remaining operational choices
 
-1. Run the single fixed 150-epoch LoRA training configuration with validation,
-   best-checkpoint selection and early stopping.
-2. Compare middle, best-validation and final checkpoints with three fixed prompts.
-3. Package safe code/LoRA/config/examples, upload private artifacts, redownload into
-   a clean directory and verify inference.
-
-Do not upload raw/separated audio, dataset tensors, cookies or secrets.
+The required pipeline sequence is complete. Optional user actions are to listen to
+the three packaged examples, merge draft PR #1, and stop the Vast instance when it
+is no longer needed. Do not destroy the instance until the private Hub/GitHub copies
+are confirmed accessible from the user's account. Raw/separated audio, dataset
+tensors, cookies and secrets remain server-only and were not published.
