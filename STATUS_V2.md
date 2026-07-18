@@ -29,12 +29,12 @@ Last reconciled: 2026-07-18 (Asia/Ho_Chi_Minh)
 - Best-step selection and fresh all-231 step scaling.
 - Private Hugging Face packaging/upload and clean-redownload verification jobs.
 - Detailed training guide, model card and Colab Pro inference notebook.
-- Seven focused V2 pipeline unit tests pass locally and on Vast.
+- Eight focused V2 pipeline unit tests pass locally and on Vast.
 
 ## Next automatic gates
 
 1. Finish all 231 MOSS supplements with no schema errors.
-2. Merge annotations and verify exact three-caption coverage plus 196/35 grouped split.
+2. Validate all MOSS hashes/schemas, then merge annotations and verify exact three-caption coverage plus 196/35 grouped split.
 3. Preprocess and validate 196 train, 35 validation and 231 all-data tensors.
 4. Run the 66-step smoke; do not start main training unless it passes.
 5. Run one fixed train/validation configuration, score fixed checkpoints and select the best optimizer step.

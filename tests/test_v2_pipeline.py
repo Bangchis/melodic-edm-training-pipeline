@@ -18,6 +18,7 @@ from v2_common import (  # noqa: E402
     validate_caption_set,
 )
 from annotate_moss_music import validate_supplement  # noqa: E402
+from score_v2_checkpoints_moss import parse_score  # noqa: E402
 
 
 def words(prefix: str, count: int) -> str:
@@ -111,6 +112,19 @@ class V2PipelineTest(unittest.TestCase):
             supplement["audible_facts"]["genre_and_style"],
         )
         self.assertEqual([], supplement["audible_facts"]["uncertain_or_conflicting_facts"])
+
+    def test_moss_checkpoint_score_requires_evidence_per_dimension(self) -> None:
+        score, errors = parse_score({
+            "prompt_alignment": 4,
+            "melody": 4,
+            "structure": 3,
+            "audio_quality": 5,
+            "evidence": {"prompt_alignment": "Audible prompt instruments are present."},
+        })
+        self.assertEqual(4, score["scores"]["prompt_alignment"])
+        self.assertIn("evidence_melody_missing", errors)
+        self.assertIn("evidence_structure_missing", errors)
+        self.assertIn("evidence_audio_quality_missing", errors)
 
 
 if __name__ == "__main__":

@@ -121,6 +121,7 @@ final_steps = round(best_optimizer_step × 231 / 196)
 
 ```bash
 supervisorctl start edm-v2-train-final
+supervisorctl start edm-v2-evaluate-final
 ```
 
 The final job refuses to resume or overwrite an existing final run. It reloads the pristine XL-Base model, creates a fresh rank-48 LoRA, trains on all 231 records with no validation split, and stops at the exact scaled optimizer step.

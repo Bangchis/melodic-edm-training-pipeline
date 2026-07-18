@@ -106,10 +106,13 @@ def main() -> int:
     listening = read_gate(evaluation_root / "listening_scores.json")
     selection = read_gate(evaluation_root / "selection.json")
     final = read_gate(root / "outputs" / "v2" / "final-all-data" / "final_validation_report.json")
+    final_generation = read_gate(
+        root / "outputs" / "v2" / "final-all-data" / "evaluation" / "generation_report.json"
+    )
 
     release = root / "outputs" / "release" / "melodic-edm-core-v2"
     if release.exists():
-        shutil.rmtree(release)
+        raise FileExistsError(f"refusing to overwrite existing V2 release: {release}")
     release.mkdir(parents=True)
     copy_adapter(root / "outputs" / "v2" / "best-val", release / "best-val")
     copy_adapter(
@@ -122,6 +125,9 @@ def main() -> int:
         (root / "TRAINING_V2.md", release / "docs" / "TRAINING_V2.md"),
         (root / "COLAB_INFERENCE_V2.md", release / "docs" / "COLAB_INFERENCE_V2.md"),
         (root / "notebooks" / "melodic_edm_core_v2_colab.ipynb", release / "notebooks" / "melodic_edm_core_v2_colab.ipynb"),
+        (root / "configs" / "v2" / "train_val.json", release / "training_config.json"),
+        (root / "configs" / "v2" / "final_all_data.json", release / "final_training_config.json"),
+        (root / "configs" / "v2" / "inference_config.json", release / "inference_config.json"),
         (root / "configs" / "v2" / "train_val.json", release / "configs" / "train_val.json"),
         (root / "configs" / "v2" / "final_all_data.json", release / "configs" / "final_all_data.json"),
         (root / "configs" / "v2" / "inference_config.json", release / "configs" / "inference_config.json"),
@@ -136,9 +142,26 @@ def main() -> int:
     atomic_json(release / "reports" / "training_validation_report.json", sanitized_training_report(training))
     atomic_json(release / "reports" / "selection.json", sanitized_selection(selection))
     atomic_json(release / "reports" / "final_validation_report.json", final)
+    atomic_json(release / "reports" / "final_generation_report.json", {
+        **final_generation,
+        "results": [
+            {key: item for key, item in row.items() if key != "audio_path"}
+            for row in final_generation.get("results", [])
+        ],
+    })
     atomic_json(release / "reports" / "listening_scores.json", sanitized_listening(listening))
     for name in ("metrics_history.jsonl", "validation_state.json", "prompt_selection_counts.json"):
         copy_file(train_root / name, release / "metrics" / name)
+    final_root = root / "outputs" / "v2" / "final-all-data"
+    for source_name, destination_name in (
+        ("metrics_history.jsonl", "final_all_data_metrics_history.jsonl"),
+        ("prompt_selection_counts.json", "final_all_data_prompt_selection_counts.json"),
+    ):
+        copy_file(final_root / source_name, release / "metrics" / destination_name)
+    copy_file(
+        root / "outputs" / "v2" / "final_plan.json",
+        release / "reports" / "final_plan.json",
+    )
 
     examples = [
         row for row in generation["results"]
@@ -156,6 +179,20 @@ def main() -> int:
             "source_checkpoint": selection["selected_checkpoint"],
             "optimizer_step": row["optimizer_step"],
             "path": f"examples/best-val/{name}",
+            "probe": row["probe"],
+        })
+    final_examples = final_generation.get("results", [])
+    if len(final_examples) != 3:
+        raise RuntimeError(f"expected 3 final-all-data examples, found {len(final_examples)}")
+    for row in final_examples:
+        name = f"{row['prompt_id']}.wav"
+        copy_file(Path(row["audio_path"]), release / "examples" / "final-all-data" / name)
+        example_manifest.append({
+            "prompt_id": row["prompt_id"],
+            "seed": row["seed"],
+            "source_checkpoint": "final-all-data",
+            "optimizer_step": final["observed_optimizer_steps"],
+            "path": f"examples/final-all-data/{name}",
             "probe": row["probe"],
         })
     atomic_json(release / "examples" / "manifest.json", example_manifest)

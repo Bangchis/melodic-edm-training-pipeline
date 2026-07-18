@@ -39,6 +39,7 @@ final-all-data/
 configs/
 docs/
 examples/best-val/
+examples/final-all-data/
 metrics/
 notebooks/melodic_edm_core_v2_colab.ipynb
 reports/

@@ -40,6 +40,11 @@ def parse_score(value: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             errors.append(f"{field}_outside_1_5")
         scores[field] = score
     evidence = value.get("evidence") if isinstance(value.get("evidence"), dict) else {}
+    for field in SCORE_FIELDS:
+        detail = str(evidence.get(field) or "").strip()
+        if not detail:
+            errors.append(f"evidence_{field}_missing")
+        evidence[field] = detail
     return {"scores": scores, "evidence": evidence}, errors
 
 
