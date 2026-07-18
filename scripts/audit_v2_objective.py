@@ -48,6 +48,9 @@ def main() -> int:
         "outputs/v2/checkpoint-evaluation/listening_scores.json",
         "outputs/v2/checkpoint-evaluation/selection.json",
         "outputs/v2/checkpoint-evaluation/hf_evaluation_upload_report.json",
+        "outputs/release/melodic-edm-core-v2-preview/preview_report.json",
+        "outputs/v2/checkpoint-evaluation/preview_upload_report.json",
+        "outputs/v2/checkpoint-evaluation/preview_clean_verification_report.json",
         "outputs/v2/final-all-data/final_validation_report.json",
         "outputs/v2/final-all-data/evaluation/generation_report.json",
         "outputs/release/melodic-edm-core-v2/release_report.json",
@@ -115,6 +118,15 @@ def main() -> int:
     selection = reports["outputs/v2/checkpoint-evaluation/selection.json"]
     if int(selection.get("best_optimizer_step", 0)) <= 0:
         errors.append("best_optimizer_step_invalid")
+    preview_upload = reports["outputs/v2/checkpoint-evaluation/preview_upload_report.json"]
+    preview_clean = reports["outputs/v2/checkpoint-evaluation/preview_clean_verification_report.json"]
+    if preview_upload.get("private") is not True or not preview_upload.get("sha"):
+        errors.append("best_val_preview_not_private_or_unpinned")
+    if (
+        preview_clean.get("verified_revision") != preview_upload.get("sha")
+        or not preview_clean.get("adapter_hash_match")
+    ):
+        errors.append("best_val_preview_clean_verification_invalid")
     final = reports["outputs/v2/final-all-data/final_validation_report.json"]
     if final.get("records") != 231 or final.get("initialization") != "fresh_xl_base_and_fresh_rank48_lora":
         errors.append("fresh_final_training_evidence_invalid")

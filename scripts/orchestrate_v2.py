@@ -204,6 +204,22 @@ def main() -> int:
         evaluation / "hf_evaluation_upload_report.json",
         "private-evaluation-upload",
     )
+    preview = root / "outputs" / "release" / "melodic-edm-core-v2-preview"
+    run_stage(
+        "edm-v2-package-preview",
+        preview / "preview_report.json",
+        "best-val-preview-package",
+    )
+    run_stage(
+        "edm-v2-upload-preview",
+        evaluation / "preview_upload_report.json",
+        "best-val-preview-upload",
+    )
+    run_stage(
+        "edm-v2-verify-preview",
+        evaluation / "preview_clean_verification_report.json",
+        "best-val-preview-clean-inference",
+    )
     run_stage(
         "edm-v2-train-final",
         root / "outputs" / "v2" / "final-all-data" / "final_validation_report.json",

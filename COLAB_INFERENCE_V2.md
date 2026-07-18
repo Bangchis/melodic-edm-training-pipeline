@@ -1,6 +1,6 @@
 # Colab Pro inference for Melodic EDM Core V2
 
-This path is inference-only. It does not install MOSS, load the training tensors or continue LoRA training. The default adapter is `final-all-data`; `best-val` remains available for comparison.
+This path is inference-only. It does not install MOSS, load the training tensors or continue LoRA training. Before final retraining completes, the notebook automatically uses the published `best-val` preview. After `final-all-data` is present, it becomes the default while `best-val` remains available for comparison.
 
 ## How Colab Pro is authenticated
 
@@ -57,7 +57,7 @@ Use `notebooks/melodic_edm_core_v2_colab.ipynb`. It performs these gates in orde
 5. Download the core ACE-Step checkpoints and pinned XL-Base weights.
 6. Resolve the private V2 release to one immutable commit and download exactly that revision.
 7. Verify every release file with `SHA256SUMS`.
-8. Load either `final-all-data` or `best-val`.
+8. Load `final-all-data` when present, otherwise fall back explicitly to the verified `best-val` preview.
 9. Generate deterministic 48 kHz stereo WAV using an explicit caption.
 10. Inspect and play the result inside Colab.
 

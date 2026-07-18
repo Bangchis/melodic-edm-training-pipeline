@@ -37,6 +37,8 @@ class RecordPreservingTests(unittest.TestCase):
             "edm-v2-train-final.sh",
             "edm-v2-evaluate-checkpoints.sh",
             "edm-v2-evaluate-final.sh",
+            "edm-v2-upload-preview.sh",
+            "edm-v2-verify-preview.sh",
         )
         for name in wrappers:
             source = (ROOT / "server" / "supervisor" / name).read_text(encoding="utf-8")

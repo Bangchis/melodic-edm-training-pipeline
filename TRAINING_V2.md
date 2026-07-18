@@ -117,6 +117,8 @@ supervisorctl start edm-v2-upload-evaluation
 
 Validation, logging and checkpointing occur every five epochs. Every tenth checkpoint is synchronized to the private training repository and later receives the same three fixed prompt/seed audio samples plus MOSS listening evidence.
 
+After checkpoint selection, the deployable `best-val` adapter, its three fixed audio examples, metrics, scripts and Colab notebook are packaged and uploaded to the private model repository. A clean immutable redownload must pass checksum verification and 48 kHz stereo inference before the fresh all-231 run is allowed to start. This provides an inference-ready preview while final retraining continues.
+
 Selection is not “last checkpoint wins.” Candidate ranking combines validation loss, MOSS audio-grounded listening scores, output diversity and a conservative training-feature similarity penalty. The machine report records that human listening was not completed, so the automated listener is never presented as a human judgment.
 
 ### Fresh all-data run

@@ -42,6 +42,11 @@ class V2PipelineTest(unittest.TestCase):
             config["adapter"]["attention_scope"],
         )
 
+    def test_preview_is_verified_before_final_training(self) -> None:
+        source = (SCRIPTS / "orchestrate_v2.py").read_text(encoding="utf-8")
+        self.assertLess(source.index('"edm-v2-upload-preview"'), source.index('"edm-v2-train-final"'))
+        self.assertLess(source.index('"edm-v2-verify-preview"'), source.index('"edm-v2-train-final"'))
+
     def test_tensor_merger_replaces_unsafe_symlink_with_hardlink(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
