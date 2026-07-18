@@ -634,6 +634,23 @@ class V2PipelineTest(unittest.TestCase):
             ),
         )
 
+    def test_broader_string_wording_requires_supported_specific_track_claim(self) -> None:
+        self.assertEqual(
+            [],
+            unverified_new_claims(
+                "Plucked strings carry the accompaniment.",
+                [{
+                    "claim": "plucked string instrument",
+                    "decision": "present",
+                    "audible_alternative": "",
+                }],
+            ),
+        )
+        self.assertEqual(
+            ["strings"],
+            unverified_new_claims("Strings carry the accompaniment.", []),
+        )
+
     def test_caption_fusion_uses_old_song_prompt_and_independent_audio_facts(self) -> None:
         annotation = {
             "master_annotation": {

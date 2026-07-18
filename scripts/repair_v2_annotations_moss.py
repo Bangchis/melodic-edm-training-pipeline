@@ -119,6 +119,14 @@ GENERIC_TIMBRE_CLAIMS = frozenset({
     "synth pad",
 })
 
+# Narrow, one-way wording entailments. These never add a required keyword;
+# they only allow a broader phrase when this exact track has a supported,
+# more-specific source claim.
+SUPPORTED_CLAIM_ENTAILMENTS: dict[str, frozenset[str]] = {
+    "plucked string instrument": frozenset({"strings"}),
+    "orchestral strings": frozenset({"strings"}),
+}
+
 
 def exact_claim_asserted(text: str, claim: str) -> bool:
     """Return True for an exact-name assertion, excluding an explicit ``-like`` qualifier."""
@@ -196,12 +204,14 @@ def unverified_new_claims(text: str, decisions: list[dict[str, Any]]) -> list[st
     """
     allowed = {str(item.get("claim") or "").casefold() for item in decisions}
     for item in decisions:
-        claim = str(item.get("claim") or "")
+        claim = str(item.get("claim") or "").casefold()
         alternative = str(item.get("audible_alternative") or "")
         allowed.update(
             term for term in CLAIM_DISCOVERY_TERMS
             if exact_claim_asserted(claim, term) or exact_claim_asserted(alternative, term)
         )
+        if str(item.get("decision") or "").casefold() == "present":
+            allowed.update(SUPPORTED_CLAIM_ENTAILMENTS.get(claim, ()))
     return [
         term for term in CLAIM_DISCOVERY_TERMS
         if (
