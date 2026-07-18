@@ -8,10 +8,11 @@ from pathlib import Path
 from typing import Any
 
 from annotate_moss_music import generate, load_runtime
-from v2_common import atomic_json, extract_json_object
+from v2_common import atomic_json, extract_json_object, file_sha256, object_sha256
 
 
 SCORE_FIELDS = ("prompt_alignment", "melody", "structure", "audio_quality")
+SCORER_REVISION = "fixed-prompt-audio-judge-v2.2"
 
 
 def prompt_for(record: dict[str, Any]) -> str:
@@ -120,8 +121,19 @@ def main() -> int:
     errors = []
     for index, record in enumerate(generation["results"], 1):
         cache_key = (record["checkpoint"], record["prompt_id"], record.get("lora_scale"))
-        if cache_key in cached:
-            results.append(cached[cache_key])
+        audio_sha256 = file_sha256(Path(record["audio_path"]))
+        prompt_sha256 = object_sha256({
+            "prompt": record["prompt"],
+            "scorer_revision": SCORER_REVISION,
+        })
+        cached_row = cached.get(cache_key)
+        if (
+            cached_row
+            and cached_row.get("scorer_revision") == SCORER_REVISION
+            and cached_row.get("audio_sha256") == audio_sha256
+            and cached_row.get("prompt_sha256") == prompt_sha256
+        ):
+            results.append(cached_row)
             print(f"[{index}/{len(generation['results'])}] {record['checkpoint']} {record['prompt_id']} CACHED", flush=True)
             continue
         request = prompt_for(record)
@@ -139,6 +151,9 @@ def main() -> int:
                     "prompt_id": record["prompt_id"],
                     "lora_scale": record.get("lora_scale"),
                     "audio_path": record["audio_path"],
+                    "audio_sha256": audio_sha256,
+                    "prompt_sha256": prompt_sha256,
+                    "scorer_revision": SCORER_REVISION,
                     "judge_model": "OpenMOSS-Team/MOSS-Music-8B-Thinking",
                     "judge_model_revision": "2ce899988b94b8ecc5dd0dacbc5ce1874d3500e3",
                     **score,
@@ -147,6 +162,7 @@ def main() -> int:
                 atomic_json(report_path, {
                     "status": "in_progress",
                     "judge": "MOSS-Music-8B-Thinking audio-grounded fixed-prompt scoring",
+                    "scorer_revision": SCORER_REVISION,
                     "score_scale": [1, 5],
                     "dimensions": list(SCORE_FIELDS),
                     "results": results,
@@ -166,6 +182,7 @@ def main() -> int:
     report = {
         "status": "pass" if not errors and len(results) == len(generation["results"]) else "failed",
         "judge": "MOSS-Music-8B-Thinking audio-grounded fixed-prompt scoring",
+        "scorer_revision": SCORER_REVISION,
         "score_scale": [1, 5],
         "dimensions": list(SCORE_FIELDS),
         "results": results,

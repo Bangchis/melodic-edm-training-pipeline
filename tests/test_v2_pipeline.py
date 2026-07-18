@@ -518,6 +518,9 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn('previous.get("results", [])', source)
         self.assertIn('status": "in_progress"', source)
         self.assertIn(" CACHED", source)
+        self.assertIn("SCORER_REVISION", source)
+        self.assertIn('cached_row.get("audio_sha256") == audio_sha256', source)
+        self.assertIn('cached_row.get("prompt_sha256") == prompt_sha256', source)
 
     def test_checkpoint_selector_does_not_amplify_trivial_diversity_noise(self) -> None:
         source = (SCRIPTS / "select_v2_checkpoint.py").read_text(encoding="utf-8")
