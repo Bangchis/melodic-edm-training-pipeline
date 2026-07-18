@@ -88,7 +88,10 @@ def main() -> int:
 
     per_rank_microbatches = math.ceil(tensor_expectations["tensors_train_unique"] / 2)
     tail_microbatches = per_rank_microbatches % 8
+    final_per_rank_microbatches = math.ceil(tensor_expectations["tensors_all_unique"] / 2)
+    final_tail_microbatches = final_per_rank_microbatches % 8
     helper_checks: dict[str, object] = {}
+    final_helper_checks: dict[str, object] = {}
     if helper_path.is_file():
         sys.path.insert(0, str(vendor))
         try:
@@ -116,6 +119,27 @@ def main() -> int:
                 errors.append("ddp_tail_sync_semantics_invalid")
             if scale != 2.0 or float(parameter.grad.item()) != 1.0:
                 errors.append("ddp_tail_gradient_rescale_invalid")
+
+            final_parameter = torch.nn.Parameter(torch.ones(1))
+            final_parameter.grad = torch.tensor([0.625])
+            final_scale = rescale_remainder_gradients(
+                [final_parameter], final_tail_microbatches, 8
+            )
+            final_sync = should_sync_gradient(
+                final_tail_microbatches - 1,
+                8,
+                final_per_rank_microbatches - 1,
+                final_per_rank_microbatches,
+            )
+            final_helper_checks = {
+                "final_tail_forces_sync": final_sync,
+                "remainder_gradient_scale": final_scale,
+                "gradient_after_rescale": float(final_parameter.grad.item()),
+            }
+            if not final_sync:
+                errors.append("final_all_data_ddp_tail_sync_semantics_invalid")
+            if abs(final_scale - 1.6) > 1e-9 or float(final_parameter.grad.item()) != 1.0:
+                errors.append("final_all_data_ddp_tail_gradient_rescale_invalid")
         except Exception as exc:  # the report must preserve the exact failed gate
             errors.append(f"helper_runtime_failure:{type(exc).__name__}:{exc}")
 
@@ -134,8 +158,11 @@ def main() -> int:
         "per_rank_microbatches": per_rank_microbatches,
         "gradient_accumulation": 8,
         "tail_microbatches": tail_microbatches,
+        "final_per_rank_microbatches": final_per_rank_microbatches,
+        "final_tail_microbatches": final_tail_microbatches,
         "validation_sampler": "full_33_records_on_each_rank_without_padding",
         "helper_checks": helper_checks,
+        "final_helper_checks": final_helper_checks,
         "errors": errors,
     }
     atomic_json(report_path, report)

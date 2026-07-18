@@ -182,6 +182,14 @@ def main() -> int:
         or helper_checks.get("remainder_gradient_scale") != 2.0
     ):
         errors.append("ddp_remainder_runtime_proof_invalid")
+    final_helper_checks = trainer_runtime.get("final_helper_checks", {})
+    if (
+        trainer_runtime.get("final_per_rank_microbatches") != 109
+        or trainer_runtime.get("final_tail_microbatches") != 5
+        or final_helper_checks.get("final_tail_forces_sync") is not True
+        or abs(float(final_helper_checks.get("remainder_gradient_scale", 0.0)) - 1.6) > 1e-9
+    ):
+        errors.append("final_all_data_ddp_remainder_runtime_proof_invalid")
     tensors = reports["data_v2/tensor_validation_report.json"]
     dataset_build = reports["data_v2/dataset_build_report.json"]
     if (tensors.get("train_tensors"), tensors.get("validation_tensors"), tensors.get("all_tensors")) != (196, 35, 231):

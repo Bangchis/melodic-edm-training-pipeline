@@ -174,6 +174,7 @@ class V2PipelineTest(unittest.TestCase):
             "rescale_remainder_gradients(",
             "use_distributed_sampler=False",
             '"tail_microbatches": tail_microbatches',
+            '"final_tail_microbatches": final_tail_microbatches',
         ):
             self.assertIn(marker, audit)
         for name in ("smoke", "main", "final"):
@@ -183,6 +184,7 @@ class V2PipelineTest(unittest.TestCase):
             self.assertIn("audit_v2_trainer_runtime.py", launcher)
         objective = (SCRIPTS / "audit_v2_objective.py").read_text(encoding="utf-8")
         self.assertIn("ddp_remainder_runtime_proof_invalid", objective)
+        self.assertIn("final_all_data_ddp_remainder_runtime_proof_invalid", objective)
 
     def test_robust_eval_prompts_match_training_form_density(self) -> None:
         config = json.loads(
