@@ -38,6 +38,7 @@ from verify_v2_audio_claims_moss import (  # noqa: E402
 )
 from orchestrate_v2 import archive_stale_training_outputs, json_pass, json_value  # noqa: E402
 from v2_listening_quality import summarize_quality  # noqa: E402
+from validate_v2_listening_quality import compare_prompt_alignment  # noqa: E402
 
 
 def words(prefix: str, count: int) -> str:
@@ -395,6 +396,29 @@ class V2PipelineTest(unittest.TestCase):
         }]
         self.assertTrue(summarize_quality(records, profile="baseline")["quality_accepted"])
         self.assertFalse(summarize_quality(records, profile="candidate")["quality_accepted"])
+
+    def test_final_prompt_alignment_cannot_materially_regress_from_best_val(self) -> None:
+        base_quality = {
+            "status": "pass", "quality_accepted": True, "errors": [],
+        }
+        current = [{"scores": {"prompt_alignment": score}} for score in (4, 4, 4)]
+        reference = [
+            {"checkpoint": "best", "scores": {"prompt_alignment": score}}
+            for score in (5, 4, 4)
+        ]
+        accepted = compare_prompt_alignment(
+            base_quality, current, reference,
+            reference_checkpoint="best", maximum_regression=0.34,
+        )
+        self.assertTrue(accepted["quality_accepted"])
+        rejected = compare_prompt_alignment(
+            base_quality,
+            [{"scores": {"prompt_alignment": score}} for score in (3, 4, 4)],
+            reference,
+            reference_checkpoint="best", maximum_regression=0.34,
+        )
+        self.assertFalse(rejected["quality_accepted"])
+        self.assertTrue(any(error.startswith("final_prompt_alignment_regressed") for error in rejected["errors"]))
 
     def test_release_inference_accepts_user_sampling_and_output_settings(self) -> None:
         sampling, output = merged_generation_settings({

@@ -149,7 +149,7 @@ supervisorctl start edm-v2-verify-audio-dataset
 supervisorctl start edm-v2-evaluate-final
 ```
 
-The final job refuses to resume or overwrite an existing final run. It reloads the pristine XL-Base model, creates a fresh rank-32/alpha-32 LoRA, trains on all 231 records with no validation split, and stops at the exact scaled optimizer step. Final fixed-prompt audio must also pass the absolute listening-quality gate before packaging.
+The final job refuses to resume or overwrite an existing final run. It reloads the pristine XL-Base model, creates a fresh rank-32/alpha-32 LoRA, trains on all 231 records with no validation split, and stops at the exact scaled optimizer step. Final fixed-prompt audio must also pass the absolute listening-quality gate before packaging. Its mean prompt-alignment score may not fall more than `0.34` points below the selected best-val checkpoint on the same three prompts, allowing at most one aggregate score-point difference across the three MOSS judgments.
 
 After final training passes, all 231 exact FLAC records are staged without copying or deduplicating them and uploaded to the private dataset `Bangchis/melodic-edm-audio-v2`. The dataset keeps the original grouped `196 train / 35 validation` split, one file per catalog record, a sanitized manifest and `SHA256SUMS`. A separate gate force-downloads the immutable dataset revision, verifies every byte size and SHA-256 digest, then removes the temporary clean copy.
 

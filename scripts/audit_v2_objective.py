@@ -195,6 +195,7 @@ def main() -> int:
     if (
         final_quality.get("quality_accepted") is not True
         or final_quality.get("quality_profile") != "candidate"
+        or final_quality.get("prompt_alignment_comparison", {}).get("accepted") is not True
     ):
         errors.append("final_absolute_listening_quality_not_accepted")
     audio_prepare = reports["outputs/v2/audio_dataset_prepare_report.json"]
