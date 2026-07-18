@@ -137,6 +137,7 @@ def main() -> int:
         (root / "scripts" / "infer_v2_release.py", release / "scripts" / "infer_v2_release.py"),
         (root / "scripts" / "download_and_infer_v2.py", release / "scripts" / "download_and_infer_v2.py"),
         (root / "scripts" / "prompt_enhancer.py", release / "scripts" / "prompt_enhancer.py"),
+        (root / "scripts" / "enhance_prompt_openrouter.py", release / "scripts" / "enhance_prompt_openrouter.py"),
     ):
         copy_file(source, destination)
 

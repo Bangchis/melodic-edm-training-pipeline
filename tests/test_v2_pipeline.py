@@ -63,6 +63,7 @@ class V2PipelineTest(unittest.TestCase):
         for name in ("package_v2_preview.py", "package_v2_release.py"):
             source = (SCRIPTS / name).read_text(encoding="utf-8")
             self.assertIn('scripts" / "prompt_enhancer.py', source)
+            self.assertIn('scripts" / "enhance_prompt_openrouter.py', source)
 
     def test_tensor_merger_replaces_unsafe_symlink_with_hardlink(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

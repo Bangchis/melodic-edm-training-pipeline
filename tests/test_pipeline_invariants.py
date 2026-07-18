@@ -18,6 +18,7 @@ from annotate_openrouter import parse_json_content, sanitize_annotation, sanitiz
 from build_acestep_dataset import choose_splits, choose_window, render_audio  # noqa: E402
 from merge_tensors import write_loader_manifest  # noqa: E402
 from prompt_enhancer import compile_caption  # noqa: E402
+from enhance_prompt_openrouter import enhance_prompt, sections_to_lyrics  # noqa: E402
 from validate_tensors import expected_by_split  # noqa: E402
 from validate_smoke import resolve_adapter_dir  # noqa: E402
 from validate_training import select_checkpoints  # noqa: E402
@@ -64,12 +65,65 @@ class RecordPreservingTests(unittest.TestCase):
                 "production": "Wide layered chords, sub bass, electronic drums and spacious reverb support the arrangement",
             })
 
+    def test_openrouter_enhancer_uses_schema_and_preserves_explicit_conditions(self) -> None:
+        response = {
+            "model": "google/gemini-test-resolved",
+            "choices": [{"message": {"content": json.dumps({
+                "genre": "Chinese melodic gaming EDM",
+                "mood": "uplifting and adventurous",
+                "melody": "A bright two-bar pentatonic pipa hook repeats with altered endings and airy dizi responses",
+                "arrangement": "An atmospheric intro rises through a compact build into an energetic four-on-the-floor melodic drop",
+                "production": "Wide supersaw chords, clean sub bass, punchy electronic drums and spacious fantasy reverb support the melody",
+            })}}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 20},
+        }
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        captured = {}
+
+        def fake_open(request, timeout):
+            captured["payload"] = json.loads(request.data)
+            captured["authorization"] = request.headers["Authorization"]
+            captured["timeout"] = timeout
+            fake = FakeResponse()
+            fake.read = lambda: json.dumps(response).encode("utf-8")
+            return fake
+
+        result = enhance_prompt(
+            "Chinese fantasy EDM with a pipa hook",
+            "secret-test-key",
+            explicit_conditions={"bpm": 128, "keyscale": "F# minor", "timesignature": "4"},
+            opener=fake_open,
+        )
+        self.assertEqual(result["conditions"]["bpm"], 128)
+        self.assertEqual(result["conditions"]["keyscale"], "F# minor")
+        self.assertEqual(result["resolved_model"], "google/gemini-test-resolved")
+        self.assertEqual(captured["payload"]["response_format"]["type"], "json_schema")
+        self.assertTrue(captured["payload"]["response_format"]["json_schema"]["strict"])
+        self.assertEqual(
+            captured["payload"]["response_format"]["json_schema"]["schema"]["required"],
+            ["genre", "mood", "melody", "arrangement", "production"],
+        )
+        self.assertEqual(captured["authorization"], "Bearer secret-test-key")
+        self.assertNotIn("secret-test-key", json.dumps(result))
+        self.assertEqual(
+            sections_to_lyrics(["Intro", "Drop"]),
+            "[Intro]\n[Instrumental]\n\n[Drop]\n[Instrumental]\n",
+        )
+
     def test_release_delivery_sources_are_present(self) -> None:
         required = (
             "configs/inference_config.json",
             "configs/release_requirements.txt",
             "scripts/infer_release.py",
             "scripts/prompt_enhancer.py",
+            "scripts/enhance_prompt_openrouter.py",
             "scripts/download_and_infer.py",
             "scripts/backup_resume_hf.py",
             "server/supervisor/edm-backup-resume.sh",

@@ -9,7 +9,8 @@ Consumer Colab Pro runs from the Colab website in a browser. It does not provide
 - do not install a Google/Colab CLI on Vast for this workflow;
 - do not copy a Google password, browser cookie or Google OAuth refresh token to Vast;
 - sign in to the Google account that owns Colab Pro in the browser, open the notebook, select an NVIDIA GPU and run it there;
-- put only a Hugging Face **read** token in Colab Secrets as `HF_TOKEN` so the notebook can download the private release.
+- put a Hugging Face **read** token in Colab Secrets as `HF_TOKEN` so the notebook can download the private release;
+- put an OpenRouter key in Colab Secrets as `OPENROUTER_API_KEY` so the notebook can enhance a free-form idea before inference.
 
 The notebook and inference script are published by GitHub/Hugging Face. The Colab VM pulls the immutable release directly from Hugging Face; Vast does not push a process into Colab.
 
@@ -30,8 +31,9 @@ If unattended server-side submission is required, that is a separate Google Clou
 - At least 20 GB GPU memory is preferred for XL-Base. A 12–16 GB GPU may work with CPU offload and will be slower.
 - Roughly 35–45 GB free disk for the ACE-Step environment, XL-Base checkpoints and the private adapter release.
 - A Hugging Face read token stored in Colab Secrets as `HF_TOKEN`.
+- An OpenRouter API key stored in Colab Secrets as `OPENROUTER_API_KEY`.
 
-Never paste the token into a notebook cell or commit it to GitHub. In Colab, open the key icon, create `HF_TOKEN`, and enable notebook access.
+Never paste either token into a notebook cell or commit it to GitHub. In Colab, open the key icon, create `HF_TOKEN` and `OPENROUTER_API_KEY`, and enable notebook access for both. Only the text idea and explicit music conditions are sent to OpenRouter; no audio, adapter or Hugging Face token is sent there.
 
 No Google authentication is required on the local machine beyond the browser session, and no Google authentication is required on Vast.
 
@@ -51,43 +53,51 @@ At the beginning of one Colab run, the notebook resolves the model repository's 
 Use `notebooks/melodic_edm_core_v2_colab.ipynb`. It performs these gates in order:
 
 1. Confirm NVIDIA GPU, VRAM and disk space.
-2. Read `HF_TOKEN` from Colab Secrets and authenticate in memory.
+2. Read `HF_TOKEN` and `OPENROUTER_API_KEY` from Colab Secrets into memory without displaying them.
 3. Clone ACE-Step at the pinned source revision.
 4. Install the official environment with `uv sync`.
 5. Download the core ACE-Step checkpoints and pinned XL-Base weights.
 6. Resolve the private V2 release to one immutable commit and download exactly that revision.
 7. Verify every release file with `SHA256SUMS`.
 8. Load `final-all-data` when present, otherwise fall back explicitly to the verified `best-val` preview.
-9. Generate deterministic 48 kHz stereo WAV using an explicit caption.
-10. Inspect and play the result inside Colab.
+9. Send the free-form text idea to an OpenRouter LLM using strict JSON Schema output.
+10. Validate and compile the returned music fields locally, then generate a deterministic 48 kHz stereo WAV.
+11. Inspect and play the result inside Colab.
 
-Inference first passes structured musical conditions through the included deterministic `prompt_enhancer.py`, producing a 40–80 word caption in the training vocabulary. It then sets `thinking=False`, so the ACE 5 Hz language model is not needed for prompt planning. BPM, key, time signature and instrumental section markers remain explicit separate conditions.
+Inference first passes the free-form idea through `scripts/enhance_prompt_openrouter.py`. The default route is `~google/gemini-flash-latest`, configurable with an exact OpenRouter model slug. OpenRouter returns exactly five strict JSON description fields; the included deterministic `prompt_enhancer.py` then enforces a 40–300 word caption. ACE-Step itself runs with `thinking=False`, so the ACE 5 Hz language model is not used for prompt planning. BPM, key, time signature and instrumental section markers remain explicit separate conditions and are never overwritten by the LLM.
 
 ```text
-genre + mood + melody + arrangement + production
-→ deterministic prompt enhancer
-→ 40–80 word training-style caption
+free-form idea + explicit BPM/key/time/sections
+→ OpenRouter LLM with strict JSON Schema
+→ genre + mood + melody + arrangement + production
+→ deterministic validator/compiler
+→ 40–300 word inference caption
 + BPM/key/time signature/sections
 → ACE-Step XL-Base + selected LoRA
 ```
 
-The deterministic enhancer deliberately does not guess missing facts. A free-form LLM enhancer can be added later, but it must output the same five audible fields and pass the same word-count/artist-name gates before inference.
+The LLM is the enhancer; the deterministic stage is only a safety/format gate. Explicit BPM, key, time signature and sections always overwrite any LLM guess. The notebook records the requested model route, OpenRouter's resolved model name and the complete secret-free conditioning payload in `/content/v2_prompt_enhancement.json` for reproducibility.
 
 ## Prompt format
 
-Prefer 40–80 audible words. Describe melody, composition and production; keep BPM/key/time signature in their fields. Do not use artist names or vague quality claims.
+Use 40–300 audible words. A concise 60–150 word prompt is the practical default; 300 is a hard maximum for unusually detailed requests. Describe melody, composition and production; keep BPM/key/time signature in their fields. Do not use artist names or vague quality claims. Training captions remain 40–80 words; only this inference enhancer has the wider limit.
 
-The notebook accepts these five enhancer inputs:
+The notebook accepts a free-form idea plus optional fixed conditions:
 
 ```python
-music_conditions = {
-    "genre": "Chinese melodic gaming EDM",
-    "mood": "uplifting and adventurous",
-    "melody": "A two-bar minor-pentatonic pipa motif with varied endings and dizi responses",
-    "arrangement": "An atmospheric intro, short build, melodic drop and denser final return",
-    "production": "Wide supersaws, clean sub bass, punchy drums and spacious fantasy reverb",
+USER_IDEA = "EDM Trung Hoa không lời với hook pipa dễ nhớ, dizi đối đáp và drop mạnh"
+EXPLICIT_CONDITIONS = {
+    "bpm": 128,
+    "keyscale": "F# minor",
+    "timesignature": "4",
+    "sections": ["Intro", "Theme", "Build", "Drop", "Break", "Final Drop", "Outro"],
 }
-caption = compile_caption(music_conditions)
+enhancement = enhance_prompt(
+    USER_IDEA,
+    OPENROUTER_API_KEY,
+    model="~google/gemini-flash-latest",
+    explicit_conditions=EXPLICIT_CONDITIONS,
+)
 ```
 
 ```python
@@ -167,6 +177,10 @@ The notebook displays the generated WAV only after these checks pass.
 ## Common failures
 
 `401/403 from Hugging Face`: verify that `HF_TOKEN` can read the private repo and that notebook access is enabled in Colab Secrets.
+
+`401/402/429 from OpenRouter`: verify `OPENROUTER_API_KEY`, available credits and rate limits. Rerun only the enhancer cell; do not redownload the model.
+
+`OpenRouter output failed the deterministic gate`: rerun the enhancer cell or make the idea more concrete. ACE-Step is not called when the caption or structured fields fail validation.
 
 `CUDA out of memory`: restart the runtime, set `offload_to_cpu=True`, and rerun from model initialization with batch size 1.
 

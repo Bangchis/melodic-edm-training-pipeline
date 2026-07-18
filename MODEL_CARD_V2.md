@@ -50,7 +50,7 @@ The model release excludes source audio, stems, cached latents, optimizer states
 
 ## Inference
 
-Use `final-all-data` with the exact ACE-Step source and XL-Base revisions recorded in `release_manifest.json`. Provide an explicit 40–80 word audible caption plus structured BPM, key, time signature and instrumental sections. The included notebook performs immutable download, checksum verification, generation and 48 kHz stereo validation.
+Use `final-all-data` with the exact ACE-Step source and XL-Base revisions recorded in `release_manifest.json`. The included Colab notebook sends a free-form idea through an OpenRouter LLM, requires exactly five JSON music-description fields, then applies a local validator/compiler with a hard 300-word inference limit. BPM, key, time signature and instrumental sections remain separate fixed conditions. The notebook performs immutable download, checksum verification, generation and 48 kHz stereo validation. Training captions remain 40–80 words.
 
 See `docs/COLAB_INFERENCE_V2.md` and `notebooks/melodic_edm_core_v2_colab.ipynb`.
 
