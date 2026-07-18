@@ -18,6 +18,7 @@ from repair_v2_annotations_moss import (
     CAPTION_COMPILER_REVISION,
     SCORE_FIELDS,
     exact_claim_asserted,
+    fusion_source_material,
     parse_repair,
     qualified_claim_mentioned,
     unverified_new_claims,
@@ -45,6 +46,8 @@ def main() -> int:
                 str(item["type"]): str(item["text"])
                 for item in annotation["caption_variants"]
             }
+            current_fusion_sources = fusion_source_material(annotation, original)
+            current_fusion_hash = object_sha256(current_fusion_sources)
             record = json.loads(
                 (root / "data_v2" / "caption_repairs" / f"{sample_id}.json").read_text(
                     encoding="utf-8"
@@ -61,6 +64,10 @@ def main() -> int:
                 raise ValueError("audio_sha256_mismatch")
             if record.get("original_captions_sha256") != object_sha256(original):
                 raise ValueError("original_captions_sha256_mismatch")
+            if record.get("fusion_sources_sha256") != current_fusion_hash:
+                raise ValueError("fusion_sources_sha256_mismatch")
+            if record.get("fusion_sources") != current_fusion_sources:
+                raise ValueError("fusion_sources_content_mismatch")
             decisions = record.get("claim_decisions")
             if not isinstance(decisions, list):
                 raise ValueError("claim_decisions_missing")
@@ -95,6 +102,13 @@ def main() -> int:
                     for name in ("canonical", "composition", "production")
                 ]
                 annotation["master_annotation"]["merged_captions"] = selected
+            annotation["master_annotation"]["caption_fusion"] = {
+                "revision": record["caption_compiler_revision"],
+                "sources_sha256": record["fusion_sources_sha256"],
+                "uses_prior_per_track_annotation": True,
+                "uses_independent_audio_analysis": True,
+                "binding_multi_view_claim_decisions": True,
+            }
             annotation["caption_repair"] = {
                 "model": record["model_id"],
                 "model_revision": record["model_revision"],
@@ -106,6 +120,7 @@ def main() -> int:
                 "claim_decisions": decisions,
                 "claim_decisions_sha256": record["claim_decisions_sha256"],
                 "original_captions_sha256": record["original_captions_sha256"],
+                "fusion_sources_sha256": record["fusion_sources_sha256"],
                 "applied": changed,
             }
             staged_annotations.append((sample_id, annotation))
@@ -164,6 +179,12 @@ def main() -> int:
         "records": len(results),
         "recommendations": dict(recommendations),
         "repairs_applied": sum(item["applied"] for item in results),
+        "fusion_records": len(results),
+        "fusion_sources": [
+            "prior_per_track_annotation",
+            "independent_audio_analysis",
+            "binding_multi_view_claim_decisions",
+        ],
         "previous_annotations_backup": backup_path,
         "original_caption_dimension_means": dimension_means,
         "errors": errors,

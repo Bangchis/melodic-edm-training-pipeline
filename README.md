@@ -38,17 +38,20 @@ Clone ACE-Step 1.5 at commit
 ## Training V2
 
 V2 keeps the same 231 validated audio records and performs a new XL-Base LoRA run
-with rank 32 / alpha 32 / dropout 0.1. Each record has exactly three audio-grounded
-caption views (canonical, composition and production), with uniform random selection
+with rank 32 / alpha 32 / dropout 0.1. Each record has exactly three song-specific
+caption views (canonical, composition and production), fused from its own old prompt
+and an independent audio reading, with uniform random selection
 during training and canonical-only validation. MOSS-Music-8B-Thinking is used only
 as an audio annotation/listening model; it is never part of ACE-Step training.
 
 Before preprocessing, MOSS first annotates without title, artist, MIR or prior
-instrument claims. A multi-view verifier then checks each named sound source with
+instrument claims. A multi-view verifier then checks each named sound source from
+the old and new annotations with
 two full-track prompts plus an intro/middle/late montage. Verified exact names are
 preserved; absent claims are removed and unresolved names retain a qualified
 `name-like` token instead of collapsing to an unrelated generic label. A stratified
-listening gate checks the complete caption fidelity. Checkpoint acceptance also
+compiler then fuses the old prompt for that exact song with the waveform facts.
+A stratified listening gate checks the complete caption fidelity. Checkpoint acceptance also
 requires every generated evaluation sample to reach at least 3/5 prompt alignment,
 so clean but off-prompt audio is rejected. The run is capped at 20 epochs
 and evaluates epochs 5/10/15/20 at LoRA scales 0.25/0.5/1.0.

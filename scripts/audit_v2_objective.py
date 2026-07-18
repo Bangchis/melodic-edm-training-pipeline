@@ -141,8 +141,21 @@ def main() -> int:
     if claims.get("claim_verifier_revision") != "multi-view-audio-claims-v2.5":
         errors.append("claim_verifier_revision_not_v2_5")
     repairs = reports["data_v2/caption_repair_report.json"]
-    if repairs.get("caption_compiler_revision") != "audio-grounded-caption-compiler-v2.6":
-        errors.append("caption_compiler_revision_not_v2_6")
+    annotation_quality = reports["data_v2/annotation_quality_audit.json"]
+    if repairs.get("caption_compiler_revision") != "per-track-prior-audio-fusion-v2.7":
+        errors.append("caption_compiler_revision_not_v2_7")
+    if repairs.get("fusion_records") != 231 or set(repairs.get("fusion_sources", [])) != {
+        "prior_per_track_annotation",
+        "independent_audio_analysis",
+        "binding_multi_view_claim_decisions",
+    }:
+        errors.append("per_track_prior_audio_fusion_incomplete")
+    if (
+        annotation_quality.get("caption_fusion_revision")
+        != "per-track-prior-audio-fusion-v2.7"
+        or annotation_quality.get("caption_fusion_records") != 231
+    ):
+        errors.append("per_record_caption_fusion_lineage_not_proven")
     reset = reports["data_v2/downstream_reset_report.json"]
     if reset.get("fresh_rank32_outputs_required") is not True:
         errors.append("stale_pre_audio_blind_training_outputs_not_reset")

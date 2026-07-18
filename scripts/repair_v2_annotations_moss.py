@@ -11,6 +11,7 @@ from typing import Any
 
 from annotate_moss_music import MODEL_ID, MODEL_REVISION, generate, load_runtime
 from v2_common import (
+    CAPTION_TYPES,
     atomic_json,
     atomic_jsonl,
     caption_map,
@@ -29,7 +30,7 @@ SCORE_FIELDS = (
     "melody_arrangement_accuracy",
     "production_accuracy",
 )
-CAPTION_COMPILER_REVISION = "audio-grounded-caption-compiler-v2.6"
+CAPTION_COMPILER_REVISION = "per-track-prior-audio-fusion-v2.7"
 FORBIDDEN_TRAINING_CAPTION_PATTERNS = {
     "embedded_bpm": re.compile(r"\b\d{2,3}\s*bpm\b", re.IGNORECASE),
     "embedded_time_signature": re.compile(r"\b[2-7]\s*/\s*(?:2|4|8|16)\b"),
@@ -93,11 +94,82 @@ def unverified_new_claims(text: str, decisions: list[dict[str, Any]]) -> list[st
     ]
 
 
-def request_for(captions: dict[str, str], decisions: list[dict[str, Any]]) -> str:
-    """Ask MOSS to compile captions while obeying multi-view audible decisions."""
+def prior_prompt_material(annotation: dict[str, Any]) -> dict[str, Any]:
+    """Extract the old, song-specific prompt material without identity metadata.
+
+    The base annotation is useful conditioning evidence, but it is not trusted as
+    audible truth.  Keeping this packet separate lets MOSS fuse it with an
+    independent audio reading and lets downstream code prove that the prompt for
+    one song was never substituted for another.
+    """
+    master = annotation.get("master_annotation")
+    if not isinstance(master, dict):
+        master = {}
+    base = master.get("base_annotation")
+    if not isinstance(base, dict):
+        base = {}
+    variants: dict[str, str] = {}
+    for item in base.get("caption_variants", []):
+        if not isinstance(item, dict):
+            continue
+        caption_type = str(item.get("type") or "").strip().casefold()
+        if caption_type == "full":
+            caption_type = "canonical"
+        text = str(item.get("text") or "").strip()
+        if caption_type in {*CAPTION_TYPES, "tags"} and text:
+            variants[caption_type] = text
+    packet = {
+        "canonical_caption": str(base.get("canonical_caption") or "").strip(),
+        "caption_variants": variants,
+        "primary_genre": base.get("primary_genre"),
+        "secondary_genres": base.get("secondary_genres"),
+        "style_families": base.get("style_families"),
+        "moods": base.get("moods"),
+        "main_instruments": base.get("main_instruments"),
+        "melody": base.get("melody"),
+        "arrangement": base.get("arrangement"),
+        "production": base.get("production"),
+    }
+    return {
+        key: value
+        for key, value in packet.items()
+        if value not in (None, "", [], {})
+    }
+
+
+def fusion_source_material(
+    annotation: dict[str, Any], moss_captions: dict[str, str]
+) -> dict[str, Any]:
+    """Build the exact two-source packet used to compile one track's captions."""
+    master = annotation.get("master_annotation")
+    if not isinstance(master, dict):
+        master = {}
+    audible_facts = master.get("moss_music_supplement")
+    if not isinstance(audible_facts, dict):
+        audible_facts = {}
+    return {
+        "prior_per_track_annotation": prior_prompt_material(annotation),
+        "independent_audio_analysis": {
+            "audible_facts": audible_facts,
+            "caption_proposals": {name: moss_captions[name] for name in CAPTION_TYPES},
+        },
+    }
+
+
+def request_for(fusion_sources: dict[str, Any], decisions: list[dict[str, Any]]) -> str:
+    """Ask MOSS to fuse old per-track prompts with independently heard evidence."""
     return (
-        "Listen to the complete supplied instrumental audio and compile accurate, prompt-useful "
-        "training captions. Exact named instruments are valuable and must remain specific when the "
+        "Listen to the complete supplied instrumental audio and compile three accurate, "
+        "prompt-useful training captions for this exact track. Fuse both supplied source packets: "
+        "(1) the old per-track annotation and prompt, which contains useful song-specific intent "
+        "but may contain mistakes, and (2) the independent waveform-only MOSS analysis. Do not "
+        "discard the old per-track prompt, and do not copy it blindly. Preserve its distinctive "
+        "genre, mood, melody, arrangement and production properties when they are audible or not "
+        "contradicted by the waveform. Prefer the independent audio evidence when the sources "
+        "conflict. Never average the track into generic EDM boilerplate. Each corrected caption "
+        "must describe this song rather than the dataset as a whole; composition and production "
+        "must emphasize different concrete properties. Exact named instruments are valuable and "
+        "must remain specific when the "
         "multi-view verifier marks them present. Remove claims marked absent. For claims marked "
         "uncertain, do not assert the physical instrument as fact, but preserve the exact vocabulary "
         "token at least once with a -like qualifier, followed by its audible alternative; for example, "
@@ -122,8 +194,8 @@ def request_for(captions: dict[str, str], decisions: list[dict[str, Any]]) -> st
         '"production_accuracy":1,"evidence":{"audible_fidelity":"...","specificity":"...",'
         '"melody_arrangement_accuracy":"...","production_accuracy":"..."},'
         '"unsupported_claims":[],"recommendation":"revise","corrected_captions":'
-        '{"canonical":"...","composition":"...","production":"..."}}.\nUntrusted proposals: '
-        + json.dumps(captions, ensure_ascii=False)
+        '{"canonical":"...","composition":"...","production":"..."}}.\nFusion sources: '
+        + json.dumps(fusion_sources, ensure_ascii=False)
         + "\nBinding multi-view claim decisions: "
         + json.dumps(decisions, ensure_ascii=False)
     )
@@ -171,6 +243,7 @@ def existing_valid(
     audio_hash: str,
     caption_hash: str,
     decisions_hash: str,
+    fusion_sources_hash: str,
 ) -> bool:
     """Return whether a resumable repair still matches exact input audio and captions."""
     if not path.is_file():
@@ -182,6 +255,8 @@ def existing_valid(
             and value.get("caption_compiler_revision") == CAPTION_COMPILER_REVISION
             and value.get("audio_sha256") == audio_hash
             and value.get("original_captions_sha256") == caption_hash
+            and value.get("fusion_sources_sha256") == fusion_sources_hash
+            and object_sha256(value.get("fusion_sources")) == fusion_sources_hash
             and not parse_repair(value.get("repair", {}))[1]
         )
         return base_valid and value.get("claim_decisions_sha256") == decisions_hash
@@ -203,7 +278,12 @@ def main() -> int:
     rows = sorted(read_jsonl(root / "data_v2" / "manifest.jsonl"), key=lambda row: row["sample_id"])
     rows = [row for index, row in enumerate(rows) if index % args.num_shards == args.shard_index]
     output_dir = root / "data_v2" / "caption_repairs"
-    pending: list[tuple[dict[str, Any], dict[str, str], str, str, list[dict[str, Any]], str]] = []
+    pending: list[
+        tuple[
+            dict[str, Any], dict[str, str], str, str, list[dict[str, Any]], str,
+            dict[str, Any], str,
+        ]
+    ] = []
     for row in rows:
         annotation = json.loads(Path(row["v2_annotation_path"]).read_text(encoding="utf-8"))
         captions = {
@@ -225,9 +305,16 @@ def main() -> int:
             for item in consensus["decisions"]
         ]
         decisions_hash = object_sha256(decisions)
+        fusion_sources = fusion_source_material(annotation, captions)
+        fusion_sources_hash = object_sha256(fusion_sources)
         path = output_dir / f"{row['sample_id']}.json"
-        if not existing_valid(path, audio_hash, caption_hash, decisions_hash):
-            pending.append((row, captions, audio_hash, caption_hash, decisions, decisions_hash))
+        if not existing_valid(
+            path, audio_hash, caption_hash, decisions_hash, fusion_sources_hash
+        ):
+            pending.append((
+                row, captions, audio_hash, caption_hash, decisions, decisions_hash,
+                fusion_sources, fusion_sources_hash,
+            ))
     print(json.dumps({
         "shard": args.shard_index,
         "assigned": len(rows),
@@ -240,9 +327,12 @@ def main() -> int:
     model, processor = load_runtime(root / "checkpoints" / "MOSS-Music-8B-Thinking")
     manifest: list[dict[str, Any]] = []
     errors = 0
-    for index, (row, captions, audio_hash, caption_hash, decisions, decisions_hash) in enumerate(pending, 1):
+    for index, (
+        row, captions, audio_hash, caption_hash, decisions, decisions_hash,
+        fusion_sources, fusion_sources_hash,
+    ) in enumerate(pending, 1):
         sample_id = str(row["sample_id"])
-        request = request_for(captions, decisions)
+        request = request_for(fusion_sources, decisions)
         last_error = ""
         for attempt in range(1, max(1, args.attempts) + 1):
             response = generate(
@@ -278,6 +368,8 @@ def main() -> int:
                     "repaired_at": datetime.now(timezone.utc).isoformat(),
                     "audio_sha256": audio_hash,
                     "original_captions_sha256": caption_hash,
+                    "fusion_sources": fusion_sources,
+                    "fusion_sources_sha256": fusion_sources_hash,
                     "claim_decisions_sha256": decisions_hash,
                     "claim_decisions": decisions,
                     "repair": repair,

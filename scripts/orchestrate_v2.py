@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 PROMPT_REVISION = "audio-blind-v2.2"
+CAPTION_COMPILER_REVISION = "per-track-prior-audio-fusion-v2.7"
 
 
 ACTIVE_STATES = {"STARTING", "RUNNING", "BACKOFF", "STOPPING"}
@@ -224,12 +225,21 @@ def main() -> int:
             print(f"[claim-consensus] retry round {consensus_round + 1}", flush=True)
 
     caption_repair_gate = root / "data_v2" / "caption_repair_report.json"
-    if not json_pass(caption_repair_gate):
+    caption_repair_current = (
+        json_pass(caption_repair_gate)
+        and json_value(caption_repair_gate, "caption_compiler_revision")
+        == CAPTION_COMPILER_REVISION
+    )
+    if not caption_repair_current:
         for caption_round in range(4):
             run_parallel(["edm-v2-repair-captions-0", "edm-v2-repair-captions-1"])
             start("edm-v2-apply-caption-repairs")
             wait_for_exit("edm-v2-apply-caption-repairs")
-            if json_pass(caption_repair_gate):
+            if (
+                json_pass(caption_repair_gate)
+                and json_value(caption_repair_gate, "caption_compiler_revision")
+                == CAPTION_COMPILER_REVISION
+            ):
                 print("[audio-grounded-caption-repairs] PASS", flush=True)
                 break
             if caption_round == 3:

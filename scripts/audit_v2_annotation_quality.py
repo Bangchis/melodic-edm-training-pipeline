@@ -14,6 +14,7 @@ from v2_common import atomic_json, read_jsonl
 
 
 CAPTION_TYPES = ("canonical", "composition", "production")
+CAPTION_FUSION_REVISION = "per-track-prior-audio-fusion-v2.7"
 GENERIC_TERMS = (
     "clean",
     "polished",
@@ -153,6 +154,7 @@ def main() -> int:
     captions_by_type: dict[str, list[str]] = {name: [] for name in CAPTION_TYPES}
     identity_leaks: list[dict[str, str]] = []
     nonempty_uncertainty: list[str] = []
+    caption_fusion_records = 0
     for sample_id in sample_ids:
         annotation = annotations[sample_id]
         mapped = caption_map(annotation)
@@ -173,6 +175,23 @@ def main() -> int:
         )
         if uncertainty:
             nonempty_uncertainty.append(sample_id)
+        fusion = annotation.get("master_annotation", {}).get("caption_fusion", {})
+        repair = annotation.get("caption_repair", {})
+        fusion_valid = (
+            fusion.get("revision") == CAPTION_FUSION_REVISION
+            and fusion.get("uses_prior_per_track_annotation") is True
+            and fusion.get("uses_independent_audio_analysis") is True
+            and fusion.get("binding_multi_view_claim_decisions") is True
+            and bool(fusion.get("sources_sha256"))
+            and fusion.get("sources_sha256") == repair.get("fusion_sources_sha256")
+        )
+        if fusion_valid:
+            caption_fusion_records += 1
+        else:
+            errors.append({
+                "sample_id": sample_id,
+                "reason": "per_track_prior_audio_fusion_lineage_invalid",
+            })
 
     similarity = {
         name: similarity_summary(sample_ids, captions_by_type[name], parents)
@@ -221,6 +240,8 @@ def main() -> int:
         "generic_term_counts": generic_term_counts,
         "identity_leaks": identity_leaks,
         "moss_nonempty_uncertainty_records": len(nonempty_uncertainty),
+        "caption_fusion_revision": CAPTION_FUSION_REVISION,
+        "caption_fusion_records": caption_fusion_records,
         "tensor_check_enabled": args.check_tensors,
         "tensor_split_counts": split_counts,
         "tensor_alignment_errors": tensor_errors,

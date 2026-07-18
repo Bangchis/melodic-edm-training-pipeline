@@ -27,6 +27,7 @@ from infer_v2_release import merged_generation_settings  # noqa: E402
 from audit_v2_annotation_fidelity_moss import parse_review, stratified_rows  # noqa: E402
 from repair_v2_annotations_moss import (  # noqa: E402
     exact_claim_asserted,
+    fusion_source_material,
     parse_repair,
     qualified_claim_mentioned,
     unverified_new_claims,
@@ -289,6 +290,39 @@ class V2PipelineTest(unittest.TestCase):
         self.assertEqual(
             [],
             unverified_new_claims("A pipa-like plucked hook has no newly named source.", decisions),
+        )
+
+    def test_caption_fusion_uses_old_song_prompt_and_independent_audio_facts(self) -> None:
+        annotation = {
+            "master_annotation": {
+                "base_annotation": {
+                    "canonical_caption": "Old prompt for this exact song with a rising motif.",
+                    "caption_variants": [
+                        {"type": "full", "text": "Old full prompt."},
+                        {"type": "composition", "text": "Old composition prompt."},
+                    ],
+                    "moods": ["adventurous"],
+                    "melody": {"description": "rising two-bar motif"},
+                },
+                "moss_music_supplement": {
+                    "melody_and_motifs": "A short rising phrase repeats with varied endings.",
+                    "production": "Wide synth chords and controlled sub bass.",
+                },
+            }
+        }
+        moss_captions = {name: words(name, 45) for name in CAPTION_TYPES}
+        sources = fusion_source_material(annotation, moss_captions)
+        self.assertEqual(
+            "Old prompt for this exact song with a rising motif.",
+            sources["prior_per_track_annotation"]["canonical_caption"],
+        )
+        self.assertEqual(
+            "A short rising phrase repeats with varied endings.",
+            sources["independent_audio_analysis"]["audible_facts"]["melody_and_motifs"],
+        )
+        self.assertEqual(
+            moss_captions,
+            sources["independent_audio_analysis"]["caption_proposals"],
         )
 
     def test_preview_is_verified_before_final_training(self) -> None:
@@ -657,10 +691,11 @@ class V2PipelineTest(unittest.TestCase):
         source = (SCRIPTS / "audit_v2_objective.py").read_text(encoding="utf-8")
         for revision in (
             "multi-view-audio-claims-v2.5",
-            "audio-grounded-caption-compiler-v2.6",
+            "per-track-prior-audio-fusion-v2.7",
             "fixed-prompt-audio-judge-v2.2",
         ):
             self.assertIn(revision, source)
+        self.assertIn("per_record_caption_fusion_lineage_not_proven", source)
         self.assertIn("prompt_alignment_not_authoritative_in_checkpoint_selection", source)
 
 

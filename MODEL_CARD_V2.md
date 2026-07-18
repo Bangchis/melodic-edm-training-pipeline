@@ -31,7 +31,7 @@ Private ACE-Step 1.5 XL-Base LoRA adapters for instrumental melodic EDM generati
 
 MOSS-Music-8B-Thinking was used only to listen to source audio for annotation supplements and to score fixed checkpoint examples. It was not trained, fine-tuned, connected to the ACE-Step gradient graph or included in these adapters.
 
-The annotation listener runs under prompt revision `audio-blind-v2.2`, which withholds identity, MIR and prior claims. Named sound sources then pass two independent full-track checks plus an intro/middle/late montage. Exact instrument names are preserved when supported by consensus; absent claims are removed and unresolved timbres are explicitly qualified rather than silently asserted. Captions are recompiled before prompt embeddings are rebuilt, and the final stratified fidelity report is included in the completion evidence.
+The annotation listener runs under prompt revision `audio-blind-v2.2`, which withholds identity, MIR and prior claims for an independent waveform reading. Named sound sources from both the old per-song annotation and this new reading then pass two independent full-track checks plus an intro/middle/late montage. Compiler revision `per-track-prior-audio-fusion-v2.7` fuses the old prompt properties of that exact song with the independent audible facts under separately hashed lineage. Exact instrument names are preserved when supported by consensus; absent claims are removed and unresolved timbres are explicitly qualified rather than silently asserted. The resulting three captions are rebuilt before prompt embeddings, and the final stratified fidelity report is included in the completion evidence.
 
 ## Files
 

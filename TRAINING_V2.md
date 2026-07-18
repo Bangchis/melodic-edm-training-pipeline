@@ -1,6 +1,6 @@
 # Melodic EDM Core V2 training
 
-V2 is a fresh LoRA training run for ACE-Step 1.5 XL-Base. It preserves the validated 231-song audio set from V1, adds audio-grounded MOSS-Music annotations, and trains with three prompt views per song.
+V2 is a fresh LoRA training run for ACE-Step 1.5 XL-Base. It preserves the validated 231-song audio set and each song's existing prompt/annotation from V1, fuses those song-specific properties with an independent audio-grounded MOSS-Music analysis, and trains with three prompt views per song.
 
 ## Immutable inputs
 
@@ -25,7 +25,9 @@ Every record has one master annotation and exactly three captions in this fixed 
 
 Artist names and source titles are rejected from captions. BPM, key and time signature remain structured fields. Song form remains in the instrumental lyrics sidecar.
 
-MOSS prompt revision `audio-blind-v2.2` receives no title, artist, filename, MIR or prior annotation. This prevents plausible catalog context from anchoring the listener on instruments it has not actually heard. Before tensors are accepted, every named sound-source claim is checked by two differently worded full-track passes and an intro/middle/late montage. An exact name is retained when at least two views support it without a strong full-track contradiction; an absent claim is removed. Conflicting evidence keeps the vocabulary token with an explicit `-like` qualifier, such as `pipa-like plucked lead`, rather than either asserting a physical pipa as fact or collapsing the label to a generic `plucked-string-like` phrase. A final full-track compiler writes prompt-useful captions. Its deterministic gate rejects newly introduced unverified exact instrument names, embedded BPM, time signature, exact key, quality hype and generic `standard/classic EDM structure` boilerplate before a caption can enter tensors. A stratified listening audit then requires acceptable fidelity and specificity.
+MOSS prompt revision `audio-blind-v2.2` first receives no title, artist, filename, MIR or prior annotation. This prevents plausible catalog context from anchoring the listener on instruments it has not actually heard. Before tensors are accepted, every named sound-source claim from either the old annotation or the independent analysis is checked by two differently worded full-track passes and an intro/middle/late montage. An exact name is retained when at least two views support it without a strong full-track contradiction; an absent claim is removed. Conflicting evidence keeps the vocabulary token with an explicit `-like` qualifier, such as `pipa-like plucked lead`, rather than either asserting a physical pipa as fact or collapsing the label to a generic `plucked-string-like` phrase.
+
+Compiler revision `per-track-prior-audio-fusion-v2.7` then receives two separately hashed packets for the same `sample_id`: the old per-track prompt/annotation and the independent waveform analysis. It preserves distinctive old genre, mood, melody, arrangement and production properties when supported or not contradicted by the audio, prefers waveform evidence on conflict, and obeys the multi-view instrument decisions as binding. This is a fusion step, not a replacement with generic MOSS text. Its deterministic gate rejects newly introduced unverified exact instrument names, embedded BPM, time signature, exact key, quality hype and generic `standard/classic EDM structure` boilerplate before a caption can enter tensors. A stratified listening audit then requires acceptable fidelity and specificity.
 
 Preprocessing stores one audio latent and three prompt embeddings per record. During training, the dataset chooses caption index 0, 1 or 2 uniformly at each load. CFG dropout is `0.15`. Validation always uses canonical index 0 and CFG dropout `0.0`.
 
@@ -66,7 +68,7 @@ identity- and prior-claim-blind MOSS annotation (2 shards)
 → merge annotations + grouped 196/35 split
 → build sidecars and dataset indexes
 → multi-view named-claim consensus
-→ audio-only caption compiler (2 shards) + fidelity gate
+→ per-track old-prompt + independent-audio fusion compiler (2 shards) + fidelity gate
 → preprocess train shards + validation
 → merge and validate 196/35/231 tensors
 → 66-step smoke with checkpoint resume
