@@ -444,6 +444,11 @@ def main() -> int:
     parser.add_argument("--max-new-tokens", type=int, default=1200)
     parser.add_argument("--model", default=os.environ.get("V2_CAPTION_COMPILER_MODEL", DEFAULT_COMPILER_MODEL))
     parser.add_argument("--timeout", type=int, default=180)
+    parser.add_argument(
+        "--ready-only",
+        action="store_true",
+        help="process rows whose claim consensus already exists and resume the rest later",
+    )
     args = parser.parse_args()
     if not 0 <= args.shard_index < args.num_shards:
         parser.error("shard-index must be in [0, num-shards)")
@@ -457,6 +462,7 @@ def main() -> int:
             dict[str, Any], str,
         ]
     ] = []
+    skipped_missing_consensus = 0
     for row in rows:
         annotation = json.loads(Path(row["v2_annotation_path"]).read_text(encoding="utf-8"))
         captions = {
@@ -467,6 +473,9 @@ def main() -> int:
         caption_hash = object_sha256(captions)
         consensus_path = root / "data_v2" / "claim_consensus" / f"{row['sample_id']}.json"
         if not consensus_path.is_file():
+            if args.ready_only:
+                skipped_missing_consensus += 1
+                continue
             raise RuntimeError(f"missing multi-view claim consensus: {consensus_path}")
         consensus = json.loads(consensus_path.read_text(encoding="utf-8"))
         decisions = [
@@ -491,7 +500,9 @@ def main() -> int:
     print(json.dumps({
         "shard": args.shard_index,
         "assigned": len(rows),
+        "ready": len(rows) - skipped_missing_consensus,
         "pending": len(pending),
+        "skipped_missing_consensus": skipped_missing_consensus,
         "provider": CAPTION_COMPILER_PROVIDER,
         "model": args.model,
         "compiler_revision": CAPTION_COMPILER_REVISION,

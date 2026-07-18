@@ -591,6 +591,16 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn("never replace a compatible specific detail", source)
         self.assertIn("binding claim decisions override exact sound-source", source)
 
+    def test_caption_workers_can_resume_ready_consensus_without_waiting_for_all_rows(self) -> None:
+        source = (SCRIPTS / "repair_v2_annotations_moss.py").read_text(encoding="utf-8")
+        self.assertIn('"--ready-only"', source)
+        self.assertIn("skipped_missing_consensus", source)
+        for shard in (0, 1):
+            launcher = (
+                SCRIPTS.parent / "server" / "supervisor" / f"edm-v2-repair-captions-{shard}.sh"
+            ).read_text(encoding="utf-8")
+            self.assertIn("--ready-only", launcher)
+
     def test_caption_compiler_cannot_introduce_unverified_exact_instrument(self) -> None:
         decisions = [{
             "claim": "pipa", "decision": "uncertain", "audible_alternative": "plucked lead",
