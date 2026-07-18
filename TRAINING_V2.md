@@ -133,6 +133,7 @@ The final job refuses to resume or overwrite an existing final run. It reloads t
 - `outputs/v2/checkpoint-evaluation/selection.json`: selected epoch and optimizer step.
 - `outputs/v2/final_plan.json`: exact scaling formula and final step count.
 - `outputs/release/melodic-edm-core-v2/`: checksum-verified release folder.
+- `outputs/release/melodic-edm-core-v2/clean_verification_report.json`: immutable Hub redownload, adapter-hash match and 48 kHz stereo inference evidence.
 - Private training checkpoints: `Bangchis/melodic-edm-core-v2-training`.
 - Private annotations: `Bangchis/melodic-edm-training-metadata-v2`.
 - Private final model: `Bangchis/melodic-edm-core-v2`.
