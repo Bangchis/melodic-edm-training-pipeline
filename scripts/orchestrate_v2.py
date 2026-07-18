@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 PROMPT_REVISION = "audio-blind-v2.2"
@@ -84,6 +86,42 @@ def json_value(path: Path, key: str):
         return None
 
 
+def archive_stale_training_outputs(root: Path) -> dict[str, object]:
+    """Atomically archive every downstream V2 artifact after annotation lineage changes."""
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    archive = root / "outputs" / "archive" / f"v2-before-audio-blind-{timestamp}"
+    archived: list[dict[str, str]] = []
+    targets = [
+        root / "outputs" / "v2",
+        root / "outputs" / "release" / "melodic-edm-core-v2-preview",
+        root / "outputs" / "release" / "melodic-edm-core-v2",
+    ]
+    for source in targets:
+        if not source.exists():
+            continue
+        archive.mkdir(parents=True, exist_ok=True)
+        destination = archive / source.name
+        if destination.exists():
+            raise FileExistsError(f"refusing to overwrite downstream archive {destination}")
+        os.replace(source, destination)
+        archived.append({"source": str(source), "archive": str(destination)})
+    (root / "outputs" / "v2").mkdir(parents=True, exist_ok=True)
+    report: dict[str, object] = {
+        "status": "pass",
+        "reason": "annotation_lineage_changed_to_audio-blind-v2.2",
+        "reset_at": datetime.now(timezone.utc).isoformat(),
+        "archive_root": str(archive) if archived else None,
+        "archived": archived,
+        "fresh_rank32_outputs_required": True,
+    }
+    target = root / "data_v2" / "downstream_reset_report.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.replace(temporary, target)
+    return report
+
+
 def require_json_pass(path: Path, label: str) -> None:
     """Fail the orchestrator if a stage did not produce a passing gate."""
     if not json_pass(path):
@@ -154,6 +192,8 @@ def main() -> int:
         wait_for_exit("edm-v2-build-annotations")
         require_json_pass(annotation_merge_gate, "audio-blind-annotation-merge")
         require_json_pass(dataset_build_gate, "annotations-and-dataset")
+        reset = archive_stale_training_outputs(root)
+        print(json.dumps(reset, ensure_ascii=False), flush=True)
         for downstream_gate in (
             "claim_consensus_report.json",
             "caption_repair_report.json",

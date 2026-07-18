@@ -46,6 +46,7 @@ def main() -> int:
         "data_v2/annotation_fidelity_audit.json",
         "data_v2/claim_consensus_report.json",
         "data_v2/caption_repair_report.json",
+        "data_v2/downstream_reset_report.json",
         "outputs/v2/baseline-xl-base/generation_report.json",
         "outputs/v2/baseline-xl-base/listening_scores.json",
         "outputs/v2/smoke/smoke_validation_report.json",
@@ -125,6 +126,9 @@ def main() -> int:
     claims = reports["data_v2/claim_consensus_report.json"]
     if claims.get("records") != 231 or int(claims.get("claim_total", 0)) <= 0:
         errors.append("multi_view_claim_consensus_incomplete")
+    reset = reports["data_v2/downstream_reset_report.json"]
+    if reset.get("fresh_rank32_outputs_required") is not True:
+        errors.append("stale_pre_audio_blind_training_outputs_not_reset")
     tensors = reports["data_v2/tensor_validation_report.json"]
     if (tensors.get("train_tensors"), tensors.get("validation_tensors"), tensors.get("all_tensors")) != (196, 35, 231):
         errors.append("tensor_counts_invalid")

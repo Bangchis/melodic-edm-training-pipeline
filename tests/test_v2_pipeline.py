@@ -31,7 +31,7 @@ from verify_v2_audio_claims_moss import (  # noqa: E402
     extract_instrument_claims,
     parse_claim_review,
 )
-from orchestrate_v2 import json_pass, json_value  # noqa: E402
+from orchestrate_v2 import archive_stale_training_outputs, json_pass, json_value  # noqa: E402
 
 
 def words(prefix: str, count: int) -> str:
@@ -61,6 +61,18 @@ class V2PipelineTest(unittest.TestCase):
             path.write_text('{"status":"pass","revision":"r2"}', encoding="utf-8")
             self.assertTrue(json_pass(path))
             self.assertEqual("r2", json_value(path, "revision"))
+
+    def test_annotation_lineage_change_archives_all_downstream_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "outputs" / "v2" / "smoke").mkdir(parents=True)
+            (root / "outputs" / "v2" / "smoke" / "old.json").write_text("{}")
+            (root / "outputs" / "release" / "melodic-edm-core-v2-preview").mkdir(parents=True)
+            report = archive_stale_training_outputs(root)
+            self.assertTrue(report["fresh_rank32_outputs_required"])
+            self.assertTrue((root / "outputs" / "v2").is_dir())
+            self.assertFalse((root / "outputs" / "v2" / "smoke" / "old.json").exists())
+            self.assertEqual(2, len(report["archived"]))
 
     def test_annotation_fidelity_sample_is_deterministic_and_stratified(self) -> None:
         rows = [
