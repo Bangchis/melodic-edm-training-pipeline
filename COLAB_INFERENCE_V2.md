@@ -76,7 +76,7 @@ free-form idea + explicit BPM/key/time/sections
 → ACE-Step XL-Base + selected LoRA
 ```
 
-The LLM is the optional enhancer; the deterministic stage is only a safety/format gate. The inference idea is authoritative and is never passed through the conservative audio-annotation claim policy. Exact instruments or other phrases listed in `REQUIRED_PROMPT_TERMS` must survive in the compiled caption or the enhancer retries/fails before ACE-Step runs. For example, requiring `pipa` and `dizi` prevents the LLM from weakening them to generic `plucked-string-like` and `flute-like` terms. This list is user-controlled and may be empty. Explicit BPM, key, time signature and sections always overwrite any LLM guess. Set `USE_OPENROUTER_ENHANCER = False` to send `DIRECT_CAPTION` straight to ACE-Step without needing an OpenRouter secret. The notebook records the complete secret-free conditioning payload in `/content/v2_prompt_enhancement.json` for reproducibility.
+The LLM is the optional enhancer; the deterministic stage is only a safety/format gate. The inference idea is authoritative and is never passed through the conservative audio-annotation claim policy. Exact instruments or other phrases listed in `REQUIRED_PROMPT_TERMS` must survive in the compiled caption or the enhancer retries/fails before ACE-Step runs. For example, requiring `pipa` and `dizi` prevents the LLM from weakening them to generic `plucked-string-like` and `flute-like` terms. This list is user-controlled and may be empty. `REFERENCE_ARTIST` and `REFERENCE_TRACK_TITLE` are an optional pair; when both are set, the notebook prepends the same deterministic artist/track style-reference sentence used during training. The LLM may translate that explicit reference into compatible audible traits but cannot invent or substitute another identity. Leave both fields empty to use a purely descriptive prompt. Explicit BPM, key, time signature and sections always overwrite any LLM guess. Set `USE_OPENROUTER_ENHANCER = False` to send the style-prefixed `DIRECT_CAPTION` straight to ACE-Step without needing an OpenRouter secret. The notebook records the complete secret-free conditioning payload in `/content/v2_prompt_enhancement.json` for reproducibility.
 
 ## One generation-control cell
 
@@ -101,13 +101,15 @@ If the base output is coherent while higher LoRA scales become noisy, the adapte
 
 ## Prompt format
 
-The enhancer accepts 40–300 audible words, but ACE-Step documents its main caption as a short input, so begin with roughly 40–80 words for diagnosis. Increase detail only after a short prompt generates coherently. Describe melody, composition and production; keep BPM/key/time signature in their fields. Do not use artist names or vague quality claims. Training captions remain 40–80 words.
+The enhancer accepts up to 300 words including the optional deterministic artist/track prefix, but ACE-Step documents its main caption as a short input, so begin with roughly 40–80 descriptive words for diagnosis. Increase detail only after a short prompt generates coherently. Describe melody, composition and production; keep BPM/key/time signature in their fields. Use artist/title names only through the explicit paired fields instead of burying or repeating them in free prose. Avoid vague quality claims. Training caption bodies remain 40–80 words before their style-reference prefix.
 
 The notebook accepts a free-form idea plus optional fixed conditions:
 
 ```python
 USER_IDEA = "EDM Trung Hoa không lời với hook pipa dễ nhớ, dizi đối đáp và drop mạnh"
 EXPLICIT_CONDITIONS = {
+    "reference_artist": "YUAN / 徐梦圆",
+    "reference_track": "China-Future",
     "bpm": 128,
     "keyscale": "F# minor",
     "timesignature": "4",

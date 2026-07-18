@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from prompt_enhancer import compile_caption
+from v2_common import clean_caption, track_style_reference, word_count
 
 
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -103,6 +104,25 @@ def contains_required_term(caption: str, term: str) -> bool:
     return bool(re.search(rf"(?<![\w]){phrase}(?![\w-])", caption.casefold()))
 
 
+def attach_inference_style_reference(
+    caption: str,
+    reference_artist: str = "",
+    reference_track: str = "",
+    *,
+    max_words: int = 300,
+) -> str:
+    """Prepend the same optional artist/track style anchor used during training."""
+    body = clean_caption(caption)
+    artist = " ".join(str(reference_artist).split())
+    track = " ".join(str(reference_track).split())
+    if bool(artist) != bool(track):
+        raise ValueError("reference_artist and reference_track must be set together")
+    result = f"{track_style_reference(artist, track)} {body}" if artist else body
+    if word_count(result) > max_words:
+        raise ValueError(f"caption with style reference exceeds {max_words} words")
+    return result
+
+
 def validate_conditions(
     value: dict[str, Any],
     explicit_conditions: dict[str, Any] | None = None,
@@ -112,16 +132,41 @@ def validate_conditions(
         missing = sorted(set(MUSIC_FIELDS) - set(value))
         extra = sorted(set(value) - set(MUSIC_FIELDS))
         raise ValueError(f"expected exactly five music fields; missing={missing}, extra={extra}")
-    conditions = {field: str(value.get(field, "")).strip() for field in MUSIC_FIELDS}
-    caption = compile_caption(conditions, min_words=40, max_words=300)
     explicit = dict(explicit_conditions or {})
     required_terms = explicit.pop("required_terms", [])
     if isinstance(required_terms, str) or not isinstance(required_terms, list):
         raise ValueError("required_terms must be a list of exact user-authoritative phrases")
     required_terms = [str(term).strip() for term in required_terms if str(term).strip()]
+    reference_artist = " ".join(str(explicit.pop("reference_artist", "")).split())
+    reference_track = " ".join(str(explicit.pop("reference_track", "")).split())
+    if bool(reference_artist) != bool(reference_track):
+        raise ValueError("reference_artist and reference_track must be set together")
+    prefix_words = (
+        word_count(track_style_reference(reference_artist, reference_track))
+        if reference_artist else 0
+    )
+    conditions = {field: str(value.get(field, "")).strip() for field in MUSIC_FIELDS}
+    caption_body = compile_caption(
+        conditions,
+        min_words=40,
+        max_words=300 - prefix_words,
+    )
+    for label, identity in (
+        ("reference_artist", reference_artist),
+        ("reference_track", reference_track),
+    ):
+        if identity and identity.casefold() in caption_body.casefold():
+            raise ValueError(
+                f"enhanced audio description repeated {label}; identity belongs only in the deterministic prefix"
+            )
+    caption = attach_inference_style_reference(
+        caption_body,
+        reference_artist,
+        reference_track,
+    )
     missing_terms = [
         term for term in required_terms
-        if not contains_required_term(caption, term)
+        if not contains_required_term(caption_body, term)
     ]
     if missing_terms:
         raise ValueError(
@@ -158,6 +203,8 @@ def validate_conditions(
         "sections": sections,
         "lyrics": lyrics,
         "required_terms": required_terms,
+        "reference_artist": reference_artist,
+        "reference_track": reference_track,
     }
 
 
@@ -177,8 +224,11 @@ def _request_once(
         "explicit condition, exact named instrument, genre, mood, arrangement request, production "
         "request and negative condition. Never weaken or generalize a named instrument; for example, "
         "do not replace pipa with plucked-string-like or dizi with flute-like. Add detail only when it "
-        "is compatible with the request. This is inference conditioning, not uncertain audio annotation. Do not use "
-        "artist names, 'in the style of', quality hype, use cases, or claims that cannot be heard. Treat BPM, "
+        "is compatible with the request. This is inference conditioning, not uncertain audio annotation. An artist "
+        "and reference track may appear only when the user explicitly supplies both. Use them to choose compatible "
+        "audible traits, but do not repeat their names inside the five JSON fields because deterministic code adds "
+        "the exact style-reference prefix. Do not invent another identity. Avoid quality hype, use cases, or claims "
+        "that cannot be heard. Treat BPM, "
         "key, time signature and sections as external fixed conditions; do not repeat them as JSON fields. "
         "The five prose fields "
         "must compile into one detailed 40-300 word English caption, with 300 words as a hard maximum. "
@@ -273,6 +323,8 @@ def main() -> int:
     parser.add_argument("--bpm", type=int)
     parser.add_argument("--keyscale")
     parser.add_argument("--timesignature")
+    parser.add_argument("--reference-artist")
+    parser.add_argument("--reference-track")
     parser.add_argument(
         "--require-term",
         action="append",
@@ -286,6 +338,8 @@ def main() -> int:
             "bpm": args.bpm,
             "keyscale": args.keyscale,
             "timesignature": args.timesignature,
+            "reference_artist": args.reference_artist,
+            "reference_track": args.reference_track,
         }.items() if value is not None
     }
     explicit["required_terms"] = args.require_term

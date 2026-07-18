@@ -69,6 +69,8 @@ def main() -> int:
             "WARN_SECTION_SECONDS_BELOW =",
             "USE_ACE_LM_THINKING = False",
             "USE_OPENROUTER_ENHANCER = True",
+            "REFERENCE_ARTIST =",
+            "REFERENCE_TRACK_TITLE =",
             "LORA_SCALE = 0.5",
             "MPLBACKEND",
         ):

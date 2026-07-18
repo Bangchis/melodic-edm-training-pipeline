@@ -910,6 +910,8 @@ class V2PipelineTest(unittest.TestCase):
         self.assertEqual(1, len(controls))
         for setting in (
             "USE_OPENROUTER_ENHANCER =",
+            "REFERENCE_ARTIST =",
+            "REFERENCE_TRACK_TITLE =",
             "REQUIRED_PROMPT_TERMS =",
             "USE_ACE_LM_THINKING =",
             "ACE_LM_MODEL =",
@@ -934,6 +936,7 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn("A stale release is loaded", payload_builder)
         self.assertIn("STRUCTURE_LYRICS = CUSTOM_LYRICS.strip() or sections_to_lyrics(SECTIONS)", payload_builder)
         self.assertIn("music_conditions['lyrics'] = STRUCTURE_LYRICS", payload_builder)
+        self.assertIn("attach_inference_style_reference", payload_builder)
         self.assertIn("Values are unchanged", payload_builder)
         self.assertIn(
             "Bangchis/melodic-edm-core-v2-r32-experimental",

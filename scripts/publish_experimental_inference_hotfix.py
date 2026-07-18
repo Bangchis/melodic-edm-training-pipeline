@@ -69,6 +69,7 @@ def main() -> int:
         "scripts/enhance_prompt_openrouter.py": root
         / "scripts"
         / "enhance_prompt_openrouter.py",
+        "scripts/v2_common.py": root / "scripts" / "v2_common.py",
         "notebooks/melodic_edm_core_v2_colab.ipynb": root
         / "notebooks"
         / "melodic_edm_core_v2_colab.ipynb",
@@ -104,7 +105,7 @@ def main() -> int:
             repo_id=args.repo_id,
             repo_type="model",
             operations=operations,
-            commit_message="Allow descriptive custom section labels in Colab",
+            commit_message="Add explicit artist and track style references to Colab",
         )
         revision = str(commit.oid)
         clean = temporary_root / "clean"
@@ -127,7 +128,10 @@ def main() -> int:
             verified += 1
 
         sys.path.insert(0, str(clean / "scripts"))
-        from enhance_prompt_openrouter import sections_to_lyrics
+        from enhance_prompt_openrouter import (
+            attach_inference_style_reference,
+            sections_to_lyrics,
+        )
 
         lyrics = sections_to_lyrics(CUSTOM_SECTION_FIXTURE)
         if (
@@ -136,6 +140,16 @@ def main() -> int:
             or "[Final Melodic Drop]" not in lyrics
         ):
             errors.append("custom_section_runtime_failed")
+        style_caption = attach_inference_style_reference(
+            "Instrumental melodic house with a clear hook and wide synth chords.",
+            "Xomu",
+            "Mannenzakura",
+        )
+        if not style_caption.startswith(
+            'Instrumental music in the characteristic style of Xomu, '
+            'drawing on the musical character of the reference track "Mannenzakura".'
+        ):
+            errors.append("artist_track_style_reference_runtime_failed")
         notebook_text = (
             clean / "notebooks" / "melodic_edm_core_v2_colab.ipynb"
         ).read_text(encoding="utf-8")
@@ -143,6 +157,9 @@ def main() -> int:
         for marker in (
             "STRUCTURE_LYRICS = CUSTOM_LYRICS.strip() or sections_to_lyrics(SECTIONS)",
             "music_conditions['lyrics'] = STRUCTURE_LYRICS",
+            "REFERENCE_ARTIST =",
+            "REFERENCE_TRACK_TITLE =",
+            "attach_inference_style_reference",
         ):
             if marker not in notebook_text:
                 errors.append(f"notebook_marker_missing:{marker}")

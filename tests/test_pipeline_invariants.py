@@ -19,6 +19,7 @@ from build_acestep_dataset import choose_splits, choose_window, render_audio  # 
 from merge_tensors import write_loader_manifest  # noqa: E402
 from prompt_enhancer import compile_caption  # noqa: E402
 from enhance_prompt_openrouter import (  # noqa: E402
+    attach_inference_style_reference,
     contains_required_term,
     enhance_prompt,
     sections_to_lyrics,
@@ -108,6 +109,8 @@ class RecordPreservingTests(unittest.TestCase):
                 "keyscale": "F# minor",
                 "timesignature": "4",
                 "required_terms": ["pipa", "dizi"],
+                "reference_artist": "YUAN / 徐梦圆",
+                "reference_track": "China-Future",
             },
             opener=fake_open,
         )
@@ -115,6 +118,14 @@ class RecordPreservingTests(unittest.TestCase):
         self.assertEqual(result["conditions"]["keyscale"], "F# minor")
         self.assertEqual(result["resolved_model"], "google/gemini-test-resolved")
         self.assertEqual(result["conditions"]["required_terms"], ["pipa", "dizi"])
+        self.assertEqual(result["conditions"]["reference_artist"], "YUAN / 徐梦圆")
+        self.assertEqual(result["conditions"]["reference_track"], "China-Future")
+        self.assertTrue(
+            result["conditions"]["caption"].startswith(
+                'Instrumental music in the characteristic style of YUAN / 徐梦圆, '
+                'drawing on the musical character of the reference track "China-Future".'
+            )
+        )
         self.assertEqual(captured["payload"]["response_format"]["type"], "json_schema")
         self.assertTrue(captured["payload"]["response_format"]["json_schema"]["strict"])
         self.assertEqual(captured["payload"]["reasoning"], {"effort": "minimal", "exclude": True})
@@ -152,6 +163,18 @@ class RecordPreservingTests(unittest.TestCase):
                 "arrangement": "An atmospheric intro rises through a compact build into an energetic four-on-the-floor melodic drop",
                 "production": "Wide supersaw chords, clean sub bass, punchy electronic drums and spacious fantasy reverb support the melody",
             }, {"required_terms": ["pipa"]})
+
+    def test_inference_style_reference_requires_exact_artist_and_track_pair(self) -> None:
+        body = "Instrumental melodic house with a clear hook and wide synth chords."
+        caption = attach_inference_style_reference(body, "Xomu", "Mannenzakura")
+        self.assertTrue(
+            caption.startswith(
+                'Instrumental music in the characteristic style of Xomu, '
+                'drawing on the musical character of the reference track "Mannenzakura".'
+            )
+        )
+        with self.assertRaisesRegex(ValueError, "must be set together"):
+            attach_inference_style_reference(body, "Xomu", "")
 
     def test_release_delivery_sources_are_present(self) -> None:
         required = (
