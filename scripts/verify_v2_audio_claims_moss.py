@@ -261,7 +261,9 @@ def request_for(claims: list[str], view: str) -> str:
         + " Do not infer from title, artist, genre stereotypes or filenames. For every claim return "
         "verdict present, absent or uncertain; confidence from 0 to 1; short audible evidence; and "
         "an audible_alternative when the exact name is unsupported. Preserve exact specific names "
-        "when heard. Return JSON only with exactly this shape: "
+        "when heard. Return JSON only with exactly this shape. Do not emit analysis, reasoning, "
+        "markdown, or a thinking block before the object. The first output character must be { "
+        "and the final output character must be }: "
         '{"claims":[{"claim":"pipa","verdict":"present","confidence":0.9,'
         '"evidence":"...","audible_alternative":""}]}. Return exactly one item for every '
         "input claim and copy each claim string exactly. Claims: "
@@ -395,7 +397,11 @@ def main() -> int:
                     break
                 except (KeyError, TypeError, ValueError) as exc:
                     last_error = f"{type(exc).__name__}:{exc}"
-                    prompt += "\nPrevious response failed exact validation: " + last_error + ". Return corrected JSON only."
+                    prompt += (
+                        "\nPrevious response failed exact validation: " + last_error
+                        + ". Return corrected JSON only. Start immediately with {, end with }, "
+                        "and emit no reasoning or markdown outside the object."
+                    )
             else:
                 failed = True
                 print(f"[{index}/{len(work)}] {sample_id} {view} FAILED {last_error}", flush=True)

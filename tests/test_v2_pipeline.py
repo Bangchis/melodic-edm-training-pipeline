@@ -266,6 +266,11 @@ class V2PipelineTest(unittest.TestCase):
         self.assertEqual([], errors)
         self.assertEqual("present", review["claims"][0]["verdict"])
 
+    def test_claim_verifier_forces_json_before_reasoning(self) -> None:
+        source = (SCRIPTS / "verify_v2_audio_claims_moss.py").read_text(encoding="utf-8")
+        self.assertIn("first output character must be {", source)
+        self.assertIn("emit no reasoning or markdown outside the object", source)
+
     def test_claim_review_accepts_claim_keyed_json(self) -> None:
         review, errors = parse_claim_review({"claims": {"pipa": {
             "verdict": "present", "confidence": 0.9,
