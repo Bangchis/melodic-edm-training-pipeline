@@ -600,6 +600,7 @@ class V2PipelineTest(unittest.TestCase):
                 SCRIPTS.parent / "server" / "supervisor" / f"edm-v2-repair-captions-{shard}.sh"
             ).read_text(encoding="utf-8")
             self.assertIn("--ready-only", launcher)
+            self.assertIn("--attempts 5", launcher)
 
     def test_caption_compiler_cannot_introduce_unverified_exact_instrument(self) -> None:
         decisions = [{
@@ -612,6 +613,24 @@ class V2PipelineTest(unittest.TestCase):
         self.assertEqual(
             [],
             unverified_new_claims("A pipa-like plucked hook has no newly named source.", decisions),
+        )
+
+    def test_generic_electronic_timbre_words_do_not_require_exact_source_consensus(self) -> None:
+        decisions = [{
+            "claim": "pipa", "decision": "uncertain", "audible_alternative": "plucked lead",
+        }]
+        self.assertEqual(
+            [],
+            unverified_new_claims(
+                "A synthesizer lead moves above electronic drums, bass and percussion.", decisions
+            ),
+        )
+        self.assertIn(
+            "verified_absent_claim_retained:synthesizer",
+            validate_claim_constraints(
+                "A synthesizer carries the hook.",
+                [{"claim": "synthesizer", "decision": "absent", "audible_alternative": ""}],
+            ),
         )
 
     def test_caption_fusion_uses_old_song_prompt_and_independent_audio_facts(self) -> None:

@@ -7,4 +7,4 @@ export CUDA_VISIBLE_DEVICES=0
 project=/workspace/melodic_edm_training_pipeline
 cd "$project"
 exec "$project/.venvs/moss-music/bin/python" -u scripts/repair_v2_annotations_moss.py \
-  --project-root "$project" --shard-index 0 --num-shards 2 --ready-only
+  --project-root "$project" --shard-index 0 --num-shards 2 --ready-only --attempts 5

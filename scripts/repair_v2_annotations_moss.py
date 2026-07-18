@@ -99,6 +99,26 @@ FORBIDDEN_TRAINING_CAPTION_PATTERNS = {
     ),
 }
 
+# These broad electronic/timbre words describe a sound family rather than
+# asserting that a particular physical instrument was recorded. They may come
+# from the independent waveform-analysis packet without exact-name consensus.
+# A per-track ``absent`` decision still overrides this set below.
+GENERIC_TIMBRE_CLAIMS = frozenset({
+    "synth lead",
+    "synth pluck",
+    "supersaw",
+    "sub bass",
+    "synth bass",
+    "electronic drums",
+    "drum machine",
+    "percussion",
+    "synthesizer",
+    "drums",
+    "bass",
+    "synth texture",
+    "synth pad",
+})
+
 
 def exact_claim_asserted(text: str, claim: str) -> bool:
     """Return True for an exact-name assertion, excluding an explicit ``-like`` qualifier."""
@@ -168,7 +188,12 @@ def validate_training_caption_policy(captions: dict[str, str]) -> list[str]:
 
 
 def unverified_new_claims(text: str, decisions: list[dict[str, Any]]) -> list[str]:
-    """Find exact controlled names introduced after the audible claim-verification stage."""
+    """Find new specific source names introduced after audible verification.
+
+    Generic electronic/timbre descriptions remain usable because the compiler
+    also receives independent waveform analysis. Exact acoustic, traditional
+    and vocal-source names still require per-track consensus.
+    """
     allowed = {str(item.get("claim") or "").casefold() for item in decisions}
     for item in decisions:
         claim = str(item.get("claim") or "")
@@ -179,7 +204,11 @@ def unverified_new_claims(text: str, decisions: list[dict[str, Any]]) -> list[st
         )
     return [
         term for term in CLAIM_DISCOVERY_TERMS
-        if term not in allowed and exact_claim_asserted(text, term)
+        if (
+            term not in GENERIC_TIMBRE_CLAIMS
+            and term not in allowed
+            and exact_claim_asserted(text, term)
+        )
     ]
 
 
@@ -565,7 +594,9 @@ def main() -> int:
                 request += (
                     "\nPrevious response failed validation: "
                     + last_error
-                    + ". Return corrected JSON only."
+                    + ". Correct every named validation error. Remove quality-hype words such as "
+                    "polished or professional, remove numeric BPM/key/meter notation, omit an absent "
+                    "claim, and qualify or omit an uncertain exact source name. Return corrected JSON only."
                 )
         else:
             errors += 1
