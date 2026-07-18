@@ -60,6 +60,16 @@ SAMPLING_DEFAULTS: dict[str, Any] = {
     "fade_out_duration": 0.0,
     "latent_shift": 0.0,
     "latent_rescale": 1.0,
+    "thinking": False,
+    "ace_lm_model": "acestep-5Hz-lm-1.7B",
+    "lm_temperature": 0.8,
+    "lm_cfg_scale": 2.0,
+    "lm_top_k": 0,
+    "lm_top_p": 0.9,
+    "use_cot_metas": False,
+    "use_cot_caption": False,
+    "use_cot_language": False,
+    "use_cot_lyrics": False,
 }
 
 OUTPUT_DEFAULTS: dict[str, Any] = {
@@ -195,7 +205,7 @@ def main() -> int:
     parser.add_argument("--release-dir", default=".")
     parser.add_argument(
         "--adapter-subdirectory",
-        choices=("best-val", "final-all-data"),
+        choices=("experimental-r32", "best-val", "final-all-data"),
         default="final-all-data",
     )
     parser.add_argument("--prompts", default="fixed_eval_prompts.json")
@@ -224,6 +234,7 @@ def main() -> int:
     prompts = prompt_document.get("prompts", prompt_document)
     prompt = prompts[args.prompt_index]
     sampling, output_settings = merged_generation_settings(prompt_document)
+    ace_lm_model = str(sampling.pop("ace_lm_model"))
     if output_settings["seeds"] is None and not output_settings["use_random_seed"]:
         output_settings["seeds"] = [int(prompt["seed"])] * output_settings["batch_size"]
     sys.path.insert(0, str(ace_root))
@@ -242,6 +253,21 @@ def main() -> int:
     )
     if not loaded:
         raise RuntimeError(f"XL-Base initialization failed: {message}")
+    llm_handler = None
+    if bool(sampling["thinking"]):
+        from acestep.llm_inference import LLMHandler
+
+        llm_handler = LLMHandler()
+        lm_message, lm_loaded = llm_handler.initialize(
+            checkpoint_dir=str(checkpoint_root),
+            lm_model_path=ace_lm_model,
+            backend="pt",
+            device="cuda",
+            offload_to_cpu=args.offload_to_cpu,
+            dtype=None,
+        )
+        if not lm_loaded:
+            raise RuntimeError(f"ACE 5Hz LM initialization failed: {lm_message}")
     adapter_name = f"melodic_edm_core_v2_{args.adapter_subdirectory.replace('-', '_')}"
     if not args.disable_lora:
         load_message = handler.add_lora(str(adapter), adapter_name=adapter_name)
@@ -264,17 +290,12 @@ def main() -> int:
         duration=float(prompt["duration"]),
         **sampling,
         seed=int(prompt["seed"]),
-        thinking=False,
-        use_cot_metas=False,
-        use_cot_caption=False,
-        use_cot_language=False,
-        use_cot_lyrics=False,
     )
     config = GenerationConfig(
         **output_settings,
     )
     output = Path(args.output_dir).resolve()
-    generated = generate_music(handler, None, params, config, save_dir=str(output))
+    generated = generate_music(handler, llm_handler, params, config, save_dir=str(output))
     if not generated.success or len(generated.audios) != output_settings["batch_size"]:
         raise RuntimeError(generated.error or generated.status_message)
     verified_audio = []
@@ -292,6 +313,7 @@ def main() -> int:
         "seed": prompt["seed"],
         "seeds": output_settings["seeds"],
         "sampling": sampling,
+        "ace_lm_model": ace_lm_model if sampling["thinking"] else None,
         "output": output_settings,
         "audio_path": verified_audio[0]["audio_path"],
         "probe": verified_audio[0]["probe"],

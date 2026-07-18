@@ -21,9 +21,10 @@ from v2_common import (  # noqa: E402
     parent_song_id,
     validate_caption_set,
 )
-from annotate_moss_music import build_prompt, validate_supplement  # noqa: E402
+from annotate_moss_music import MODEL_REVISION, build_prompt, validate_supplement  # noqa: E402
 from score_v2_checkpoints_moss import parse_score  # noqa: E402
 from merge_v2_tensors import hardlink_tensor  # noqa: E402
+from build_v2_dedup_tensor_views import select_unique_records  # noqa: E402
 from infer_v2_release import merged_generation_settings  # noqa: E402
 from audit_v2_annotation_fidelity_moss import parse_review, stratified_rows  # noqa: E402
 from repair_v2_annotations_moss import (  # noqa: E402
@@ -33,16 +34,21 @@ from repair_v2_annotations_moss import (  # noqa: E402
     parse_repair,
     qualified_claim_mentioned,
     unverified_new_claims,
+    validate_claim_constraints,
     validate_training_caption_policy,
 )
 from verify_v2_audio_claims_moss import (  # noqa: E402
     consensus_for,
     extract_instrument_claims,
+    migrate_cached_consensus,
     parse_claim_review,
 )
 from orchestrate_v2 import archive_stale_training_outputs, json_pass, json_value  # noqa: E402
 from v2_listening_quality import summarize_quality  # noqa: E402
 from validate_v2_listening_quality import compare_prompt_alignment  # noqa: E402
+from summarize_v2_seed_robustness import summarize as summarize_seed_robustness  # noqa: E402
+from compare_v2_seed_robustness import compare as compare_seed_robustness  # noqa: E402
+from v2_common import normalize_instrumental_structure  # noqa: E402
 
 
 def words(prefix: str, count: int) -> str:
@@ -51,6 +57,71 @@ def words(prefix: str, count: int) -> str:
 
 
 class V2PipelineTest(unittest.TestCase):
+    def test_exact_audio_dedup_selects_one_deterministic_representative(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            audio_a = root / "a.flac"
+            audio_b = root / "b.flac"
+            audio_c = root / "c.flac"
+            audio_a.write_bytes(b"same-audio")
+            audio_b.write_bytes(b"same-audio")
+            audio_c.write_bytes(b"different-audio")
+            representatives, groups = select_unique_records(root, [
+                {"sample_id": "song__002", "split": "train", "final_audio_path": str(audio_b)},
+                {"sample_id": "song__001", "split": "train", "final_audio_path": str(audio_a)},
+                {"sample_id": "song__003", "split": "validation", "final_audio_path": str(audio_c)},
+            ])
+        self.assertEqual(["song__001", "song__003"], [item["sample_id"] for item in representatives])
+        duplicate = next(item for item in groups if item["records"] == 2)
+        self.assertEqual("song__001", duplicate["representative_sample_id"])
+        self.assertEqual(1, duplicate["redundant_records"])
+
+    def test_exact_audio_dedup_rejects_cross_split_leakage(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            audio = Path(temporary) / "audio.flac"
+            audio.write_bytes(b"same-audio")
+            with self.assertRaisesRegex(ValueError, "crosses train/validation"):
+                select_unique_records(Path(temporary), [
+                    {"sample_id": "song__001", "split": "train", "final_audio_path": str(audio)},
+                    {"sample_id": "song__002", "split": "validation", "final_audio_path": str(audio)},
+                ])
+
+    def test_instrumental_structure_repairs_only_impossible_section_positions(self) -> None:
+        lyrics = """[Break]
+[Instrumental]
+
+[Theme]
+[Instrumental]
+
+[Intro]
+[Instrumental]
+
+[Outro]
+[Instrumental]
+
+[Theme]
+[Instrumental]
+
+[Break]
+[Instrumental]
+"""
+        normalized, changes = normalize_instrumental_structure(lyrics)
+        self.assertEqual(
+            ["Intro", "Theme", "Build", "Break", "Theme", "Outro"],
+            [
+                line[1:-1]
+                for line in normalized.splitlines()
+                if line.startswith("[") and line != "[Instrumental]"
+            ],
+        )
+        self.assertEqual(4, len(changes))
+
+    def test_instrumental_structure_keeps_valid_sequence_unchanged(self) -> None:
+        lyrics = "[Intro]\n[Instrumental]\n\n[Theme]\n[Instrumental]\n\n[Drop]\n[Instrumental]\n\n[Outro]\n[Instrumental]\n"
+        normalized, changes = normalize_instrumental_structure(lyrics)
+        self.assertEqual(lyrics, normalized)
+        self.assertEqual([], changes)
+
     """Protect grouping, prompt coverage and MOSS response parsing."""
 
     def test_training_config_names_separate_self_and_cross_attention_scope(self) -> None:
@@ -63,13 +134,16 @@ class V2PipelineTest(unittest.TestCase):
         )
         self.assertEqual(32, config["adapter"]["rank"])
         self.assertEqual(32, config["adapter"]["alpha"])
-        self.assertEqual(20, config["optimization"]["maximum_epochs"])
+        self.assertEqual(30, config["optimization"]["maximum_epochs"])
         self.assertEqual(0.00005, config["optimization"]["learning_rate"])
         self.assertEqual(
             ["canonical", "composition", "production"],
             config["data"]["caption_variants"],
         )
         self.assertEqual(0.5, config["optimization"]["evaluation_lora_scale"])
+        self.assertEqual(217, config["data"]["unique_audio_records"])
+        self.assertEqual(184, config["data"]["train_unique_audio_records"])
+        self.assertEqual(33, config["data"]["validation_unique_audio_records"])
         quality_gate = config["optimization"]["absolute_listening_quality_gate"]
         self.assertEqual(3, quality_gate["minimum_candidate_prompt_alignment_per_sample"])
         self.assertTrue(quality_gate["candidate_prompt_alignment_not_worse_than_baseline"])
@@ -91,6 +165,118 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn('"caption_variants": [item["text"] for item in variants]', builder)
         self.assertIn('"caption_variant_types": list(CAPTION_TYPES)', builder)
         self.assertIn('"prompt_embeddings_per_record": 3', validator)
+
+    def test_robust_eval_prompts_match_training_form_density(self) -> None:
+        config = json.loads(
+            (SCRIPTS.parent / "configs" / "v2" / "robust_eval_prompts.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(3, len(config["prompts"]))
+        for prompt in config["prompts"]:
+            words_in_caption = len(prompt["caption"].split())
+            section_count = prompt["lyrics"].count("[Instrumental]")
+            self.assertGreaterEqual(words_in_caption, 40)
+            self.assertLessEqual(words_in_caption, 80)
+            self.assertGreaterEqual(prompt["duration"] / section_count, 20)
+            self.assertNotIn(" - ", prompt["lyrics"])
+
+    def test_pristine_baseline_uses_the_same_instrumental_structure_fallback(self) -> None:
+        source = (SCRIPTS / "evaluate_v2_baseline.py").read_text(encoding="utf-8")
+        self.assertIn("DEFAULT_LYRICS", source)
+        self.assertNotIn("import LYRICS", source)
+        self.assertIn('prompt.get("lyrics", DEFAULT_LYRICS)', source)
+
+    def test_seed_robustness_requires_four_of_five_clean_outputs_per_prompt(self) -> None:
+        clean = {
+            "scores": {
+                "prompt_alignment": 3,
+                "melody": 3,
+                "structure": 3,
+                "audio_quality": 3,
+            },
+            "failure_modes": {
+                "distorted": False,
+                "collapsed": False,
+                "static_loop": False,
+                "intelligible_vocals": False,
+            },
+        }
+        failed = {
+            **clean,
+            "scores": {**clean["scores"], "melody": 2},
+        }
+        records = [
+            {**(clean if index < 4 else failed), "source_prompt_id": "prompt-a", "seed": index}
+            for index in range(5)
+        ]
+        result = summarize_seed_robustness(
+            records,
+            expected_seeds=5,
+            minimum_score=3,
+            minimum_pass_rate=0.8,
+        )
+        self.assertEqual("pass", result["status"])
+        self.assertEqual(0.8, result["prompts"]["prompt-a"]["pass_rate"])
+
+    def test_seed_robustness_rejects_lucky_single_seed(self) -> None:
+        records = []
+        for index in range(5):
+            records.append({
+                "source_prompt_id": "prompt-a",
+                "seed": index,
+                "scores": {
+                    "prompt_alignment": 4 if index == 0 else 1,
+                    "melody": 4 if index == 0 else 1,
+                    "structure": 4 if index == 0 else 1,
+                    "audio_quality": 4 if index == 0 else 1,
+                },
+                "failure_modes": {
+                    "distorted": False,
+                    "collapsed": index > 0,
+                    "static_loop": False,
+                    "intelligible_vocals": False,
+                },
+            })
+        result = summarize_seed_robustness(
+            records,
+            expected_seeds=5,
+            minimum_score=3,
+            minimum_pass_rate=0.8,
+        )
+        self.assertEqual("failed", result["status"])
+        self.assertEqual(0.2, result["prompts"]["prompt-a"]["pass_rate"])
+
+    def test_seed_comparison_pairs_identical_prompt_and_seed(self) -> None:
+        def record(seed: int, score: int) -> dict:
+            return {
+                "source_prompt_id": "prompt-a",
+                "seed": seed,
+                "scores": {field: score for field in ("prompt_alignment", "melody", "structure", "audio_quality")},
+                "failure_modes": {
+                    "distorted": False,
+                    "collapsed": False,
+                    "static_loop": False,
+                    "intelligible_vocals": False,
+                },
+            }
+
+        result = compare_seed_robustness([record(1, 2)], [record(1, 4)])
+        self.assertEqual("pass", result["status"])
+        self.assertEqual(1, result["outcomes"]["base_only_pass"])
+        self.assertEqual(-2, result["mean_score_delta_lora_minus_base"]["melody"])
+
+    def test_main_orchestrator_requires_multi_genre_five_seed_quality(self) -> None:
+        source = (SCRIPTS / "orchestrate_v2.py").read_text(encoding="utf-8")
+        self.assertIn('"edm-v2-evaluate-robust"', source)
+        self.assertIn('"edm-v2-evaluate-robust-base"', source)
+        self.assertIn('"edm-v2-score-moss-robust"', source)
+        self.assertIn('"edm-v2-compare-robust"', source)
+        self.assertIn('"five-seed-lora-quality"', source)
+        for launcher in ("edm-v2-evaluate-robust.sh", "edm-v2-evaluate-robust-base.sh"):
+            content = (SCRIPTS.parent / "server" / "supervisor" / launcher).read_text(encoding="utf-8")
+            self.assertIn("configs/v2/robust_eval_prompts.json", content)
+            self.assertIn("--seed-offsets 0,1,2,3,4", content)
 
     def test_orchestrator_json_gate_helpers(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -266,6 +452,14 @@ class V2PipelineTest(unittest.TestCase):
         self.assertEqual([], errors)
         self.assertEqual("present", review["claims"][0]["verdict"])
 
+    def test_claim_review_rejects_zero_confidence_present_with_negative_evidence(self) -> None:
+        _review, errors = parse_claim_review({"claims": [{
+            "claim": "pipa", "verdict": "present", "confidence": 0,
+            "evidence": "No pipa is audible in the track.", "audible_alternative": "",
+        }]}, ["pipa"])
+        self.assertIn("low_confidence_non_uncertain:pipa", errors)
+        self.assertIn("present_verdict_contradicts_evidence:pipa", errors)
+
     def test_claim_verifier_forces_json_before_reasoning(self) -> None:
         source = (SCRIPTS / "verify_v2_audio_claims_moss.py").read_text(encoding="utf-8")
         self.assertIn("first output character must be {", source)
@@ -290,23 +484,112 @@ class V2PipelineTest(unittest.TestCase):
         self.assertEqual("absent", consensus_for("pipa", review("absent", "absent", "uncertain"))["decision"])
         self.assertEqual("uncertain", consensus_for("pipa", review("present", "absent", "present"))["decision"])
 
+    def test_clean_v25_claim_evidence_can_migrate_without_new_audio_inference(self) -> None:
+        views = {
+            name: {"claims": [{
+                "claim": "pipa", "verdict": "present", "confidence": 0.9,
+                "evidence": "Distinct plucked attacks are audible.", "audible_alternative": "",
+            }]}
+            for name in ("full_neutral", "full_challenge", "overview_montage")
+        }
+        migrated = migrate_cached_consensus({
+            "claim_verifier_revision": "multi-view-audio-claims-v2.5",
+            "model_revision": MODEL_REVISION,
+            "audio_sha256": "audio-hash",
+            "claims": ["pipa"],
+            "views": views,
+        }, ["pipa"], "audio-hash", "new-input-hash")
+        self.assertIsNotNone(migrated)
+        self.assertEqual("multi-view-audio-claims-v2.6", migrated["claim_verifier_revision"])
+        self.assertEqual("present", migrated["decisions"][0]["decision"])
+
+    def test_contradictory_v25_claim_evidence_must_be_reheard(self) -> None:
+        views = {
+            name: {"claims": [{
+                "claim": "pipa", "verdict": "present", "confidence": 0,
+                "evidence": "No pipa is audible.", "audible_alternative": "",
+            }]}
+            for name in ("full_neutral", "full_challenge", "overview_montage")
+        }
+        migrated = migrate_cached_consensus({
+            "claim_verifier_revision": "multi-view-audio-claims-v2.5",
+            "model_revision": MODEL_REVISION,
+            "audio_sha256": "audio-hash",
+            "claims": ["pipa"],
+            "views": views,
+        }, ["pipa"], "audio-hash", "new-input-hash")
+        self.assertIsNone(migrated)
+
+    def test_claim_retry_explicitly_converts_low_confidence_binary_verdicts(self) -> None:
+        source = (SCRIPTS / "verify_v2_audio_claims_moss.py").read_text(encoding="utf-8")
+        self.assertIn("change that verdict to uncertain", source)
+        for shard in (0, 1):
+            launcher = (
+                SCRIPTS.parent / "server" / "supervisor" / f"edm-v2-verify-claims-{shard}.sh"
+            ).read_text(encoding="utf-8")
+            self.assertIn("--attempts 5", launcher)
+
     def test_like_qualifier_is_not_an_exact_instrument_assertion(self) -> None:
         self.assertTrue(exact_claim_asserted("A pipa carries the hook.", "pipa"))
         self.assertFalse(exact_claim_asserted("A pipa-like plucked lead carries the hook.", "pipa"))
         self.assertTrue(qualified_claim_mentioned("A pipa-like plucked lead carries the hook.", "pipa"))
         self.assertFalse(qualified_claim_mentioned("A generic plucked-string lead carries the hook.", "pipa"))
 
+    def test_uncertain_claim_may_be_omitted_instead_of_forced_into_caption(self) -> None:
+        source = (SCRIPTS / "repair_v2_annotations_moss.py").read_text(encoding="utf-8")
+        self.assertNotIn("uncertain_claim_qualified_token_missing", source)
+        self.assertIn("claim_name_mentioned(normalized, claim)", source)
+
+    def test_present_claim_is_evidence_not_a_required_caption_keyword(self) -> None:
+        decisions = [
+            {"claim": "pipa", "decision": "present", "audible_alternative": ""},
+            {"claim": "electronic bass", "decision": "present", "audible_alternative": ""},
+        ]
+        self.assertEqual(
+            [],
+            validate_claim_constraints(
+                "A bright syncopated motif develops into a spacious melodic drop.", decisions
+            ),
+        )
+        source = (SCRIPTS / "repair_v2_annotations_moss.py").read_text(encoding="utf-8")
+        self.assertNotIn("verified_present_claim_missing", source)
+        self.assertIn("not a coverage checklist", source)
+
+    def test_absent_and_uncertain_claims_remain_per_track_safety_constraints(self) -> None:
+        self.assertIn(
+            "verified_absent_claim_retained:pipa",
+            validate_claim_constraints(
+                "A pipa-like lead carries the hook.",
+                [{"claim": "pipa", "decision": "absent", "audible_alternative": "plucked lead"}],
+            ),
+        )
+        self.assertEqual(
+            [],
+            validate_claim_constraints(
+                "A pipa-like plucked lead carries the hook.",
+                [{"claim": "pipa", "decision": "uncertain", "audible_alternative": "plucked lead"}],
+            ),
+        )
+
     def test_final_training_caption_policy_rejects_metadata_and_hype(self) -> None:
         errors = validate_training_caption_policy({
-            "canonical": "A polished 4/4 EDM track in F# minor.",
+            "canonical": "A polished 4/4 EDM track in F# minor with a repetitive lead.",
             "composition": "A standard EDM structure supports the motif.",
             "production": "The lead moves over a professional 128 BPM mix.",
         })
         self.assertIn("canonical_contains_embedded_time_signature", errors)
         self.assertIn("canonical_contains_embedded_exact_key", errors)
         self.assertIn("canonical_contains_quality_hype", errors)
+        self.assertIn("canonical_contains_static_loop_cue", errors)
         self.assertIn("composition_contains_generic_edm_structure", errors)
         self.assertIn("production_contains_embedded_bpm", errors)
+
+    def test_caption_instruct_keeps_specific_prior_when_moss_only_omits_it(self) -> None:
+        source = (SCRIPTS / "repair_v2_annotations_moss.py").read_text(encoding="utf-8")
+        self.assertIn("omitted detail", source)
+        self.assertIn("is not a contradiction", source)
+        self.assertIn("never replace a compatible specific detail", source)
+        self.assertIn("binding claim decisions override exact sound-source", source)
 
     def test_caption_compiler_cannot_introduce_unverified_exact_instrument(self) -> None:
         decisions = [{
@@ -431,8 +714,13 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn('"tensor_validation_report.json"', apply_script)
         self.assertIn('"build_v2_dataset.py"', apply_script)
         self.assertIn("CAPTION_COMPILER_REVISION", apply_script)
+        self.assertIn("archive_stale_model_outputs", apply_script)
+        self.assertIn("fresh_rank32_outputs_required", apply_script)
         verifier = (SCRIPTS / "verify_v2_audio_claims_moss.py").read_text(encoding="utf-8")
         self.assertIn("CLAIM_VERIFIER_REVISION", verifier)
+        pilot = (SCRIPTS.parent / "server" / "supervisor" / "edm-v2-repair-captions-pilot.sh").read_text(encoding="utf-8")
+        self.assertIn("--num-shards 231", pilot)
+        self.assertIn("--shard-index 0", pilot)
 
     def test_checkpoint_sync_includes_non_fifth_best_val(self) -> None:
         source = (SCRIPTS / "sync_v2_checkpoints_hf.py").read_text(encoding="utf-8")
@@ -440,7 +728,7 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn('path_in_repo="checkpoints/best_val"', source)
         self.assertIn("epoch % 5 == 0", source)
         validator = (SCRIPTS / "validate_training_v2.py").read_text(encoding="utf-8")
-        self.assertIn("{5, 10, 15, 20}", validator)
+        self.assertIn("{5, 10, 15, 20, 25, 30}", validator)
 
     def test_user_cutoff_excludes_later_evaluation_checkpoints(self) -> None:
         source = (SCRIPTS / "evaluate_v2_checkpoints.py").read_text(encoding="utf-8")
@@ -453,6 +741,11 @@ class V2PipelineTest(unittest.TestCase):
         source = (SCRIPTS / "evaluate_v2_checkpoints.py").read_text(encoding="utf-8")
         self.assertIn("LORA_SCALES = (0.5,)", source)
         self.assertIn("handler.set_lora_scale(label, lora_scale)", source)
+        self.assertIn('"--final-only"', source)
+        launcher = (
+            SCRIPTS.parent / "server" / "supervisor" / "edm-v2-evaluate-checkpoints.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn("--final-only", launcher)
         selection = (SCRIPTS / "select_v2_checkpoint.py").read_text(encoding="utf-8")
         self.assertIn('"selected_lora_scale": selected["lora_scale"]', selection)
 
@@ -465,6 +758,10 @@ class V2PipelineTest(unittest.TestCase):
     def test_colab_inference_overrides_notebook_only_matplotlib_backend(self) -> None:
         inference = (SCRIPTS / "infer_v2_release.py").read_text(encoding="utf-8")
         self.assertIn('os.environ["MPLBACKEND"] = "Agg"', inference)
+        self.assertIn('"thinking": False', inference)
+        self.assertIn('"ace_lm_model": "acestep-5Hz-lm-1.7B"', inference)
+        self.assertIn("LLMHandler", inference)
+        self.assertIn("experimental-r32", inference)
         notebook = (SCRIPTS.parent / "notebooks" / "melodic_edm_core_v2_colab.ipynb").read_text(encoding="utf-8")
         self.assertIn("'MPLBACKEND': 'Agg'", notebook)
 
@@ -477,6 +774,8 @@ class V2PipelineTest(unittest.TestCase):
         for setting in (
             "USE_OPENROUTER_ENHANCER =",
             "REQUIRED_PROMPT_TERMS =",
+            "USE_ACE_LM_THINKING =",
+            "ACE_LM_MODEL =",
             "USE_LORA =",
             "LORA_SCALE =",
             "GUIDANCE_SCALE =",
@@ -487,6 +786,19 @@ class V2PipelineTest(unittest.TestCase):
             "AUDIO_FORMAT =",
         ):
             self.assertIn(setting, controls[0])
+        self.assertIn("DURATION_SECONDS = 180", controls[0])
+        self.assertIn("SECTIONS =", controls[0])
+        self.assertIn("CUSTOM_LYRICS =", controls[0])
+        self.assertIn("WARN_SECTION_SECONDS_BELOW =", controls[0])
+        self.assertIn("never changed from the section count", controls[0])
+        self.assertIn("0–3 is safer than a long list", controls[0])
+        payload_builder = "\n".join(code_cells)
+        self.assertIn("CUSTOM_LYRICS.strip() or music_conditions['lyrics']", payload_builder)
+        self.assertIn("Values are unchanged", payload_builder)
+        self.assertIn(
+            "Bangchis/melodic-edm-core-v2-r32-experimental",
+            notebook_path.read_text(encoding="utf-8"),
+        )
         self.assertIn("if USE_OPENROUTER_ENHANCER:", "\n".join(code_cells))
         self.assertIn("if not USE_LORA or LORA_SCALE == 0:", "\n".join(code_cells))
 
@@ -495,7 +807,12 @@ class V2PipelineTest(unittest.TestCase):
             "scores": {
                 "prompt_alignment": 2, "melody": 5, "structure": 5, "audio_quality": 5,
             },
-            "failure_modes": {"distorted": False, "collapsed": False, "static_loop": False},
+            "failure_modes": {
+                "distorted": False,
+                "collapsed": False,
+                "static_loop": False,
+                "intelligible_vocals": False,
+            },
         }])
         self.assertFalse(quality["quality_accepted"])
         self.assertIn("individual_score_below_minimum:prompt_alignment:2:3", quality["errors"])
@@ -505,7 +822,12 @@ class V2PipelineTest(unittest.TestCase):
             "scores": {
                 "prompt_alignment": 2, "melody": 3, "structure": 3, "audio_quality": 4,
             },
-            "failure_modes": {"distorted": False, "collapsed": False, "static_loop": False},
+            "failure_modes": {
+                "distorted": False,
+                "collapsed": False,
+                "static_loop": False,
+                "intelligible_vocals": False,
+            },
         }]
         self.assertTrue(summarize_quality(records, profile="baseline")["quality_accepted"])
         self.assertFalse(summarize_quality(records, profile="candidate")["quality_accepted"])
@@ -710,11 +1032,21 @@ class V2PipelineTest(unittest.TestCase):
                 "structure": "Sections develop clearly.",
                 "audio_quality": "The output is clean.",
             },
-            "failure_modes": {"distorted": False, "collapsed": False, "static_loop": False},
+            "failure_modes": {
+                "distorted": False,
+                "collapsed": False,
+                "static_loop": False,
+                "intelligible_vocals": False,
+            },
         })
         self.assertEqual([], errors)
         self.assertEqual(
-            {"distorted": False, "collapsed": False, "static_loop": False},
+            {
+                "distorted": False,
+                "collapsed": False,
+                "static_loop": False,
+                "intelligible_vocals": False,
+            },
             score["failure_modes"],
         )
 
@@ -723,10 +1055,52 @@ class V2PipelineTest(unittest.TestCase):
             "scores": {
                 "prompt_alignment": 5, "melody": 5, "structure": 5, "audio_quality": 5,
             },
-            "failure_modes": {"distorted": False, "collapsed": False, "static_loop": True},
+            "failure_modes": {
+                "distorted": False,
+                "collapsed": False,
+                "static_loop": True,
+                "intelligible_vocals": False,
+            },
         }])
         self.assertFalse(quality["quality_accepted"])
         self.assertIn("audible_failure_mode:0:static_loop", quality["errors"])
+
+    def test_moss_loop_evidence_overrides_inconsistent_false_flag(self) -> None:
+        score, errors = parse_score({
+            "prompt_alignment": 3,
+            "melody": 2,
+            "structure": 2,
+            "audio_quality": 5,
+            "evidence": {
+                "prompt_alignment": "Some requested traits are audible.",
+                "melody": "A simple motif repeats.",
+                "structure": "The track consists of a single looped section that ends abruptly.",
+                "audio_quality": "The output is clean.",
+            },
+            "failure_modes": {
+                "distorted": False,
+                "collapsed": False,
+                "static_loop": False,
+                "intelligible_vocals": False,
+            },
+        })
+        self.assertEqual([], errors)
+        self.assertTrue(score["failure_modes"]["static_loop"])
+
+    def test_absolute_quality_gate_rejects_intelligible_vocals(self) -> None:
+        quality = summarize_quality([{
+            "scores": {
+                "prompt_alignment": 5, "melody": 5, "structure": 5, "audio_quality": 5,
+            },
+            "failure_modes": {
+                "distorted": False,
+                "collapsed": False,
+                "static_loop": False,
+                "intelligible_vocals": True,
+            },
+        }])
+        self.assertFalse(quality["quality_accepted"])
+        self.assertIn("audible_failure_mode:0:intelligible_vocals", quality["errors"])
 
     def test_moss_checkpoint_scoring_is_resumable(self) -> None:
         source = (SCRIPTS / "score_v2_checkpoints_moss.py").read_text(encoding="utf-8")
@@ -751,8 +1125,8 @@ class V2PipelineTest(unittest.TestCase):
     def test_final_objective_audit_requires_new_prompt_fidelity_lineage(self) -> None:
         source = (SCRIPTS / "audit_v2_objective.py").read_text(encoding="utf-8")
         for revision in (
-            "multi-view-audio-claims-v2.5",
-            "openrouter-per-track-prior-audio-fusion-v2.8",
+            "multi-view-audio-claims-v2.6",
+            "openrouter-per-track-prior-audio-fusion-v2.9",
             "fixed-prompt-audio-judge-v2.2",
         ):
             self.assertIn(revision, source)

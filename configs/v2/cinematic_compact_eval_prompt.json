@@ -1,0 +1,14 @@
+{
+  "schema_version": "2.0",
+  "prompts": [
+    {
+      "id": "cinematic_glitch",
+      "caption": "Instrumental cinematic glitch-hop, electronic hip-hop and hybrid orchestral bass music with a playful, mischievous, dynamic and suspenseful mood. A syncopated lead motif in D minor uses short call-and-response phrases between a glitched synthesizer and staccato orchestral accents such as brass and strings. The arrangement moves from the main theme into a contrasting breakdown before a denser melodic return with layered leads. Punchy halftime drums, controlled sub bass, micro-edited glitch cuts and wide cinematic reverb shape the production.",
+      "bpm": 110,
+      "keyscale": "D minor",
+      "timesignature": "4",
+      "duration": 60,
+      "seed": 2026071804
+    }
+  ]
+}

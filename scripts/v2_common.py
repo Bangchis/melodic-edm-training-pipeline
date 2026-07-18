@@ -12,6 +12,7 @@ from typing import Any, Iterable
 
 
 CAPTION_TYPES = ("canonical", "composition", "production")
+STRUCTURE_NORMALIZATION_REVISION = "sequence-safe-instrumental-v1"
 
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -68,6 +69,53 @@ def clean_caption(text: str) -> str:
     """Normalize a generated caption without changing its meaning."""
     value = re.sub(r"\s+", " ", str(text)).strip().strip('"`')
     return value[0].upper() + value[1:] if value else value
+
+
+def normalize_instrumental_structure(lyrics: str) -> tuple[str, list[dict[str, Any]]]:
+    """Repair only positionally impossible instrumental section labels.
+
+    All-In-One can label a recurring low-density passage as ``intro`` or
+    ``outro`` based on local acoustics even when it occurs in the middle of a
+    track.  ACE-Step treats lyrics tags as a temporal script, so retaining those
+    labels teaches contradictory ordering.  This function deliberately leaves
+    every ordinary Theme/Drop/Break/Final Drop label unchanged and applies only
+    four unambiguous sequence normalizations.
+    """
+    lines = str(lyrics).splitlines()
+    section_lines: list[tuple[int, str]] = []
+    for line_index, line in enumerate(lines):
+        match = re.fullmatch(r"\s*\[([^\]]+)\]\s*", line)
+        if not match:
+            continue
+        label = match.group(1).strip()
+        if label.casefold() == "instrumental":
+            continue
+        section_lines.append((line_index, label))
+
+    changes: list[dict[str, Any]] = []
+    last_index = len(section_lines) - 1
+    for section_index, (line_index, label) in enumerate(section_lines):
+        normalized = label
+        folded = label.casefold()
+        reason = ""
+        if folded == "break" and section_index == 0:
+            normalized, reason = "Intro", "opening_break_to_intro"
+        elif folded == "intro" and section_index > 0:
+            normalized, reason = "Build", "mid_track_intro_to_build"
+        elif folded == "outro" and section_index < last_index:
+            normalized, reason = "Break", "mid_track_outro_to_break"
+        elif folded == "break" and section_index == last_index:
+            normalized, reason = "Outro", "closing_break_to_outro"
+        if normalized != label:
+            lines[line_index] = f"[{normalized}]"
+            changes.append({
+                "section_index": section_index,
+                "from": label,
+                "to": normalized,
+                "reason": reason,
+            })
+    suffix = "\n" if str(lyrics).endswith("\n") else ""
+    return "\n".join(lines) + suffix, changes
 
 
 def parent_song_id(row: dict[str, Any]) -> str:

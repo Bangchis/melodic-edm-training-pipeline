@@ -12,7 +12,7 @@ from v2_common import atomic_json, extract_json_object, file_sha256, object_sha2
 
 
 SCORE_FIELDS = ("prompt_alignment", "melody", "structure", "audio_quality")
-SCORER_REVISION = "fixed-prompt-audio-judge-v2.2"
+SCORER_REVISION = "fixed-prompt-audio-judge-v2.3"
 
 
 def prompt_for(record: dict[str, Any]) -> str:
@@ -29,14 +29,16 @@ def prompt_for(record: dict[str, Any]) -> str:
         "artifacts, noise, muddiness and obvious generation failure. A clean professional mix must "
         "not receive a low audio_quality score merely because the style or instruments mismatch. "
         "Likewise, a coherent melody must not receive a low melody score merely for style mismatch. "
-        "Also return explicit boolean failure_modes for distorted, collapsed and static_loop; mark "
-        "a flag true whenever that failure is audible. Do not reward "
+        "Also return explicit boolean failure_modes for distorted, collapsed, static_loop and "
+        "intelligible_vocals; mark a flag true whenever that failure is audible. Intelligible "
+        "singing, rap or spoken words in any language count as intelligible_vocals. Non-lexical "
+        "vocal chops used only as an instrument do not count. Do not reward "
         "artist similarity and do not infer hidden metadata. Return a single JSON object without "
         "Markdown or commentary. Required shape: "
         '{"prompt_alignment": 1, "melody": 1, "structure": 1, "audio_quality": 1, '
         '"evidence": {"prompt_alignment": "...", "melody": "...", "structure": "...", '
         '"audio_quality": "..."}, "failure_modes": {"distorted": false, '
-        '"collapsed": false, "static_loop": false}}.\nRequested prompt: ' + record["prompt"]
+        '"collapsed": false, "static_loop": false, "intelligible_vocals": false}}.\nRequested prompt: ' + record["prompt"]
     )
 
 
@@ -77,12 +79,22 @@ def parse_score(value: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
         raw_failures = {}
         errors.append("failure_modes_missing")
     failure_modes: dict[str, bool] = {}
-    for name in ("distorted", "collapsed", "static_loop"):
+    for name in ("distorted", "collapsed", "static_loop", "intelligible_vocals"):
         observed = raw_failures.get(name)
         if not isinstance(observed, bool):
             errors.append(f"failure_mode_not_boolean:{name}")
             observed = False
         failure_modes[name] = observed
+    structure_evidence = evidence.get("structure", "").lower()
+    explicit_loop_phrases = (
+        "single looped section",
+        "static, unchanging loop",
+        "continuous, unchanging loop",
+        "unchanging loop",
+        "static loop",
+    )
+    if any(phrase in structure_evidence for phrase in explicit_loop_phrases):
+        failure_modes["static_loop"] = True
     return {"scores": scores, "evidence": evidence, "failure_modes": failure_modes}, errors
 
 
@@ -138,8 +150,10 @@ def main() -> int:
             continue
         request = prompt_for(record)
         last_error = ""
+        last_response = ""
         for attempt in range(1, max(1, args.attempts) + 1):
-            response = generate(model, processor, Path(record["audio_path"]), request, 700)
+            response = generate(model, processor, Path(record["audio_path"]), request, 1200)
+            last_response = response
             try:
                 score, validation_errors = parse_score(extract_json_object(response))
                 if validation_errors:
@@ -149,6 +163,9 @@ def main() -> int:
                     "epoch": record.get("epoch"),
                     "optimizer_step": record.get("optimizer_step"),
                     "prompt_id": record["prompt_id"],
+                    "source_prompt_id": record.get("source_prompt_id", record["prompt_id"]),
+                    "seed": record.get("seed"),
+                    "duration": record.get("duration"),
                     "lora_scale": record.get("lora_scale"),
                     "audio_path": record["audio_path"],
                     "audio_sha256": audio_sha256,
@@ -178,6 +195,7 @@ def main() -> int:
                 "checkpoint": record["checkpoint"],
                 "prompt_id": record["prompt_id"],
                 "reason": last_error,
+                "raw_response_tail": last_response[-2000:],
             })
     report = {
         "status": "pass" if not errors and len(results) == len(generation["results"]) else "failed",

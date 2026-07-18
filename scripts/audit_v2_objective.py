@@ -78,7 +78,7 @@ def main() -> int:
     sync_state = load_json(root, sync_relative, errors)
     reports[sync_relative] = sync_state
     uploaded_epochs = {int(epoch) for epoch in sync_state.get("uploaded_epochs", {})}
-    if not sync_state.get("completed_at") or uploaded_epochs != {5, 10, 15, 20}:
+    if not sync_state.get("completed_at") or uploaded_epochs != {5, 10, 15, 20, 25, 30}:
         errors.append("private_checkpoint_sync_incomplete")
     if any(epoch % 5 for epoch in uploaded_epochs):
         errors.append(f"non_fifth_epoch_uploaded:{sorted(uploaded_epochs)}")
@@ -141,12 +141,12 @@ def main() -> int:
     claims = reports["data_v2/claim_consensus_report.json"]
     if claims.get("records") != 231 or int(claims.get("claim_total", 0)) <= 0:
         errors.append("multi_view_claim_consensus_incomplete")
-    if claims.get("claim_verifier_revision") != "multi-view-audio-claims-v2.5":
-        errors.append("claim_verifier_revision_not_v2_5")
+    if claims.get("claim_verifier_revision") != "multi-view-audio-claims-v2.6":
+        errors.append("claim_verifier_revision_not_v2_6")
     repairs = reports["data_v2/caption_repair_report.json"]
     annotation_quality = reports["data_v2/annotation_quality_audit.json"]
-    if repairs.get("caption_compiler_revision") != "openrouter-per-track-prior-audio-fusion-v2.8":
-        errors.append("caption_compiler_revision_not_v2_8")
+    if repairs.get("caption_compiler_revision") != "openrouter-per-track-prior-audio-fusion-v2.9":
+        errors.append("caption_compiler_revision_not_v2_9")
     if repairs.get("caption_compiler_provider") != "openrouter":
         errors.append("caption_compiler_provider_is_not_openrouter")
     if repairs.get("fusion_records") != 231 or set(repairs.get("fusion_sources", [])) != {
@@ -157,7 +157,7 @@ def main() -> int:
         errors.append("per_track_prior_audio_fusion_incomplete")
     if (
         annotation_quality.get("caption_fusion_revision")
-        != "openrouter-per-track-prior-audio-fusion-v2.8"
+        != "openrouter-per-track-prior-audio-fusion-v2.9"
         or annotation_quality.get("caption_fusion_records") != 231
     ):
         errors.append("per_record_caption_fusion_lineage_not_proven")
@@ -168,6 +168,14 @@ def main() -> int:
     dataset_build = reports["data_v2/dataset_build_report.json"]
     if (tensors.get("train_tensors"), tensors.get("validation_tensors"), tensors.get("all_tensors")) != (196, 35, 231):
         errors.append("tensor_counts_invalid")
+    if (
+        tensors.get("unique_audio_records"),
+        tensors.get("train_unique_tensors"),
+        tensors.get("validation_unique_tensors"),
+        tensors.get("all_unique_tensors"),
+        tensors.get("deduplication_performed"),
+    ) != (217, 184, 33, 217, True):
+        errors.append("deduplicated_training_tensor_views_invalid")
     if tensors.get("prompt_embeddings_per_record") != 3:
         errors.append("prompt_embedding_count_invalid")
     if tensors.get("caption_variant_types") != ["canonical", "composition", "production"]:
@@ -192,9 +200,9 @@ def main() -> int:
     if smoke.get("optimizer_steps") != 66 or not smoke.get("adapter_reload_verified"):
         errors.append("smoke_resume_or_reload_evidence_invalid")
     training = reports["outputs/v2/train-validation/training_validation_report.json"]
-    if training.get("validation_epochs") != [5, 10, 15, 20]:
+    if training.get("validation_epochs") != [5, 10, 15, 20, 25, 30]:
         errors.append("required_validation_epochs_missing")
-    if training.get("checkpoint_epochs") != [5, 10, 15, 20]:
+    if training.get("checkpoint_epochs") != [5, 10, 15, 20, 25, 30]:
         errors.append("required_checkpoint_epochs_missing")
     selection = reports["outputs/v2/checkpoint-evaluation/selection.json"]
     checkpoint_generation = reports["outputs/v2/checkpoint-evaluation/generation_report.json"]

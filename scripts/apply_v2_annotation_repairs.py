@@ -18,13 +18,41 @@ from repair_v2_annotations_moss import (
     CAPTION_COMPILER_PROVIDER,
     DEFAULT_COMPILER_MODEL,
     SCORE_FIELDS,
-    exact_claim_asserted,
     fusion_source_material,
     parse_repair,
-    qualified_claim_mentioned,
-    unverified_new_claims,
+    validate_claim_constraints,
 )
 from v2_common import atomic_json, file_sha256, object_sha256, read_jsonl
+
+
+def archive_stale_model_outputs(root: Path, timestamp: str) -> dict[str, Any]:
+    """Archive every model artifact whose lineage predates the new captions."""
+    archive = root / "outputs" / "archive" / f"v2-before-caption-fusion-{timestamp}"
+    archived: list[dict[str, str]] = []
+    for source in (
+        root / "outputs" / "v2",
+        root / "outputs" / "release" / "melodic-edm-core-v2-preview",
+        root / "outputs" / "release" / "melodic-edm-core-v2",
+    ):
+        if not source.exists():
+            continue
+        archive.mkdir(parents=True, exist_ok=True)
+        destination = archive / source.name
+        if destination.exists():
+            raise FileExistsError(f"refusing to overwrite stale model archive {destination}")
+        os.replace(source, destination)
+        archived.append({"source": str(source), "archive": str(destination)})
+    (root / "outputs" / "v2").mkdir(parents=True, exist_ok=True)
+    report = {
+        "status": "pass",
+        "reason": f"caption_lineage_changed_to_{CAPTION_COMPILER_REVISION}",
+        "reset_at": datetime.now(timezone.utc).isoformat(),
+        "archive_root": str(archive) if archived else None,
+        "archived": archived,
+        "fresh_rank32_outputs_required": True,
+    }
+    atomic_json(root / "data_v2" / "downstream_reset_report.json", report)
+    return report
 
 
 def main() -> int:
@@ -79,22 +107,9 @@ def main() -> int:
             if record.get("claim_decisions_sha256") != object_sha256(decisions):
                 raise ValueError("claim_decisions_sha256_mismatch")
             corrected_text = " ".join(repair["corrected_captions"].values()).casefold()
-            for decision in decisions:
-                claim = str(decision.get("claim") or "").casefold()
-                resolution = str(decision.get("decision") or "")
-                if not claim or resolution not in {"present", "absent", "uncertain"}:
-                    raise ValueError("invalid_claim_decision")
-                if resolution == "present" and not exact_claim_asserted(corrected_text, claim):
-                    raise ValueError(f"verified_present_claim_missing:{claim}")
-                if resolution == "absent" and claim in corrected_text:
-                    raise ValueError(f"verified_absent_claim_retained:{claim}")
-                if resolution == "uncertain" and exact_claim_asserted(corrected_text, claim):
-                    raise ValueError(f"uncertain_claim_asserted_as_exact:{claim}")
-                if resolution == "uncertain" and not qualified_claim_mentioned(corrected_text, claim):
-                    raise ValueError(f"uncertain_claim_qualified_token_missing:{claim}")
-            introduced = unverified_new_claims(corrected_text, decisions)
-            if introduced:
-                raise ValueError(f"unverified_new_claims_introduced:{introduced}")
+            claim_errors = validate_claim_constraints(corrected_text, decisions)
+            if claim_errors:
+                raise ValueError(",".join(claim_errors))
             recommendations[repair["recommendation"]] += 1
             for field in SCORE_FIELDS:
                 scores[field].append(repair["scores"][field])
@@ -154,6 +169,7 @@ def main() -> int:
         os.replace(current, backup)
         os.replace(staging, current)
         backup_path = str(backup)
+        model_reset = archive_stale_model_outputs(root, timestamp)
         stale = root / "data_v2" / f"pre_caption_repair_artifacts_{timestamp}"
         stale.mkdir(parents=True, exist_ok=False)
         for name in (
@@ -163,7 +179,11 @@ def main() -> int:
             "tensors_train_part1",
             "tensors_validation",
             "tensors_validation_raw",
+            "tensors_all_unique",
+            "tensors_train_unique",
+            "tensors_validation_unique",
             "tensor_validation_report.json",
+            "dedup_training_view_report.json",
             "metadata_upload_report.json",
             "annotation_quality_audit.json",
             "annotation_fidelity_audit.json",
@@ -196,6 +216,7 @@ def main() -> int:
             "binding_multi_view_claim_decisions",
         ],
         "previous_annotations_backup": backup_path,
+        "stale_model_outputs_reset": model_reset if status == "pass" else None,
         "original_caption_dimension_means": dimension_means,
         "errors": errors,
     }

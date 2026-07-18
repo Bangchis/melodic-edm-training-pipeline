@@ -18,7 +18,7 @@ def main() -> int:
     parser.add_argument("--checkpoint-root", required=True)
     parser.add_argument(
         "--adapter-subdirectory",
-        choices=("best-val", "final-all-data"),
+        choices=("experimental-r32", "best-val", "final-all-data"),
         default="final-all-data",
     )
     parser.add_argument("--prompt-index", type=int, default=0)

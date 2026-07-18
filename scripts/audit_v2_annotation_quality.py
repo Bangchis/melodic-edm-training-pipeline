@@ -14,7 +14,7 @@ from v2_common import atomic_json, read_jsonl
 
 
 CAPTION_TYPES = ("canonical", "composition", "production")
-CAPTION_FUSION_REVISION = "openrouter-per-track-prior-audio-fusion-v2.8"
+CAPTION_FUSION_REVISION = "openrouter-per-track-prior-audio-fusion-v2.9"
 GENERIC_TERMS = (
     "clean",
     "polished",

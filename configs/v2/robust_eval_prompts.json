@@ -1,0 +1,36 @@
+{
+  "schema_version": "3.0",
+  "purpose": "Five-seed long-form robustness evaluation matched to the V2 training duration and section vocabulary.",
+  "prompts": [
+    {
+      "id": "chinese_fantasy_drop",
+      "caption": "Instrumental Chinese melodic EDM with adventurous and uplifting energy. A concise minor-pentatonic pipa hook is answered by airy dizi phrases and doubled by bright synth plucks. The arrangement builds gradually into a clear four-on-the-floor drop with wide synth chords, clean sub bass, crisp electronic drums and spacious fantasy ambience.",
+      "lyrics": "[Intro]\n[Instrumental]\n\n[Theme]\n[Instrumental]\n\n[Build]\n[Instrumental]\n\n[Drop]\n[Instrumental]\n\n[Break]\n[Instrumental]\n\n[Final Drop]\n[Instrumental]\n\n[Outro]\n[Instrumental]\n",
+      "bpm": 128,
+      "keyscale": "F# minor",
+      "timesignature": "4",
+      "duration": 180,
+      "seed": 2026071810
+    },
+    {
+      "id": "gaming_progressive",
+      "caption": "Instrumental melodic gaming progressive house with an optimistic and energetic mood. A short rising synth motif develops through varied endings and call-and-response phrases over clear chord movement. An atmospheric intro adds layers gradually before a bright four-on-the-floor drop with crisp drums, controlled sub bass, wide chords and a denser final return.",
+      "lyrics": "[Intro]\n[Instrumental]\n\n[Theme]\n[Instrumental]\n\n[Build]\n[Instrumental]\n\n[Drop]\n[Instrumental]\n\n[Break]\n[Instrumental]\n\n[Final Drop]\n[Instrumental]\n\n[Outro]\n[Instrumental]\n",
+      "bpm": 126,
+      "keyscale": "A minor",
+      "timesignature": "4",
+      "duration": 180,
+      "seed": 2026071820
+    },
+    {
+      "id": "cinematic_glitch",
+      "caption": "Instrumental cinematic glitch-hop with playful suspense and a clear syncopated lead motif. Short glitched-synth phrases trade with restrained orchestral accents over punchy halftime drums and controlled sub bass. A sparse contrasting break interrupts the main groove before the motif returns with stronger layering, sharper micro-edits and wide cinematic space.",
+      "lyrics": "[Intro]\n[Instrumental]\n\n[Theme]\n[Instrumental]\n\n[Break]\n[Instrumental]\n\n[Theme]\n[Instrumental]\n\n[Final Drop]\n[Instrumental]\n\n[Outro]\n[Instrumental]\n",
+      "bpm": 110,
+      "keyscale": "D minor",
+      "timesignature": "4",
+      "duration": 180,
+      "seed": 2026071830
+    }
+  ]
+}

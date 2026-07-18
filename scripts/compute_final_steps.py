@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Scale the selected validation optimizer step to all 231 records."""
+"""Scale the selected validation optimizer step to all 217 unique audio items."""
 from __future__ import annotations
 
 import argparse
@@ -24,15 +24,16 @@ def main() -> int:
     best_steps = int(selection["best_optimizer_step"])
     if best_steps <= 0:
         raise ValueError("best_optimizer_step must be positive")
-    final_steps = round(best_steps * 231 / 196)
+    final_steps = round(best_steps * 217 / 184)
     plan = {
         "status": "ready",
         "selected_checkpoint": selection["selected_checkpoint"],
         "selected_lora_scale": selection["selected_lora_scale"],
         "best_optimizer_step": best_steps,
-        "train_records": 196,
-        "final_records": 231,
-        "formula": "round(best_optimizer_step * 231 / 196)",
+        "catalog_records": 231,
+        "train_unique_audio_records": 184,
+        "final_unique_audio_records": 217,
+        "formula": "round(best_optimizer_step * 217 / 184)",
         "final_optimizer_steps": final_steps,
         "initialization": "fresh_xl_base_and_fresh_rank32_lora",
         "resume": False,

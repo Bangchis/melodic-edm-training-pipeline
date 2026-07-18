@@ -41,7 +41,7 @@ def main() -> int:
     validation_epochs = {
         int(value) for value in re.findall(r"Validation epoch (\d+):", log)
     }
-    required_epochs = {5, 10, 15, 20}
+    required_epochs = {5, 10, 15, 20, 25, 30}
     if validation_epochs != required_epochs:
         errors.append(f"validation_epochs_invalid:{sorted(validation_epochs)}")
     if re.search(r"\b(?:OOM|out of memory|NaN|Inf)\b", log, flags=re.IGNORECASE):

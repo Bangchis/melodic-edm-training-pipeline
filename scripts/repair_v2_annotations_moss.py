@@ -36,7 +36,7 @@ SCORE_FIELDS = (
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_COMPILER_MODEL = "google/gemini-3.1-flash-lite"
 CAPTION_COMPILER_PROVIDER = "openrouter"
-CAPTION_COMPILER_REVISION = "openrouter-per-track-prior-audio-fusion-v2.8"
+CAPTION_COMPILER_REVISION = "openrouter-per-track-salient-audio-fusion-v3.1"
 REPAIR_RESPONSE_SCHEMA = {
     "name": "per_track_caption_fusion",
     "strict": True,
@@ -93,6 +93,10 @@ FORBIDDEN_TRAINING_CAPTION_PATTERNS = {
         r"\b(?:classic|standard|typical)\s+EDM\s+structure\b",
         re.IGNORECASE,
     ),
+    "static_loop_cue": re.compile(
+        r"\b(?:repetitive|cyclical|hypnotic|unchanging|static loop)\b",
+        re.IGNORECASE,
+    ),
 }
 
 
@@ -113,6 +117,44 @@ def qualified_claim_mentioned(text: str, claim: str) -> bool:
         rf"(?<![a-z]){re.escape(claim.casefold())}(?:-like|\s+like)(?![a-z])"
     )
     return bool(pattern.search(text.casefold()))
+
+
+def claim_name_mentioned(text: str, claim: str) -> bool:
+    """Return whether a controlled claim name occurs, including a ``-like`` use."""
+    pattern = re.compile(rf"(?<![a-z]){re.escape(claim.casefold())}(?![a-z])")
+    return bool(pattern.search(text.casefold()))
+
+
+def validate_claim_constraints(
+    text: str, decisions: list[dict[str, Any]]
+) -> list[str]:
+    """Enforce per-track safety constraints without turning evidence into a checklist.
+
+    A ``present`` decision permits an exact claim but never requires it: a good
+    caption should select only the most salient audible properties for its view.
+    ``absent`` and ``uncertain`` still prevent unsupported exact assertions.
+    """
+    errors: list[str] = []
+    normalized = text.casefold()
+    for item in decisions:
+        claim = str(item.get("claim") or "").strip().casefold()
+        decision = str(item.get("decision") or "").strip().casefold()
+        if not claim or decision not in {"present", "absent", "uncertain"}:
+            errors.append("invalid_claim_decision")
+            continue
+        if decision == "absent" and claim_name_mentioned(normalized, claim):
+            errors.append(f"verified_absent_claim_retained:{claim}")
+        if decision == "uncertain" and exact_claim_asserted(normalized, claim):
+            errors.append(f"uncertain_claim_asserted_as_exact:{claim}")
+        if (
+            decision == "uncertain"
+            and claim_name_mentioned(normalized, claim)
+            and not qualified_claim_mentioned(normalized, claim)
+        ):
+            errors.append(f"uncertain_claim_missing_qualifier:{claim}")
+    for claim in unverified_new_claims(normalized, decisions):
+        errors.append(f"unverified_new_claim_introduced:{claim}")
+    return errors
 
 
 def validate_training_caption_policy(captions: dict[str, str]) -> list[str]:
@@ -212,27 +254,40 @@ def request_for(fusion_sources: dict[str, Any], decisions: list[dict[str, Any]])
         "do not invent facts beyond them. Fuse both supplied source packets: "
         "(1) the old per-track annotation and prompt, which contains useful song-specific intent "
         "but may contain mistakes, and (2) the independent waveform-only MOSS analysis. Do not "
-        "discard the old per-track prompt, and do not copy it blindly. Preserve its distinctive "
-        "genre, mood, melody, arrangement and production properties when they are audible or not "
-        "contradicted by the waveform. Prefer the independent audio evidence when the sources "
-        "conflict. Never average the track into generic EDM boilerplate. Each corrected caption "
-        "must describe this song rather than the dataset as a whole; composition and production "
-        "must emphasize different concrete properties. Every one of canonical, composition and "
-        "production must independently fuse compatible details from both source packets; no view "
-        "may merely copy the old prompt or the MOSS proposal alone. Exact named instruments are valuable and "
-        "must remain specific when the "
-        "multi-view verifier marks them present. Remove claims marked absent. For claims marked "
-        "uncertain, do not assert the physical instrument as fact, but preserve the exact vocabulary "
-        "token at least once with a -like qualifier, followed by its audible alternative; for example, "
-        "pipa-like plucked lead or dizi-like airy flute lead. Never replace an unresolved named claim "
-        "with only a generic phrase, because the qualified vocabulary remains useful for prompt "
-        "conditioning. Do not introduce any new exact named instrument that is absent from the "
+        "treat the old per-track prompt as a useful prior, not as ground truth and not as text that "
+        "must be preserved. Retain only its song-specific genre, mood, melody, arrangement or "
+        "production properties that remain compatible with the waveform evidence. An omitted detail "
+        "in the independent analysis is not a contradiction. The independent analysis may be less "
+        "specific than the old per-track prior, so never replace a compatible specific detail with "
+        "generic wording merely because MOSS did not mention it. Use explicit independent evidence to "
+        "resolve semantic conflicts, while the binding claim decisions override exact sound-source "
+        "names. Never average the track into generic "
+        "EDM boilerplate. Each corrected caption must describe this song rather than the dataset as "
+        "a whole. The binding claim decisions are safety constraints, not a coverage checklist. A "
+        "claim marked present is available for exact use only when it is salient to that caption; "
+        "omitting it is valid. Do not list every present sound and do not force any fixed instrument "
+        "vocabulary across songs. A claim marked absent must be omitted. For claims marked "
+        "uncertain, omit the claim unless it is genuinely useful to distinguish this track. If you keep "
+        "an uncertain name, use it only with a -like qualifier and an audible alternative, for example "
+        "pipa-like plucked lead or dizi-like airy flute lead. Do not force unresolved vocabulary into "
+        "the caption: a concise grounded caption is better than a dense list of uncertain timbres. Do "
+        "not introduce any new exact named instrument that is absent from the "
         "binding decisions or their audible alternatives; use a non-physical timbre description "
         "instead. Never infer title, "
         "artist, country, channel or intended media use. Avoid quality hype and "
         "boilerplate such as clean, polished, masterpiece, classic EDM structure, or professional. "
-        "Describe stable audible genre/style, mood, concrete melody or motif behavior, rhythm, "
-        "arrangement development and production texture. Do not include BPM, exact key, time "
+        "Select a small coherent set of the most audible and prompt-useful properties rather than "
+        "maximizing keyword coverage. Across the three captions, preserve the strongest compatible "
+        "song-specific information from the two sources; an individual caption need not mention both "
+        "sources explicitly. Canonical should summarize the track, composition should prioritize "
+        "melody/harmony/rhythm/arrangement, and production should prioritize timbre/mix/space. Keep "
+        "the three views mutually consistent without repeating the same inventory. Do not use the "
+        "generic loop cues repetitive, cyclical, hypnotic, unchanging, or static loop. When motif "
+        "recurrence matters, describe a recurring motif together with an evidence-backed variation, "
+        "transition, layer change, or sectional development; otherwise omit the recurrence claim. "
+        "Describe stable "
+        "audible genre/style, mood, concrete melody or motif behavior, rhythm, arrangement development "
+        "and production texture. Do not include BPM, exact key, time "
         "signature, title, artist, or named-artist style. Return English captions with exact keys "
         "canonical, composition and production. Canonical must be 40-80 words; composition and "
         "production must each be 25-80 words. They must be distinct and grounded. Return JSON only. "
@@ -266,8 +321,9 @@ def openrouter_generate(
             {
                 "role": "system",
                 "content": (
-                    "You are a conservative music-dataset caption compiler. Follow the binding "
-                    "audio evidence and return only the requested JSON object."
+                    "You are a conservative music-dataset caption compiler. Select salient, "
+                    "track-specific audible facts; do not maximize source or keyword coverage. "
+                    "Follow the per-track evidence constraints and return only the requested JSON object."
                 ),
             },
             {"role": "user", "content": prompt},
@@ -463,21 +519,7 @@ def main() -> int:
                 )
                 repair, validation_errors = parse_repair(extract_json_object(response))
                 corrected_text = " ".join(repair.get("corrected_captions", {}).values()).casefold()
-                if any(item["decision"] != "present" for item in decisions):
-                    if repair.get("recommendation") != "revise":
-                        validation_errors.append("non_present_claims_require_revision")
-                for decision in decisions:
-                    claim = str(decision["claim"]).casefold()
-                    if decision["decision"] == "present" and not exact_claim_asserted(corrected_text, claim):
-                        validation_errors.append(f"verified_present_claim_missing:{claim}")
-                    if decision["decision"] == "absent" and claim in corrected_text:
-                        validation_errors.append(f"verified_absent_claim_retained:{claim}")
-                    if decision["decision"] == "uncertain" and exact_claim_asserted(corrected_text, claim):
-                        validation_errors.append(f"uncertain_claim_asserted_as_exact:{claim}")
-                    if decision["decision"] == "uncertain" and not qualified_claim_mentioned(corrected_text, claim):
-                        validation_errors.append(f"uncertain_claim_qualified_token_missing:{claim}")
-                for claim in unverified_new_claims(corrected_text, decisions):
-                    validation_errors.append(f"unverified_new_claim_introduced:{claim}")
+                validation_errors.extend(validate_claim_constraints(corrected_text, decisions))
                 if validation_errors:
                     raise ValueError(",".join(validation_errors))
                 record = {

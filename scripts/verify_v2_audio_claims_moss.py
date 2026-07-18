@@ -36,7 +36,29 @@ GENERIC_NAMES = {
     "traditional chinese instruments", "electronic elements",
 }
 VIEW_NAMES = ("full_neutral", "full_challenge", "overview_montage")
-CLAIM_VERIFIER_REVISION = "multi-view-audio-claims-v2.5"
+CLAIM_VERIFIER_REVISION = "multi-view-audio-claims-v2.6"
+MIGRATABLE_CLAIM_VERIFIER_REVISIONS = {"multi-view-audio-claims-v2.5"}
+
+
+def evidence_explicitly_denies_presence(text: str) -> bool:
+    """Detect a narrow set of contradictions in an asserted-present review.
+
+    MOSS occasionally emits ``verdict=present, confidence=0`` while its prose
+    says that no such sound is audible.  Confidence is confidence in the chosen
+    verdict, not a probability that the claim is present, so those objects must
+    be retried instead of silently entering consensus as ambiguous evidence.
+    This intentionally recognizes only explicit negation phrases; nuanced prose
+    remains ``uncertain`` rather than being reinterpreted here.
+    """
+    normalized = re.sub(r"\s+", " ", str(text or "").strip().casefold())
+    return bool(
+        re.search(
+            r"\b(?:there (?:is|are) no|contains? no|has no|without any|"
+            r"no (?:clear |audible |distinct )?|not (?:clearly )?audible|"
+            r"cannot be heard|can't be heard|absent|inaudible)\b",
+            normalized,
+        )
+    )
 
 
 def normalize_claim(value: Any) -> str:
@@ -186,6 +208,10 @@ def parse_claim_review(value: dict[str, Any], expected: list[str]) -> tuple[dict
             errors.append(f"invalid_verdict:{claim}")
         if not 0.0 <= confidence <= 1.0:
             errors.append(f"invalid_confidence:{claim}")
+        if verdict in {"present", "absent"} and 0.0 <= confidence < 0.5:
+            errors.append(f"low_confidence_non_uncertain:{claim}")
+        if verdict == "present" and evidence_explicitly_denies_presence(evidence):
+            errors.append(f"present_verdict_contradicts_evidence:{claim}")
         if not evidence:
             errors.append(f"missing_evidence:{claim}")
         by_claim[claim] = {
@@ -237,6 +263,50 @@ def consensus_for(claim: str, reviews: dict[str, dict[str, Any]], threshold: flo
     }
 
 
+def migrate_cached_consensus(
+    cached: dict[str, Any],
+    claims: list[str],
+    audio_hash: str,
+    input_hash: str,
+) -> dict[str, Any] | None:
+    """Upgrade old evidence only when it passes the current strict parser.
+
+    The model output itself is immutable.  A cache with low-confidence binary
+    verdicts or prose/verdict contradictions returns ``None`` and is listened to
+    again; clean multi-view evidence can be re-resolved without spending another
+    GPU pass over the same audio.
+    """
+    previous_revision = str(cached.get("claim_verifier_revision") or "")
+    if previous_revision not in MIGRATABLE_CLAIM_VERIFIER_REVISIONS:
+        return None
+    if cached.get("model_revision") != MODEL_REVISION:
+        return None
+    if cached.get("audio_sha256") != audio_hash or cached.get("claims") != claims:
+        return None
+    raw_views = cached.get("views")
+    if not isinstance(raw_views, dict) or set(raw_views) != set(VIEW_NAMES):
+        return None
+    reviews: dict[str, dict[str, Any]] = {}
+    for view in VIEW_NAMES:
+        review, errors = parse_claim_review(raw_views[view], claims)
+        if errors:
+            return None
+        reviews[view] = review
+    migrated = dict(cached)
+    migrated.update({
+        "verified_at": datetime.now(timezone.utc).isoformat(),
+        "claim_verifier_revision": CLAIM_VERIFIER_REVISION,
+        "input_sha256": input_hash,
+        "views": reviews,
+        "decisions": [consensus_for(claim, reviews) for claim in claims],
+        "migration": {
+            "from_revision": previous_revision,
+            "policy": "raw_multi_view_evidence_passed_current_strict_parser",
+        },
+    })
+    return migrated
+
+
 def request_for(claims: list[str], view: str) -> str:
     """Build independent prompts whose outputs can be compared claim by claim."""
     if view == "full_neutral":
@@ -260,7 +330,10 @@ def request_for(claims: list[str], view: str) -> str:
         instruction
         + " Do not infer from title, artist, genre stereotypes or filenames. For every claim return "
         "verdict present, absent or uncertain; confidence from 0 to 1; short audible evidence; and "
-        "an audible_alternative when the exact name is unsupported. Preserve exact specific names "
+        "an audible_alternative when the exact name is unsupported. Confidence measures confidence "
+        "in the verdict you selected, not the probability that the sound is present. If you are not "
+        "confident in present or absent, choose uncertain. Never encode absence as present with "
+        "confidence zero, and never contradict the verdict in the evidence text. Preserve exact specific names "
         "when heard. Return JSON only with exactly this shape. Do not emit analysis, reasoning, "
         "markdown, or a thinking block before the object. The first output character must be { "
         "and the final output character must be }: "
@@ -352,6 +425,16 @@ def main() -> int:
                     and cached.get("claim_verifier_revision") == CLAIM_VERIFIER_REVISION
                 ):
                     continue
+                migrated = migrate_cached_consensus(
+                    cached,
+                    claims,
+                    file_sha256(Path(row["final_audio_path"])),
+                    input_hash,
+                )
+                if migrated is not None:
+                    atomic_json(output, migrated)
+                    print(f"[CACHE] {row['sample_id']} migrated to {CLAIM_VERIFIER_REVISION}", flush=True)
+                    continue
             except (OSError, json.JSONDecodeError):
                 pass
         if not claims:
@@ -400,7 +483,9 @@ def main() -> int:
                     prompt += (
                         "\nPrevious response failed exact validation: " + last_error
                         + ". Return corrected JSON only. Start immediately with {, end with }, "
-                        "and emit no reasoning or markdown outside the object."
+                        "and emit no reasoning or markdown outside the object. For every present or "
+                        "absent verdict, confidence must be at least 0.5. If confidence would be below "
+                        "0.5, change that verdict to uncertain and describe the audible alternative."
                     )
             else:
                 failed = True

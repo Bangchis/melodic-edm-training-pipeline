@@ -48,13 +48,16 @@ def main() -> int:
         errors.append(f"three_fused_prompt_randomization_invalid:{cumulative}")
     tensor_report = json.loads((root / "data_v2" / "tensor_validation_report.json").read_text(encoding="utf-8"))
     if tensor_report.get("all_tensors") != 231:
-        errors.append("final_dataset_is_not_231_records")
+        errors.append("catalog_tensor_set_is_not_231_records")
+    if tensor_report.get("all_unique_tensors") != 217:
+        errors.append("final_training_view_is_not_217_unique_audio_records")
     gpu_summary, gpu_errors = inspect_gpu_metrics(output / "gpu_metrics.csv")
     errors.extend(gpu_errors)
     report = {
         "status": "pass" if not errors else "failed",
         "initialization": "fresh_xl_base_and_fresh_rank32_lora",
         "records": 231,
+        "unique_audio_records": 217,
         "expected_optimizer_steps": expected_steps,
         "observed_optimizer_steps": observed_steps,
         "adapter": adapter_summary,

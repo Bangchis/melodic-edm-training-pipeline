@@ -19,5 +19,6 @@ python3 -u scripts/merge_v2_tensors.py --project-root "$project" \
   --destination data_v2/tensors_all --expected 231 \
   --source data_v2/tensors_train_part0 --source data_v2/tensors_train_part1 \
   --source data_v2/tensors_validation_raw
+python3 -u scripts/build_v2_dedup_tensor_views.py --project-root "$project"
 exec "$ace/.venv/bin/python" -u scripts/validate_v2_tensors.py \
   --project-root "$project"

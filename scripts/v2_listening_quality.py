@@ -62,7 +62,7 @@ def summarize_quality(
         if not isinstance(failure_modes, dict):
             errors.append(f"failure_modes_missing:{index}")
         else:
-            for name in ("distorted", "collapsed", "static_loop"):
+            for name in ("distorted", "collapsed", "static_loop", "intelligible_vocals"):
                 if failure_modes.get(name) is True:
                     errors.append(f"audible_failure_mode:{index}:{name}")
                 elif failure_modes.get(name) is not False:

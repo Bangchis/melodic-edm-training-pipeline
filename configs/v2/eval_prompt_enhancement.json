@@ -1,0 +1,43 @@
+{
+  "schema_version": "2.0",
+  "duration": 60,
+  "prompts": {
+    "chinese_fantasy_drop": {
+      "seed_offset": 0,
+      "required_terms": [
+        "Chinese melodic EDM",
+        "minor-pentatonic pipa hook",
+        "dizi responses",
+        "focused buildup",
+        "four-on-the-floor drop",
+        "wide synth chords",
+        "clean sub bass",
+        "spacious fantasy ambience"
+      ]
+    },
+    "gaming_progressive": {
+      "seed_offset": 0,
+      "required_terms": [
+        "melodic gaming progressive house",
+        "rising synth motif",
+        "energetic chord movement",
+        "crisp electronic drums",
+        "atmospheric intro",
+        "uplifting layered final drop"
+      ]
+    },
+    "cinematic_glitch": {
+      "seed_offset": 1,
+      "required_terms": [
+        "cinematic",
+        "glitch-hop",
+        "syncopated lead motif",
+        "punchy halftime drums",
+        "controlled sub bass",
+        "orchestral accents",
+        "contrasting breakdown",
+        "denser melodic return"
+      ]
+    }
+  }
+}

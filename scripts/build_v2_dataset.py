@@ -8,7 +8,14 @@ import os
 from pathlib import Path
 from typing import Any
 
-from v2_common import CAPTION_TYPES, atomic_json, atomic_jsonl, read_jsonl
+from v2_common import (
+    CAPTION_TYPES,
+    STRUCTURE_NORMALIZATION_REVISION,
+    atomic_json,
+    atomic_jsonl,
+    normalize_instrumental_structure,
+    read_jsonl,
+)
 
 
 def safe_symlink(source: Path, target: Path) -> None:
@@ -30,7 +37,8 @@ def metadata_for(root: Path, row: dict[str, Any]) -> tuple[dict[str, Any], str]:
     if [item["type"] for item in variants] != list(CAPTION_TYPES):
         raise ValueError(f"{row['sample_id']}: caption order is not canonical/composition/production")
     mir = json.loads((root / "data" / "mir" / f"{row['sample_id']}.json").read_text(encoding="utf-8"))
-    lyrics = Path(row["final_lyrics_path"]).read_text(encoding="utf-8")
+    source_lyrics = Path(row["final_lyrics_path"]).read_text(encoding="utf-8")
+    lyrics, structure_changes = normalize_instrumental_structure(source_lyrics)
     metadata: dict[str, Any] = {
         "caption": variants[0]["text"],
         "caption_variants": [item["text"] for item in variants],
@@ -39,6 +47,10 @@ def metadata_for(root: Path, row: dict[str, Any]) -> tuple[dict[str, Any], str]:
         "parent_song_id": row["parent_song_id"],
         "split": row["split"],
         "master_annotation": annotation["master_annotation"],
+        "structure_normalization": {
+            "revision": STRUCTURE_NORMALIZATION_REVISION,
+            "changes": structure_changes,
+        },
     }
     for field in ("bpm", "keyscale", "timesignature"):
         if mir.get(field) not in (None, ""):
@@ -172,6 +184,11 @@ def main() -> int:
         "training_prompt_types": list(CAPTION_TYPES),
         "audio_storage": "relative_symlinks_to_validated_v1_audio",
         "deduplication_performed": False,
+        "structure_normalization_revision": STRUCTURE_NORMALIZATION_REVISION,
+        "structure_normalized_records": sum(
+            bool(metadata_cache[str(row["sample_id"])][0]["structure_normalization"]["changes"])
+            for row in rows
+        ),
     }
     atomic_json(root / "data_v2" / "dataset_build_report.json", report)
     atomic_jsonl(root / "data_v2" / "dataset_manifest.jsonl", rows)

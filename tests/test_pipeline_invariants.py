@@ -536,7 +536,7 @@ class RecordPreservingTests(unittest.TestCase):
     def test_checkpoint_selection_uses_middle_best_and_final(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp)
-            for epoch in (5, 10, 15, 20):
+            for epoch in (5, 10, 15, 20, 25, 30):
                 checkpoint = output / "checkpoints" / f"epoch_{epoch}_loss_1.0000"
                 checkpoint.mkdir(parents=True)
                 (checkpoint / "adapter").mkdir()
@@ -544,7 +544,7 @@ class RecordPreservingTests(unittest.TestCase):
             (output / "checkpoints" / "best_val" / "adapter").mkdir(parents=True)
             (output / "final" / "adapter").mkdir(parents=True)
             selected = select_checkpoints(output)
-            self.assertEqual(Path(selected["middle"]).parent.name, "epoch_10_loss_1.0000")
+            self.assertEqual(Path(selected["middle"]).parent.name, "epoch_15_loss_1.0000")
             self.assertEqual(Path(selected["best_val"]).parent.name, "best_val")
             self.assertEqual(Path(selected["last"]).parent.name, "final")
 

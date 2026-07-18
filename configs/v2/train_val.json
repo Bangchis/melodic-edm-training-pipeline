@@ -24,6 +24,10 @@
     "records": 231,
     "train_records": 196,
     "validation_records": 35,
+    "unique_audio_records": 217,
+    "train_unique_audio_records": 184,
+    "validation_unique_audio_records": 33,
+    "deduplication": "exact_audio_sha256_keep_one_representative_for_training",
     "test_records": 0,
     "group_key": "parent_song_id",
     "caption_variants": ["canonical", "composition", "production"],
@@ -45,8 +49,8 @@
     "effective_batch": 16,
     "save_every_epochs": 5,
     "validate_every_epochs": 5,
-    "sample_and_upload_every_epochs": 5,
-    "maximum_epochs": 20,
+    "sample_and_upload_every_epochs": 30,
+    "maximum_epochs": 30,
     "early_stopping_validation_checks": 0,
     "evaluation_lora_scale": 0.5,
     "absolute_listening_quality_gate": {
@@ -61,7 +65,7 @@
         "audio_quality_mean": 3.0
       },
       "maximum_final_prompt_alignment_regression_from_best_val": 0.34,
-      "required_checkpoints": [5, 10, 15, 20]
+      "required_checkpoints": [5, 10, 15, 20, 25, 30]
     }
   }
 }

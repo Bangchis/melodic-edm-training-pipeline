@@ -29,7 +29,7 @@ trap 'kill "$monitor_pid" 2>/dev/null || true' EXIT TERM INT
 cd "$project"
 set +e
 "$ace/.venv/bin/python" -u -m acestep.training_v2.cli.train_fixed --yes \
-  --dataset-dir "$project/data_v2/tensors_all" \
+  --dataset-dir "$project/data_v2/tensors_all_unique" \
   --output-dir "$output" \
   --checkpoint-dir "$project/checkpoints" \
   --model-variant xl_base --base-model xl_base \

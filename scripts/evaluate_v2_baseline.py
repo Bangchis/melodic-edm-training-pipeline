@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from evaluate_v2_checkpoints import LYRICS, audio_path, probe
+from evaluate_v2_checkpoints import DEFAULT_LYRICS, audio_path, probe
 from v2_common import atomic_json
 
 
@@ -41,7 +41,7 @@ def main() -> int:
         target = output / "audio" / prompt["id"]
         params = GenerationParams(
             caption=prompt["caption"],
-            lyrics=LYRICS,
+            lyrics=prompt.get("lyrics", DEFAULT_LYRICS),
             instrumental=True,
             bpm=int(prompt["bpm"]),
             keyscale=prompt["keyscale"],
@@ -82,7 +82,10 @@ def main() -> int:
             "epoch": 0,
             "optimizer_step": 0,
             "prompt_id": prompt["id"],
+            "source_prompt_id": prompt["id"],
             "prompt": prompt["caption"],
+            "lyrics": prompt.get("lyrics", DEFAULT_LYRICS),
+            "duration": float(prompt["duration"]),
             "seed": prompt["seed"],
             "audio_path": str(path),
             "probe": audio_probe,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate identical fixed prompts from every tenth v2 checkpoint."""
+"""Generate fixed instrumental prompts from v2 training adapters."""
 from __future__ import annotations
 
 import argparse
@@ -18,7 +18,7 @@ from v2_common import atomic_json
 LORA_SCALES = (0.5,)
 
 
-LYRICS = """[Intro]
+DEFAULT_LYRICS = """[Intro]
 [Instrumental]
 
 [Theme]
@@ -56,7 +56,12 @@ def checkpoint_state(path: Path) -> dict[str, int]:
     return {"epoch": int(state.get("epoch", 0)), "optimizer_step": int(state.get("global_step", 0))}
 
 
-def candidates(output: Path) -> list[dict[str, Any]]:
+def candidates(
+    output: Path,
+    *,
+    final_only: bool = False,
+    best_only: bool = False,
+) -> list[dict[str, Any]]:
     """Discover every fifth checkpoint plus best-val and last adapters."""
     cutoff_path = output / "training_stop_override.json"
     cutoff = None
@@ -79,16 +84,22 @@ def candidates(output: Path) -> list[dict[str, Any]]:
             continue
         selected.append({"label": f"epoch_{int(match.group(1)):03d}", "path": path, **state})
     validation = json.loads((output / "validation_state.json").read_text(encoding="utf-8"))
-    selected.append({
+    best_candidate = {
         "label": "best_val",
         "path": output / "checkpoints" / "best_val",
         "epoch": int(validation["best_epoch"]),
         "optimizer_step": int(validation["best_optimizer_step"]),
-    })
+    }
+    selected.append(best_candidate)
+    if best_only:
+        return [best_candidate]
     if not eligible_states:
         raise RuntimeError("no eligible checkpoint remains after applying cutoff")
     last_state = max(eligible_states, key=lambda value: value.get("optimizer_step", 0))
-    selected.append({"label": "last", "path": output / "final", **last_state})
+    final_candidate = {"label": "last", "path": output / "final", **last_state}
+    if final_only:
+        return [final_candidate]
+    selected.append(final_candidate)
     return selected
 
 
@@ -130,16 +141,83 @@ def audio_path(value: dict[str, Any]) -> Path | None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project-root", default=".")
+    parser.add_argument(
+        "--final-only",
+        action="store_true",
+        help="Generate only from the final epoch adapter after training completes.",
+    )
+    parser.add_argument(
+        "--best-only",
+        action="store_true",
+        help="Generate only from the lowest-validation-loss adapter.",
+    )
+    parser.add_argument(
+        "--evaluation-dir",
+        default="outputs/v2/checkpoint-evaluation",
+        help="Output directory, relative to the project root by default.",
+    )
+    parser.add_argument(
+        "--ace-lm-thinking",
+        action="store_true",
+        help="Use the local ACE 5Hz LM to plan semantic audio codes before diffusion.",
+    )
+    parser.add_argument("--ace-lm-model", default="acestep-5Hz-lm-1.7B")
+    parser.add_argument(
+        "--base-only",
+        action="store_true",
+        help="Generate with XL-Base only, without loading the trained LoRA.",
+    )
+    parser.add_argument("--prompt-id", help="Generate only one fixed prompt id.")
+    parser.add_argument(
+        "--seed-offsets",
+        default="0",
+        help="Comma-separated deterministic offsets added to each fixed prompt seed.",
+    )
+    parser.add_argument("--duration-override", type=float)
+    parser.add_argument(
+        "--prompts-file",
+        default="configs/v2/fixed_eval_prompts.json",
+        help="Prompt JSON file, relative to the project root by default.",
+    )
     args = parser.parse_args()
+    if args.final_only and args.best_only:
+        parser.error("--final-only and --best-only are mutually exclusive")
     root = Path(args.project_root).resolve()
     output = root / "outputs" / "v2" / "train-validation"
     gate = json.loads((output / "training_validation_report.json").read_text(encoding="utf-8"))
     if gate.get("status") != "pass":
         raise RuntimeError("v2 train-validation gate has not passed")
-    prompts = json.loads(
-        (root / "configs" / "v2" / "fixed_eval_prompts.json").read_text(encoding="utf-8")
-    )["prompts"]
-    checkpoints = candidates(output)
+    prompts_path = Path(args.prompts_file)
+    if not prompts_path.is_absolute():
+        prompts_path = root / prompts_path
+    prompts = json.loads(prompts_path.read_text(encoding="utf-8"))["prompts"]
+    if args.prompt_id:
+        prompts = [prompt for prompt in prompts if prompt["id"] == args.prompt_id]
+        if len(prompts) != 1:
+            raise RuntimeError(f"fixed prompt id not found: {args.prompt_id}")
+    try:
+        seed_offsets = [int(value.strip()) for value in args.seed_offsets.split(",") if value.strip()]
+    except ValueError as exc:
+        raise RuntimeError("--seed-offsets must contain integers") from exc
+    if not seed_offsets:
+        raise RuntimeError("--seed-offsets must not be empty")
+    expanded_prompts = []
+    for prompt in prompts:
+        for offset in seed_offsets:
+            expanded = dict(prompt)
+            expanded["source_prompt_id"] = prompt["id"]
+            expanded["seed"] = int(prompt["seed"]) + offset
+            if len(seed_offsets) > 1 or offset:
+                expanded["id"] = f"{prompt['id']}_seed_{expanded['seed']}"
+            if args.duration_override is not None:
+                expanded["duration"] = float(args.duration_override)
+            expanded_prompts.append(expanded)
+    prompts = expanded_prompts
+    checkpoints = (
+        [{"label": "base_xl", "path": None, "epoch": 0, "optimizer_step": 0}]
+        if args.base_only
+        else candidates(output, final_only=args.final_only, best_only=args.best_only)
+    )
 
     from acestep.handler import AceStepHandler
     from acestep.inference import GenerationConfig, GenerationParams, generate_music
@@ -155,28 +233,49 @@ def main() -> int:
     )
     if not loaded:
         raise RuntimeError(f"XL-Base initialization failed: {message}")
-    evaluation_root = root / "outputs" / "v2" / "checkpoint-evaluation"
+    llm_handler = None
+    if args.ace_lm_thinking:
+        from acestep.llm_inference import LLMHandler
+
+        llm_handler = LLMHandler()
+        lm_message, lm_loaded = llm_handler.initialize(
+            checkpoint_dir=str(root / "checkpoints"),
+            lm_model_path=args.ace_lm_model,
+            backend="pt",
+            device="cuda",
+            offload_to_cpu=False,
+            dtype=None,
+        )
+        if not lm_loaded:
+            raise RuntimeError(f"ACE 5Hz LM initialization failed: {lm_message}")
+    evaluation_root = Path(args.evaluation_dir)
+    if not evaluation_root.is_absolute():
+        evaluation_root = root / evaluation_root
     results: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
     for checkpoint in checkpoints:
         label = checkpoint["label"]
-        adapter = resolve_adapter(Path(checkpoint["path"]))
-        load_message = handler.add_lora(str(adapter), adapter_name=label)
-        if not load_message.startswith("✅"):
-            raise RuntimeError(load_message)
-        active_message = handler.set_active_lora_adapter(label)
-        if not active_message.startswith("✅"):
-            raise RuntimeError(active_message)
-        for lora_scale in LORA_SCALES:
+        adapter = None
+        if checkpoint["path"] is not None:
+            adapter = resolve_adapter(Path(checkpoint["path"]))
+            load_message = handler.add_lora(str(adapter), adapter_name=label)
+            if not load_message.startswith("✅"):
+                raise RuntimeError(load_message)
+            active_message = handler.set_active_lora_adapter(label)
+            if not active_message.startswith("✅"):
+                raise RuntimeError(active_message)
+        active_scales = (0.0,) if args.base_only else LORA_SCALES
+        for lora_scale in active_scales:
             scaled_label = f"{label}_scale_{lora_scale:.2f}"
-            scale_message = handler.set_lora_scale(label, lora_scale)
-            if not scale_message.startswith("✅"):
-                raise RuntimeError(scale_message)
+            if adapter is not None:
+                scale_message = handler.set_lora_scale(label, lora_scale)
+                if not scale_message.startswith("✅"):
+                    raise RuntimeError(scale_message)
             for prompt in prompts:
                 target_dir = evaluation_root / "audio" / scaled_label / prompt["id"]
                 params = GenerationParams(
                     caption=prompt["caption"],
-                    lyrics=LYRICS,
+                    lyrics=prompt.get("lyrics", DEFAULT_LYRICS),
                     instrumental=True,
                     bpm=int(prompt["bpm"]),
                     keyscale=prompt["keyscale"],
@@ -188,7 +287,11 @@ def main() -> int:
                     use_adg=True,
                     dcw_enabled=False,
                     seed=int(prompt["seed"]),
-                    thinking=False,
+                    thinking=args.ace_lm_thinking,
+                    lm_temperature=0.8,
+                    lm_cfg_scale=2.0,
+                    lm_top_k=0,
+                    lm_top_p=0.9,
                     use_cot_metas=False,
                     use_cot_caption=False,
                     use_cot_language=False,
@@ -200,7 +303,13 @@ def main() -> int:
                     seeds=[int(prompt["seed"])],
                     audio_format="wav",
                 )
-                generated = generate_music(handler, None, params, config, save_dir=str(target_dir))
+                generated = generate_music(
+                    handler,
+                    llm_handler,
+                    params,
+                    config,
+                    save_dir=str(target_dir),
+                )
                 if not generated.success or len(generated.audios) != 1:
                     errors.append({"checkpoint": scaled_label, "prompt": prompt["id"], "reason": generated.error or generated.status_message})
                     continue
@@ -213,11 +322,14 @@ def main() -> int:
                     "checkpoint": scaled_label,
                     "checkpoint_base": label,
                     "lora_scale": lora_scale,
-                    "adapter_path": str(adapter),
+                    "adapter_path": str(adapter) if adapter is not None else None,
                     "epoch": checkpoint.get("epoch"),
                     "optimizer_step": checkpoint.get("optimizer_step"),
                     "prompt_id": prompt["id"],
+                    "source_prompt_id": prompt["source_prompt_id"],
                     "prompt": prompt["caption"],
+                    "lyrics": prompt.get("lyrics", DEFAULT_LYRICS),
+                    "duration": float(prompt["duration"]),
                     "seed": prompt["seed"],
                     "audio_path": str(path),
                     "probe": audio_probe,
@@ -227,13 +339,30 @@ def main() -> int:
                 if not valid:
                     errors.append({"checkpoint": scaled_label, "prompt": prompt["id"], "reason": "audio_validation_failed"})
                 print(f"[{scaled_label}] {prompt['id']} {'PASS' if valid else 'FAIL'}", flush=True)
-        handler.remove_lora(label)
+        if adapter is not None:
+            handler.remove_lora(label)
     expected = len(checkpoints) * len(LORA_SCALES) * len(prompts)
     report = {
         "status": "pass" if not errors and len(results) == expected else "failed",
         "fixed_prompt_count": len(prompts),
         "checkpoint_count": len(checkpoints),
-        "lora_scales": list(LORA_SCALES),
+        "checkpoint_mode": (
+            "base_only"
+            if args.base_only
+            else "final_only"
+            if args.final_only
+            else "best_only"
+            if args.best_only
+            else "all_candidates"
+        ),
+        "ace_lm_thinking": args.ace_lm_thinking,
+        "ace_lm_model": args.ace_lm_model if args.ace_lm_thinking else None,
+        "structure_conditioning": "per_prompt_training_vocabulary_sections_v3",
+        "prompt_filter": args.prompt_id,
+        "seed_offsets": seed_offsets,
+        "duration_override": args.duration_override,
+        "prompts_file": str(prompts_path),
+        "lora_scales": [0.0] if args.base_only else list(LORA_SCALES),
         "expected_outputs": expected,
         "generated_outputs": len(results),
         "results": results,

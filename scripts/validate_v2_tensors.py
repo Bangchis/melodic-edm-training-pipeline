@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 from pathlib import Path
 from typing import Any
 
@@ -68,6 +69,7 @@ def main() -> int:
     train_dir = root / "data_v2" / "tensors_train"
     validation_dir = root / "data_v2" / "tensors_validation"
     all_dir = root / "data_v2" / "tensors_all"
+    dedup_report_path = root / "data_v2" / "dedup_training_view_report.json"
     errors: list[dict[str, Any]] = []
     for label, directory, expected in (
         ("train", train_dir, expected_train),
@@ -89,6 +91,47 @@ def main() -> int:
         if len(splits) != 1:
             errors.append({"sample_id": "*", "reason": f"parent_split_crossing:{parent}"})
 
+    dedup_report: dict[str, Any] = {}
+    unique_sets: dict[str, set[str]] = {"train": set(), "validation": set(), "all": set()}
+    if not dedup_report_path.is_file():
+        errors.append({"sample_id": "*", "reason": "dedup_training_view_report_missing"})
+    else:
+        dedup_report = json.loads(dedup_report_path.read_text(encoding="utf-8"))
+        for item in dedup_report.get("representatives", []):
+            sample_id = str(item.get("sample_id", ""))
+            split = str(item.get("split", ""))
+            if split not in ("train", "validation") or sample_id not in expected_all:
+                errors.append({"sample_id": sample_id or "*", "reason": f"invalid_dedup_representative:{split}"})
+                continue
+            unique_sets[split].add(sample_id)
+            unique_sets["all"].add(sample_id)
+        expected_unique_counts = {"train": 184, "validation": 33, "all": 217}
+        for split, view_name in (
+            ("train", "tensors_train_unique"),
+            ("validation", "tensors_validation_unique"),
+            ("all", "tensors_all_unique"),
+        ):
+            directory = root / "data_v2" / view_name
+            try:
+                observed = names(directory)
+            except (FileNotFoundError, KeyError, TypeError, json.JSONDecodeError) as exc:
+                errors.append({"sample_id": "*", "reason": f"{split}_unique_view_unreadable:{type(exc).__name__}"})
+                continue
+            if observed != unique_sets[split]:
+                errors.append({
+                    "sample_id": "*",
+                    "reason": f"{split}_unique_coverage_mismatch",
+                    "missing": sorted(unique_sets[split] - observed),
+                    "unexpected": sorted(observed - unique_sets[split]),
+                })
+            if len(observed) != expected_unique_counts[split]:
+                errors.append({"sample_id": "*", "reason": f"{split}_unique_count:{len(observed)}"})
+            for sample_id in observed:
+                view_tensor = directory / f"{sample_id}.pt"
+                full_tensor = all_dir / f"{sample_id}.pt"
+                if not full_tensor.is_file() or not os.path.samefile(view_tensor, full_tensor):
+                    errors.append({"sample_id": sample_id, "reason": f"{split}_unique_tensor_is_not_hardlink"})
+
     for index, sample_id in enumerate(sorted(expected_all), 1):
         path = all_dir / f"{sample_id}.pt"
         for reason in tensor_errors(path):
@@ -101,6 +144,11 @@ def main() -> int:
         "train_tensors": len(expected_train),
         "validation_tensors": len(expected_validation),
         "all_tensors": len(expected_all),
+        "catalog_records": len(rows),
+        "unique_audio_records": len(unique_sets["all"]),
+        "train_unique_tensors": len(unique_sets["train"]),
+        "validation_unique_tensors": len(unique_sets["validation"]),
+        "all_unique_tensors": len(unique_sets["all"]),
         "parent_groups": len(parent_splits),
         "parent_split_crossings": sum(len(value) > 1 for value in parent_splits.values()),
         "audio_latents_per_record": 1,
@@ -108,7 +156,10 @@ def main() -> int:
         "caption_variant_types": list(CAPTION_TYPES),
         "validation_caption_index": 0,
         "validation_cfg_dropout": 0.0,
-        "deduplication_performed": False,
+        "deduplication_performed": bool(dedup_report) and not any(
+            item.get("reason", "").startswith(("dedup_", "train_unique", "validation_unique", "all_unique"))
+            for item in errors
+        ),
         "errors": errors,
     }
     atomic_json(root / "data_v2" / "tensor_validation_report.json", report)

@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 PROMPT_REVISION = "audio-blind-v2.2"
-CAPTION_COMPILER_REVISION = "openrouter-per-track-prior-audio-fusion-v2.8"
+CAPTION_COMPILER_REVISION = "openrouter-per-track-prior-audio-fusion-v2.9"
 
 
 ACTIVE_STATES = {"STARTING", "RUNNING", "BACKOFF", "STOPPING"}
@@ -329,6 +329,31 @@ def main() -> int:
         wait_for_exit("edm-v2-sync-checkpoints")
     if not sync_complete(sync_gate):
         raise RuntimeError("private checkpoint sync did not complete")
+
+    robust_lora = root / "outputs" / "v2" / "robust-evaluation"
+    robust_base = root / "outputs" / "v2" / "robust-base-evaluation"
+    if not (
+        json_pass(robust_lora / "generation_report.json")
+        and json_pass(robust_base / "generation_report.json")
+    ):
+        run_parallel(["edm-v2-evaluate-robust", "edm-v2-evaluate-robust-base"])
+    require_json_pass(robust_lora / "generation_report.json", "five-seed-lora-generation")
+    require_json_pass(robust_base / "generation_report.json", "five-seed-base-generation")
+    if not (
+        json_pass(robust_lora / "listening_scores.json")
+        and json_pass(robust_base / "listening_scores.json")
+        and (robust_lora / "seed_robustness.json").is_file()
+        and (robust_base / "seed_robustness.json").is_file()
+    ):
+        run_parallel(["edm-v2-score-moss-robust", "edm-v2-score-moss-robust-base"])
+    require_json_pass(robust_lora / "listening_scores.json", "five-seed-lora-listening")
+    require_json_pass(robust_base / "listening_scores.json", "five-seed-base-listening")
+    require_json_pass(robust_lora / "seed_robustness.json", "five-seed-lora-quality")
+    run_stage(
+        "edm-v2-compare-robust",
+        root / "outputs" / "v2" / "robust-comparison.json",
+        "paired-five-seed-base-lora-comparison",
+    )
 
     evaluation = root / "outputs" / "v2" / "checkpoint-evaluation"
     run_stage(

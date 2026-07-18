@@ -34,8 +34,8 @@ trap 'kill "$monitor_pid" 2>/dev/null || true' EXIT TERM INT
 
 common=(
   --yes
-  --dataset-dir "$project/data_v2/tensors_train"
-  --validation-dataset-dir "$project/data_v2/tensors_validation"
+  --dataset-dir "$project/data_v2/tensors_train_unique"
+  --validation-dataset-dir "$project/data_v2/tensors_validation_unique"
   --output-dir "$output"
   --checkpoint-dir "$project/checkpoints"
   --model-variant xl_base --base-model xl_base
