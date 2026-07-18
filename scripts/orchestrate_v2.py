@@ -13,7 +13,10 @@ from pathlib import Path
 ACTIVE_STATES = {"STARTING", "RUNNING", "BACKOFF", "STOPPING"}
 
 
-def supervisor(*arguments: str) -> str:
+def supervisor(
+    *arguments: str,
+    allowed_returncodes: tuple[int, ...] = (0,),
+) -> str:
     """Run supervisorctl and return its text output."""
     result = subprocess.run(
         ["supervisorctl", *arguments],
@@ -23,14 +26,18 @@ def supervisor(*arguments: str) -> str:
         timeout=120,
     )
     output = (result.stdout or result.stderr).strip()
-    if result.returncode:
+    if result.returncode not in allowed_returncodes:
         raise RuntimeError(f"supervisorctl {' '.join(arguments)} failed: {output}")
     return output
 
 
 def state(job: str) -> str:
     """Return one Supervisor process state."""
-    output = supervisor("status", job)
+    # supervisorctl intentionally returns 3 when a process is in an expected
+    # non-running state such as EXITED or STOPPED.  The status text remains
+    # authoritative and must be parsed instead of treating that code as a
+    # transport failure.  Code 4 (unknown process/internal error) still fails.
+    output = supervisor("status", job, allowed_returncodes=(0, 3))
     parts = output.split()
     if len(parts) < 2:
         raise RuntimeError(f"cannot parse Supervisor status for {job}: {output}")
