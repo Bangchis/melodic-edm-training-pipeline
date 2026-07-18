@@ -232,6 +232,7 @@ class V2PipelineTest(unittest.TestCase):
         )
         package = (SCRIPTS / "package_v2_release.py").read_text(encoding="utf-8")
         self.assertIn("final_listening_quality_report.json", package)
+        self.assertIn("pristine-xl-base-absolute-quality", orchestrator)
 
     def test_caption_repairs_finish_before_tensor_preprocessing(self) -> None:
         orchestrator = (SCRIPTS / "orchestrate_v2.py").read_text(encoding="utf-8")

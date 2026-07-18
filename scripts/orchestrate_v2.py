@@ -281,6 +281,21 @@ def main() -> int:
         root / "outputs" / "v2" / "baseline-xl-base" / "listening_scores.json",
         "pristine-xl-base-listening",
     )
+    baseline_quality_gate = (
+        root / "outputs" / "v2" / "baseline-xl-base" / "listening_quality_report.json"
+    )
+    if not json_pass(baseline_quality_gate):
+        subprocess.run(
+            [
+                sys.executable,
+                str(root / "scripts" / "validate_v2_listening_quality.py"),
+                "--project-root", str(root),
+                "--report", "outputs/v2/baseline-xl-base/listening_scores.json",
+                "--output", "outputs/v2/baseline-xl-base/listening_quality_report.json",
+            ],
+            check=False,
+        )
+    require_json_pass(baseline_quality_gate, "pristine-xl-base-absolute-quality")
 
     run_stage(
         "edm-v2-train-smoke",

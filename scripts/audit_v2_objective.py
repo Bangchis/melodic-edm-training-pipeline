@@ -49,6 +49,7 @@ def main() -> int:
         "data_v2/downstream_reset_report.json",
         "outputs/v2/baseline-xl-base/generation_report.json",
         "outputs/v2/baseline-xl-base/listening_scores.json",
+        "outputs/v2/baseline-xl-base/listening_quality_report.json",
         "outputs/v2/smoke/smoke_validation_report.json",
         "outputs/v2/train-validation/training_validation_report.json",
         "outputs/v2/checkpoint-evaluation/generation_report.json",
@@ -136,6 +137,9 @@ def main() -> int:
         errors.append("prompt_embedding_count_invalid")
 
     smoke = reports["outputs/v2/smoke/smoke_validation_report.json"]
+    baseline_quality = reports["outputs/v2/baseline-xl-base/listening_quality_report.json"]
+    if baseline_quality.get("quality_accepted") is not True:
+        errors.append("pristine_xl_base_absolute_quality_not_accepted")
     if smoke.get("optimizer_steps") != 66 or not smoke.get("adapter_reload_verified"):
         errors.append("smoke_resume_or_reload_evidence_invalid")
     training = reports["outputs/v2/train-validation/training_validation_report.json"]
