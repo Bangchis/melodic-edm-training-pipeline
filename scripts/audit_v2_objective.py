@@ -102,6 +102,9 @@ def main() -> int:
         "optimization.warmup": (optimization.get("warmup_optimizer_steps"), 25),
         "optimization.gpus": (optimization.get("gpus"), 2),
         "optimization.effective_batch": (optimization.get("effective_batch"), 16),
+        "optimization.evaluation_lora_scale": (
+            optimization.get("evaluation_lora_scale"), 0.5,
+        ),
         "quality.minimum_candidate_prompt_alignment": (
             quality_gate_config.get("minimum_candidate_prompt_alignment_per_sample"), 3,
         ),
@@ -118,7 +121,7 @@ def main() -> int:
         "data.test_records": (data.get("test_records"), 0),
         "data.caption_variants": (
             data.get("caption_variants"),
-            ["canonical", "composition", "production"],
+            ["canonical"],
         ),
     }
     for label, (observed, expected) in expected_values.items():
@@ -160,10 +163,18 @@ def main() -> int:
     if reset.get("fresh_rank32_outputs_required") is not True:
         errors.append("stale_pre_audio_blind_training_outputs_not_reset")
     tensors = reports["data_v2/tensor_validation_report.json"]
+    dataset_build = reports["data_v2/dataset_build_report.json"]
     if (tensors.get("train_tensors"), tensors.get("validation_tensors"), tensors.get("all_tensors")) != (196, 35, 231):
         errors.append("tensor_counts_invalid")
-    if tensors.get("prompt_embeddings_per_record") != 3:
+    if tensors.get("prompt_embeddings_per_record") != 1:
         errors.append("prompt_embedding_count_invalid")
+    if tensors.get("caption_variant_types") != ["canonical"]:
+        errors.append("training_prompt_is_not_single_canonical")
+    if (
+        dataset_build.get("training_prompts_per_record") != 1
+        or dataset_build.get("training_prompt_types") != ["canonical"]
+    ):
+        errors.append("dataset_does_not_use_single_fused_canonical_prompt")
 
     smoke = reports["outputs/v2/smoke/smoke_validation_report.json"]
     baseline_scores = reports["outputs/v2/baseline-xl-base/listening_scores.json"]
@@ -183,15 +194,18 @@ def main() -> int:
     if training.get("checkpoint_epochs") != [5, 10, 15, 20]:
         errors.append("required_checkpoint_epochs_missing")
     selection = reports["outputs/v2/checkpoint-evaluation/selection.json"]
+    checkpoint_generation = reports["outputs/v2/checkpoint-evaluation/generation_report.json"]
     checkpoint_scores = reports["outputs/v2/checkpoint-evaluation/listening_scores.json"]
     if checkpoint_scores.get("scorer_revision") != "fixed-prompt-audio-judge-v2.2":
         errors.append("checkpoint_prompt_scorer_revision_not_v2_2")
     if (
         int(selection.get("best_optimizer_step", 0)) <= 0
         or selection.get("quality_accepted") is not True
-        or float(selection.get("selected_lora_scale", 0.0)) not in (0.25, 0.5, 1.0)
+        or float(selection.get("selected_lora_scale", 0.0)) != 0.5
     ):
         errors.append("best_optimizer_step_invalid")
+    if checkpoint_generation.get("lora_scales") != [0.5]:
+        errors.append("checkpoint_evaluation_scale_is_not_fixed_0_5")
     selection_method = selection.get("selection_method", {})
     if (
         selection_method.get("prompt_alignment_weight") != 0.30

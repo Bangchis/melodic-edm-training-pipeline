@@ -1,0 +1,70 @@
+diff --git a/acestep/training_v2/prompt_tracking.py b/acestep/training_v2/prompt_tracking.py
+--- a/acestep/training_v2/prompt_tracking.py
++++ b/acestep/training_v2/prompt_tracking.py
+@@ -52,12 +52,12 @@ def save_prompt_counts(
+     history = [item for item in history if int(item.get("epoch", -1)) != epoch]
+     history.append({"epoch": epoch, "counts": epoch_counts})
+     cumulative_counts = [
+-        sum(int(item.get("counts", [0, 0, 0])[index]) for item in history)
+-        for index in range(3)
++        sum(int(item.get("counts", [0])[index]) for item in history)
++        for index in range(1)
+     ]
+     value = {
+-        "caption_variant_types": ["canonical", "composition", "production"],
+-        "selection": "uniform_random_per_load",
++        "caption_variant_types": ["canonical"],
++        "selection": "single_fused_canonical_per_load",
+         "epochs": sorted(history, key=lambda item: int(item["epoch"])),
+         "cumulative_counts": cumulative_counts,
+     }
+diff --git a/acestep/training_v2/prompt_tracking_test.py b/acestep/training_v2/prompt_tracking_test.py
+--- a/acestep/training_v2/prompt_tracking_test.py
++++ b/acestep/training_v2/prompt_tracking_test.py
+@@ -12,20 +12,20 @@ from acestep.training_v2.prompt_tracking import count_selected_variants
+ class PromptTrackingTest(unittest.TestCase):
+     def test_counts_collated_metadata_list(self) -> None:
+-        counts = torch.zeros(3, dtype=torch.int64)
++        counts = torch.zeros(1, dtype=torch.int64)
+         batch = {"metadata": [
+             {"selected_caption_variant": 0},
+-            {"selected_caption_variant": 2},
+-            {"selected_caption_variant": 2},
++            {"selected_caption_variant": 0},
++            {"selected_caption_variant": 0},
+         ]}
+         count_selected_variants(batch, counts)
+-        self.assertEqual([1, 0, 2], counts.tolist())
++        self.assertEqual([3], counts.tolist())
+ 
+     def test_counts_legacy_dictionary_tensor(self) -> None:
+-        counts = torch.zeros(3, dtype=torch.int64)
+-        batch = {"metadata": {"selected_caption_variant": torch.tensor([0, 1, 2])}}
++        counts = torch.zeros(1, dtype=torch.int64)
++        batch = {"metadata": {"selected_caption_variant": torch.tensor([0, 0, 0])}}
+         count_selected_variants(batch, counts)
+-        self.assertEqual([1, 1, 1], counts.tolist())
++        self.assertEqual([3], counts.tolist())
+ 
+ 
+ if __name__ == "__main__":
+diff --git a/acestep/training_v2/train.py b/acestep/training_v2/train.py
+--- a/acestep/training_v2/train.py
++++ b/acestep/training_v2/train.py
+@@ -416,12 +416,12 @@ class FixedLoRATrainer:
+         accumulation_step = 0
+         accumulated_loss = 0.0
+         optimizer.zero_grad(set_to_none=True)
+         self.module.model.decoder.train()
+-        cumulative_prompt_counts = torch.zeros(3, device=self.fabric.device, dtype=torch.int64)
++        cumulative_prompt_counts = torch.zeros(1, device=self.fabric.device, dtype=torch.int64)
+ 
+         for epoch in range(start_epoch, cfg.max_epochs):
+             epoch_loss = 0.0
+             num_updates = 0
+             epoch_start = time.time()
+-            epoch_prompt_counts = torch.zeros(3, device=self.fabric.device, dtype=torch.int64)
++            epoch_prompt_counts = torch.zeros(1, device=self.fabric.device, dtype=torch.int64)
+             reached_step_limit = False
+ 
+             for _batch_idx, batch in enumerate(train_loader):

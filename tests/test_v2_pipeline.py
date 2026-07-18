@@ -63,6 +63,8 @@ class V2PipelineTest(unittest.TestCase):
         self.assertEqual(32, config["adapter"]["alpha"])
         self.assertEqual(20, config["optimization"]["maximum_epochs"])
         self.assertEqual(0.00005, config["optimization"]["learning_rate"])
+        self.assertEqual(["canonical"], config["data"]["caption_variants"])
+        self.assertEqual(0.5, config["optimization"]["evaluation_lora_scale"])
         quality_gate = config["optimization"]["absolute_listening_quality_gate"]
         self.assertEqual(3, quality_gate["minimum_candidate_prompt_alignment_per_sample"])
         self.assertTrue(quality_gate["candidate_prompt_alignment_not_worse_than_baseline"])
@@ -72,6 +74,15 @@ class V2PipelineTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("min(int(warmup_steps), max(1, int(total_steps) - 1))", trainer_patch)
         self.assertIn("-    warmup_steps = min(warmup_steps, max(1, total_steps // 10))", trainer_patch)
+        self.assertIn("cumulative_prompt_counts = torch.zeros(1", trainer_patch)
+        self.assertIn('"caption_variant_types": ["canonical"]', trainer_patch)
+
+    def test_v2_dataset_embeds_only_the_fused_canonical_prompt(self) -> None:
+        builder = (SCRIPTS / "build_v2_dataset.py").read_text(encoding="utf-8")
+        validator = (SCRIPTS / "validate_v2_tensors.py").read_text(encoding="utf-8")
+        self.assertIn('TRAINING_PROMPT_TYPES = ("canonical",)', builder)
+        self.assertIn('"caption_variants": [variants[0]["text"]]', builder)
+        self.assertIn('"prompt_embeddings_per_record": 1', validator)
 
     def test_orchestrator_json_gate_helpers(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -388,9 +399,9 @@ class V2PipelineTest(unittest.TestCase):
         finalize = (SCRIPTS / "finalize_v2_user_stop.py").read_text(encoding="utf-8")
         self.assertIn('source_checkpoints_deleted": False', finalize)
 
-    def test_checkpoint_evaluation_ab_tests_required_lora_scales(self) -> None:
+    def test_checkpoint_evaluation_uses_only_fixed_lora_scale(self) -> None:
         source = (SCRIPTS / "evaluate_v2_checkpoints.py").read_text(encoding="utf-8")
-        self.assertIn("LORA_SCALES = (0.25, 0.5, 1.0)", source)
+        self.assertIn("LORA_SCALES = (0.5,)", source)
         self.assertIn("handler.set_lora_scale(label, lora_scale)", source)
         selection = (SCRIPTS / "select_v2_checkpoint.py").read_text(encoding="utf-8")
         self.assertIn('"selected_lora_scale": selected["lora_scale"]', selection)
@@ -696,6 +707,8 @@ class V2PipelineTest(unittest.TestCase):
         ):
             self.assertIn(revision, source)
         self.assertIn("per_record_caption_fusion_lineage_not_proven", source)
+        self.assertIn("checkpoint_evaluation_scale_is_not_fixed_0_5", source)
+        self.assertIn("dataset_does_not_use_single_fused_canonical_prompt", source)
         self.assertIn("prompt_alignment_not_authoritative_in_checkpoint_selection", source)
 
 

@@ -8,7 +8,7 @@ Last reconciled: 2026-07-18 (Asia/Ho_Chi_Minh)
 - V2 reuses 231 validated audio records with a grouped 196-train/35-validation split. No audio is redownloaded or deduplicated.
 - The previous rank-48/alpha-96 run was stopped and preserved under `outputs/v2-r48-failed-20260718T0841Z`; it is not treated as a releasable final model.
 - Diagnosis proved that the chaotic Colab samples were not enough to declare training failure. The old inference profile (`50 steps`, ADG off, DCW on, LoRA scale 1) made pristine XL-Base fail too. The corrected XL-Base profile is `64 steps`, guidance `8`, shift `1`, ADG on and DCW off.
-- With that corrected profile, the archived rank-48 epoch-45 adapter at LoRA scale `0.5` scored 5/5 for prompt alignment, melody, structure and audio quality on the fixed gaming prompt. Scale `0.25` was clean but generic; scale `1.0` was clean but less aligned. This is why V2 now A/B tests scales instead of assuming `1.0`.
+- With that corrected profile, the archived rank-48 epoch-45 adapter at LoRA scale `0.5` scored 5/5 for prompt alignment, melody, structure and audio quality on the fixed gaming prompt. Per the updated training decision, V2 uses `0.5` as its only checkpoint-evaluation scale.
 - The annotation-to-audio/tensor linkage is exact for 231/231 records, but the first stratified listening audit found unsupported audible claims, including pipa/guzheng on `myomouse__009` and strings/brass on `diversity__001`.
 - Rank-32 training has **not started**. The first conservative caption-repair pass was stopped before applying anything because a single MOSS audit contradicted MOSS's earlier instrument identification on the same audio. No existing annotation or tensor was replaced.
 - Caption checking is being changed to claim-level multi-view consensus: two differently worded full-track checks plus an intro/middle/late montage. Exact names such as pipa, dizi or guzheng are preserved when at least two views support them without a strong full-track contradiction; only absent or unresolved claims are removed or softened.
@@ -27,14 +27,14 @@ Last reconciled: 2026-07-18 (Asia/Ho_Chi_Minh)
 - CFG dropout `0.15`; random canonical/composition/production embedding during training.
 - Maximum 20 epochs; checkpoint/validation/evaluation at epochs 5, 10, 15 and 20.
 - Absolute MOSS gate: every dimension mean at least 3/5 and every individual score at least 2/5.
-- Every candidate is evaluated at LoRA scales `0.25`, `0.5` and `1.0` using identical prompts/seeds.
+- Every candidate is evaluated only at LoRA scale `0.5` using identical prompts/seeds.
 
 ## Active work
 
 1. Regenerate all 231 MOSS supplements with the identity- and prior-claim-blind prompt.
 2. Finish multi-view verification of exact audible instrument claims.
 3. Compile prompt-useful captions from those decisions, preserving verified specific names, and apply only a fully validated 231-record repair set while keeping a full backup.
-4. Rebuild all prompt embeddings/tensors and rerun exact annotation–tensor alignment checks.
+4. Rebuild the single fused canonical prompt embedding for every record and rerun exact annotation–tensor alignment checks.
 5. Rerun the stratified audio-grounded caption fidelity gate.
 6. Run a fresh 66-step rank-32 DDP smoke with save/resume/reload checks.
 7. Train once through epoch 20 and evaluate epochs 5/10/15/20 at all three LoRA scales.

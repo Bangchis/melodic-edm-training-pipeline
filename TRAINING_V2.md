@@ -1,6 +1,6 @@
 # Melodic EDM Core V2 training
 
-V2 is a fresh LoRA training run for ACE-Step 1.5 XL-Base. It preserves the validated 231-song audio set and each song's existing prompt/annotation from V1, fuses those song-specific properties with an independent audio-grounded MOSS-Music analysis, and trains with three prompt views per song.
+V2 is a fresh LoRA training run for ACE-Step 1.5 XL-Base. It preserves the validated 231-song audio set and each song's existing prompt/annotation from V1, fuses those song-specific properties with an independent audio-grounded MOSS-Music analysis, and trains from one combined canonical prompt per song.
 
 ## Immutable inputs
 
@@ -17,7 +17,7 @@ MOSS-Music is used only as an audio listener for annotation and checkpoint scori
 
 ## Annotation contract
 
-Every record has one master annotation and exactly three captions in this fixed order:
+Every record retains one master annotation and three review views in this fixed order:
 
 1. `canonical`: balanced audible summary, 40–80 words.
 2. `composition`: melody, harmony, motif, rhythm and arrangement, 25–80 words.
@@ -29,7 +29,7 @@ MOSS prompt revision `audio-blind-v2.2` first receives no title, artist, filenam
 
 Compiler revision `per-track-prior-audio-fusion-v2.7` then receives two separately hashed packets for the same `sample_id`: the old per-track prompt/annotation and the independent waveform analysis. It preserves distinctive old genre, mood, melody, arrangement and production properties when supported or not contradicted by the audio, prefers waveform evidence on conflict, and obeys the multi-view instrument decisions as binding. This is a fusion step, not a replacement with generic MOSS text. Its deterministic gate rejects newly introduced unverified exact instrument names, embedded BPM, time signature, exact key, quality hype and generic `standard/classic EDM structure` boilerplate before a caption can enter tensors. A stratified listening audit then requires acceptable fidelity and specificity.
 
-Preprocessing stores one audio latent and three prompt embeddings per record. During training, the dataset chooses caption index 0, 1 or 2 uniformly at each load. CFG dropout is `0.15`. Validation always uses canonical index 0 and CFG dropout `0.0`.
+The canonical view is the only training condition. It combines the useful old prompt properties and the independent new audio evidence into one 40–80 word description. Composition and production remain auxiliary review views and are not embedded. Preprocessing therefore stores one audio latent and one canonical prompt embedding per record. Training always uses canonical index 0 with CFG dropout `0.15`; validation uses the same canonical index with CFG dropout `0.0`.
 
 ## Fixed LoRA configuration
 
@@ -74,7 +74,7 @@ identity- and prior-claim-blind MOSS annotation (2 shards)
 → 66-step smoke with checkpoint resume
 → one train/validation run, maximum 20 epochs
 → fixed-prompt checkpoint generation at epochs 5/10/15/20
-→ A/B every candidate at LoRA scale 0.25/0.5/1.0
+→ evaluate every candidate at fixed LoRA scale 0.5
 → MOSS listening score + feature checks
 → select best optimizer step
 → package + upload best-val preview
@@ -97,7 +97,7 @@ supervisorctl start edm-v2-preprocess-validation
 supervisorctl start edm-v2-merge-tensors
 ```
 
-The merge gate must report exactly 231 records, 196 train, 35 validation, no parent crossing and three caption variants. The tensor gate must report exactly 196 train tensors, 35 validation tensors and 231 all-data tensors, each with one latent plus three prompt embeddings.
+The merge gate must report exactly 231 records, 196 train, 35 validation, no parent crossing and three annotation views. The tensor gate must report exactly 196 train tensors, 35 validation tensors and 231 all-data tensors, each with one latent plus one fused canonical prompt embedding.
 
 ### Smoke test
 
@@ -110,7 +110,7 @@ The smoke run reaches optimizer step 65, resumes, then stops at exact step 66. I
 - both GPUs allocated and active;
 - finite loss with at least one decrease;
 - no OOM, NaN or Inf marker;
-- all three prompt indexes selected;
+- only canonical prompt index 0 selected;
 - canonical-only validation;
 - checkpoint save, resume and clean adapter reload;
 - rank 32 / alpha 32 / dropout 0.1 and exact q/k/v/o adapter coverage.
@@ -129,7 +129,7 @@ supervisorctl start edm-v2-upload-preview
 supervisorctl start edm-v2-verify-preview
 ```
 
-Validation, logging, checkpointing and fixed-prompt sampling occur every five epochs, through a hard maximum of 20 epochs. Each epoch 5/10/15/20 adapter is evaluated at LoRA scales `0.25`, `0.5` and `1.0` with the same prompts and seeds. The selected scale is recorded and packaged as the recommended inference default; it remains user-adjustable.
+Validation, logging, checkpointing and fixed-prompt sampling occur every five epochs through the full 20-epoch run. Each epoch 5/10/15/20 adapter is evaluated at the single fixed LoRA scale `0.5` with the same prompts and seeds. Scale `0.5` is recorded and packaged as the recommended inference default; the Colab inference UI can still expose it for manual experimentation after release.
 
 After checkpoint selection, the deployable `best-val` adapter, its three fixed audio examples, metrics, scripts and Colab notebook are packaged and uploaded to the private model repository. A clean immutable redownload must pass checksum verification and 48 kHz stereo inference before the fresh all-231 run is allowed to start. This provides an inference-ready preview while final retraining continues.
 

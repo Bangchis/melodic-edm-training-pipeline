@@ -7,7 +7,7 @@
     "two_gpu_ddp",
     "finite_loss",
     "no_oom_or_nan",
-    "three_prompt_randomization",
+    "single_fused_canonical_prompt",
     "canonical_only_validation",
     "validation_without_cfg_dropout",
     "checkpoint_save",

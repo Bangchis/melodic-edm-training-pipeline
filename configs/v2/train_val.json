@@ -26,8 +26,9 @@
     "validation_records": 35,
     "test_records": 0,
     "group_key": "parent_song_id",
-    "caption_variants": ["canonical", "composition", "production"],
-    "train_prompt_selection": "uniform_random_per_load",
+    "caption_variants": ["canonical"],
+    "auxiliary_annotation_views": ["composition", "production"],
+    "train_prompt_selection": "single_fused_canonical_per_load",
     "validation_prompt_selection": "canonical_index_0"
   },
   "optimization": {
@@ -48,6 +49,7 @@
     "sample_and_upload_every_epochs": 5,
     "maximum_epochs": 20,
     "early_stopping_validation_checks": 0,
+    "evaluation_lora_scale": 0.5,
     "absolute_listening_quality_gate": {
       "minimum_dimension_mean": 3.0,
       "minimum_individual_score": 2,

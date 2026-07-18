@@ -15,7 +15,7 @@ import torch
 from v2_common import atomic_json
 
 
-LORA_SCALES = (0.25, 0.5, 1.0)
+LORA_SCALES = (0.5,)
 
 
 LYRICS = """[Intro]

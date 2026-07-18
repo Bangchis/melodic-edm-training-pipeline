@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate grouped coverage and exactly three cached prompt embeddings."""
+"""Validate grouped coverage and one fused canonical prompt embedding."""
 from __future__ import annotations
 
 import argparse
@@ -10,7 +10,10 @@ from typing import Any
 
 import torch
 
-from v2_common import CAPTION_TYPES, atomic_json, read_jsonl
+from v2_common import atomic_json, read_jsonl
+
+
+TRAINING_PROMPT_TYPES = ("canonical",)
 
 
 def tensor_errors(path: Path) -> list[str]:
@@ -28,10 +31,10 @@ def tensor_errors(path: Path) -> list[str]:
             errors.append(f"{key}_nonfinite")
     states = data.get("encoder_hidden_states_variants")
     masks = data.get("encoder_attention_mask_variants")
-    if not isinstance(states, list) or len(states) != 3:
+    if not isinstance(states, list) or len(states) != 1:
         errors.append(f"prompt_state_count:{len(states) if isinstance(states, list) else 'invalid'}")
         states = []
-    if not isinstance(masks, list) or len(masks) != 3:
+    if not isinstance(masks, list) or len(masks) != 1:
         errors.append(f"prompt_mask_count:{len(masks) if isinstance(masks, list) else 'invalid'}")
         masks = []
     for index, value in enumerate(states):
@@ -45,7 +48,7 @@ def tensor_errors(path: Path) -> list[str]:
     if masks and not torch.equal(data.get("encoder_attention_mask"), masks[0]):
         errors.append("canonical_mask_is_not_legacy_index_0")
     metadata = data.get("metadata", {})
-    if metadata.get("caption_variants") is None or len(metadata.get("caption_variants", [])) != 3:
+    if metadata.get("caption_variants") is None or len(metadata.get("caption_variants", [])) != 1:
         errors.append("metadata_caption_variant_count")
     return errors
 
@@ -104,8 +107,8 @@ def main() -> int:
         "parent_groups": len(parent_splits),
         "parent_split_crossings": sum(len(value) > 1 for value in parent_splits.values()),
         "audio_latents_per_record": 1,
-        "prompt_embeddings_per_record": 3,
-        "caption_variant_types": list(CAPTION_TYPES),
+        "prompt_embeddings_per_record": 1,
+        "caption_variant_types": list(TRAINING_PROMPT_TYPES),
         "validation_caption_index": 0,
         "validation_cfg_dropout": 0.0,
         "deduplication_performed": False,
