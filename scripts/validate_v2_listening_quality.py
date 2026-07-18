@@ -23,13 +23,24 @@ def compare_prompt_alignment(
 ) -> dict[str, Any]:
     """Reject a final adapter that materially regresses from selected best-val alignment."""
     output = deepcopy(quality)
-    current = [int(row["scores"]["prompt_alignment"]) for row in current_records]
-    reference = [
-        int(row["scores"]["prompt_alignment"])
+    current_by_prompt = {
+        str(row.get("prompt_id")): int(row["scores"]["prompt_alignment"])
+        for row in current_records
+        if row.get("prompt_id")
+    }
+    reference_by_prompt = {
+        str(row.get("prompt_id")): int(row["scores"]["prompt_alignment"])
         for row in reference_records
-        if row.get("checkpoint") == reference_checkpoint
-    ]
-    if not current or not reference:
+        if row.get("checkpoint") == reference_checkpoint and row.get("prompt_id")
+    }
+    current = list(current_by_prompt.values())
+    reference = list(reference_by_prompt.values())
+    if (
+        not current
+        or not reference
+        or len(current_by_prompt) != len(current_records)
+        or set(current_by_prompt) != set(reference_by_prompt)
+    ):
         output["errors"].append("prompt_alignment_reference_records_missing")
         current_mean = mean(current) if current else 0.0
         reference_mean = mean(reference) if reference else 0.0
@@ -50,6 +61,7 @@ def compare_prompt_alignment(
         "final_mean": current_mean,
         "reference_checkpoint": reference_checkpoint,
         "reference_mean": reference_mean,
+        "prompt_ids": sorted(current_by_prompt),
         "maximum_allowed_regression": maximum_regression,
     }
     output["quality_accepted"] = not output["errors"]
@@ -67,6 +79,8 @@ def main() -> int:
     parser.add_argument("--selection-report")
     parser.add_argument("--maximum-prompt-alignment-regression", type=float, default=0.34)
     args = parser.parse_args()
+    if args.maximum_prompt_alignment_regression < 0:
+        parser.error("maximum-prompt-alignment-regression must be non-negative")
     root = Path(args.project_root).resolve()
     report_path = Path(args.report)
     if not report_path.is_absolute():

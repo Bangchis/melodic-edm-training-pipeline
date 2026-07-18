@@ -401,10 +401,13 @@ class V2PipelineTest(unittest.TestCase):
         base_quality = {
             "status": "pass", "quality_accepted": True, "errors": [],
         }
-        current = [{"scores": {"prompt_alignment": score}} for score in (4, 4, 4)]
+        current = [
+            {"prompt_id": prompt_id, "scores": {"prompt_alignment": score}}
+            for prompt_id, score in zip(("a", "b", "c"), (4, 4, 4))
+        ]
         reference = [
-            {"checkpoint": "best", "scores": {"prompt_alignment": score}}
-            for score in (5, 4, 4)
+            {"checkpoint": "best", "prompt_id": prompt_id, "scores": {"prompt_alignment": score}}
+            for prompt_id, score in zip(("a", "b", "c"), (5, 4, 4))
         ]
         accepted = compare_prompt_alignment(
             base_quality, current, reference,
@@ -413,7 +416,10 @@ class V2PipelineTest(unittest.TestCase):
         self.assertTrue(accepted["quality_accepted"])
         rejected = compare_prompt_alignment(
             base_quality,
-            [{"scores": {"prompt_alignment": score}} for score in (3, 4, 4)],
+            [
+                {"prompt_id": prompt_id, "scores": {"prompt_alignment": score}}
+                for prompt_id, score in zip(("a", "b", "c"), (3, 4, 4))
+            ],
             reference,
             reference_checkpoint="best", maximum_regression=0.34,
         )
