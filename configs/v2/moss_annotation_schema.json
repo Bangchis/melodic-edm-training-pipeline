@@ -1,0 +1,35 @@
+{
+  "schema_version": "2.0",
+  "required": [
+    "confidence",
+    "audible_facts",
+    "captions"
+  ],
+  "caption_types": [
+    "canonical",
+    "composition",
+    "production"
+  ],
+  "audible_facts": {
+    "genre_and_style": ["string"],
+    "moods": ["string"],
+    "instruments_and_roles": [
+      {
+        "name": "string",
+        "role": "string",
+        "confidence": "number 0..1"
+      }
+    ],
+    "melody_and_motifs": "string",
+    "harmony": "string",
+    "rhythm": "string",
+    "arrangement_and_sections": "string",
+    "production": "string",
+    "uncertain_or_conflicting_facts": ["string"]
+  },
+  "captions": {
+    "canonical": "40-80 English words",
+    "composition": "25-80 English words",
+    "production": "25-80 English words"
+  }
+}

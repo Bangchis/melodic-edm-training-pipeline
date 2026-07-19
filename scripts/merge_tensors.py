@@ -16,6 +16,26 @@ def expected_stems(index_path: Path) -> set[str]:
     return {Path(row["filename"]).stem for row in data["samples"]}
 
 
+def write_loader_manifest(output: Path, sources: list[Path], root: Path) -> Path:
+    """Write project-relative tensor paths for ACE-Step's safe loader.
+
+    The merged directory contains convenience symlinks into the two balanced
+    preprocessing shards. ACE-Step deliberately rejects those symlinks when it
+    scans the directory because their real paths leave ``tensors_all``. An
+    explicit manifest lets the loader validate each real shard path against the
+    wider project safety root without copying or deduplicating any tensor.
+    """
+    samples = [path.relative_to(root).as_posix() for path in sorted(sources)]
+    manifest_path = output / "manifest.json"
+    temporary = manifest_path.with_suffix(".json.tmp")
+    temporary.write_text(
+        json.dumps({"samples": samples}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(temporary, manifest_path)
+    return manifest_path
+
+
 def main() -> int:
     parts = [ROOT / "data" / "tensors_part0", ROOT / "data" / "tensors_part1"]
     indexes = [ROOT / "data" / "dataset_train_part0.json", ROOT / "data" / "dataset_train_part1.json"]
@@ -31,6 +51,11 @@ def main() -> int:
     output = ROOT / "data" / "tensors_all"
     output.mkdir(parents=True, exist_ok=True)
     wanted = expected[0] | expected[1]
+    sources = [
+        directory / f"{stem}.pt"
+        for directory, stems in zip(parts, expected)
+        for stem in sorted(stems)
+    ]
     if expected[0] & expected[1]:
         errors.append({"reason": "sample_collision_between_parts"})
     if not errors:
@@ -46,6 +71,9 @@ def main() -> int:
         for path in output.glob("*.pt"):
             if path.stem not in wanted and path.is_symlink():
                 path.unlink()
+        write_loader_manifest(output, sources, ROOT)
+    else:
+        (output / "manifest.json").unlink(missing_ok=True)
 
     report = {
         "status": "pass" if not errors else "failed",
@@ -53,6 +81,7 @@ def main() -> int:
         "part1_expected": len(expected[1]),
         "train_expected": len(wanted),
         "merged_tensors": len(list(output.glob("*.pt"))),
+        "loader_manifest_samples": len(sources) if not errors else 0,
         "deduplication_performed": False,
         "errors": errors,
     }

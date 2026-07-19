@@ -1,0 +1,86 @@
+{
+  "status": "pass",
+  "best_validation_epoch": 20,
+  "best_optimizer_step": 240,
+  "best_validation_loss": 0.7474020015109669,
+  "latest_validation_loss": 0.7624228452191208,
+  "validation_losses": [
+    0.8331,
+    0.7592,
+    0.7648,
+    0.7474,
+    0.7661,
+    0.7624
+  ],
+  "validation_epochs": [
+    5,
+    10,
+    15,
+    20,
+    25,
+    30
+  ],
+  "checkpoint_epochs": [
+    5,
+    10,
+    15,
+    20,
+    25,
+    30
+  ],
+  "checkpoint_count": 6,
+  "best_adapter": {
+    "rank": 32,
+    "alpha": 32,
+    "dropout": 0.1,
+    "tensor_count": 512,
+    "nonzero_tensor_count": 512,
+    "target_modules": [
+      "k_proj",
+      "o_proj",
+      "q_proj",
+      "v_proj"
+    ]
+  },
+  "last_adapter": {
+    "rank": 32,
+    "alpha": 32,
+    "dropout": 0.1,
+    "tensor_count": 512,
+    "nonzero_tensor_count": 512,
+    "target_modules": [
+      "k_proj",
+      "o_proj",
+      "q_proj",
+      "v_proj"
+    ]
+  },
+  "prompt_selection_counts": [
+    1796,
+    1884,
+    1840
+  ],
+  "gpu_observation": {
+    "0": {
+      "samples": 1281,
+      "max_memory_mib": 23923.0,
+      "max_utilization_percent": 100.0
+    },
+    "1": {
+      "samples": 1281,
+      "max_memory_mib": 13762.0,
+      "max_utilization_percent": 100.0
+    }
+  },
+  "metric_events": [
+    "checkpoint",
+    "gradient_norm",
+    "train_epoch",
+    "train_step",
+    "validation"
+  ],
+  "termination": {
+    "termination": "trainer_early_stop_or_max_epochs"
+  },
+  "errors": []
+}

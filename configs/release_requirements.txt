@@ -1,0 +1,5 @@
+# Install the pinned ACE-Step 1.5 checkout and its CUDA-specific dependencies
+# separately, as described in README.md. These are the additional packages used
+# by the release download and integrity helpers.
+huggingface_hub>=0.34.0,<2.0.0
+safetensors>=0.5.0,<1.0.0

@@ -82,6 +82,31 @@ index 68e0b23..c4520c3 100644
              
              # Split if validation requested
              if self.val_split > 0 and len(full_dataset) > 1:
+diff --git a/acestep/training/lora_injection.py b/acestep/training/lora_injection.py
+index bea0e3e..4710c65 100644
+--- a/acestep/training/lora_injection.py
++++ b/acestep/training/lora_injection.py
+@@ -217,6 +217,12 @@ def inject_lora_into_dit(
+         if "lora_" not in name:
+             param.requires_grad = False
+ 
++    scope_info = None
++    if getattr(lora_config, "strict_attention_scope", False):
++        from acestep.training_v2.lora_scope import verify_shared_attention_scope
++
++        scope_info = verify_shared_attention_scope(model.decoder, lora_config)
++
+     total_params = sum(p.numel() for p in model.parameters())
+     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+ 
+@@ -227,6 +233,7 @@ def inject_lora_into_dit(
+         "lora_r": lora_config.r,
+         "lora_alpha": lora_config.alpha,
+         "target_modules": lora_config.target_modules,
++        "strict_attention_scope": scope_info,
+     }
+ 
+     logger.info("LoRA injected into DiT decoder:")
 diff --git a/acestep/training_v2/caption_variants.py b/acestep/training_v2/caption_variants.py
 new file mode 100644
 index 0000000..23f4dd4
@@ -207,8 +232,23 @@ index 0000000..545f17d
 +
 +if __name__ == "__main__":
 +    unittest.main()
+diff --git a/acestep/training_v2/optim.py b/acestep/training_v2/optim.py
+--- a/acestep/training_v2/optim.py
++++ b/acestep/training_v2/optim.py
+@@ -140,8 +140,9 @@ def build_scheduler(
+         scheduler_type = "constant"
+ 
+-    # Clamp warmup to avoid exceeding total
+-    warmup_steps = min(warmup_steps, max(1, total_steps // 10))
++    # Honor the configured optimizer-step warmup exactly. Only shorten it when
++    # the complete run itself is too short to leave at least one main-schedule step.
++    warmup_steps = max(1, min(int(warmup_steps), max(1, int(total_steps) - 1)))
+ 
+     warmup_sched = LinearLR(
+         optimizer,
+         start_factor=0.1,
 diff --git a/acestep/training_v2/cli/args.py b/acestep/training_v2/cli/args.py
-index 988ff2a..17586a1 100644
+index 988ff2a..3368bb8 100644
 --- a/acestep/training_v2/cli/args.py
 +++ b/acestep/training_v2/cli/args.py
 @@ -19,6 +19,9 @@ VARIANT_DIR_MAP = {
@@ -246,25 +286,84 @@ index 988ff2a..17586a1 100644
      g_data.add_argument(
          "--num-workers",
          type=int,
+@@ -266,6 +287,13 @@ def _add_common_training_args(
+     g_train.add_argument("--batch-size", type=int, default=1, help="Training batch size (default: 1)")
+     g_train.add_argument("--gradient-accumulation", type=int, default=4, help="Gradient accumulation steps (default: 4)")
+     g_train.add_argument("--epochs", type=int, default=100, help="Maximum training epochs (default: 100)")
++    g_train.add_argument(
++        "--max-steps",
++        type=int,
++        default=None,
++        dest="max_optimizer_steps",
++        help="Stop at this exact optimizer step; overrides the epoch-derived step budget",
++    )
+     g_train.add_argument("--warmup-steps", type=int, default=100, help="LR warmup steps (default: 100)")
+     g_train.add_argument("--weight-decay", type=float, default=0.01, help="AdamW weight decay (default: 0.01)")
+     g_train.add_argument("--max-grad-norm", type=float, default=1.0, help="Gradient clipping norm (default: 1.0)")
+@@ -289,6 +317,11 @@ def _add_common_training_args(
+     g_lora.add_argument("--target-modules", nargs="+", default=["q_proj", "k_proj", "v_proj", "o_proj"], help="Modules to apply adapter to")
+     g_lora.add_argument("--bias", type=str, default="none", choices=["none", "all", "lora_only"], help="Bias training mode (default: none)")
+     g_lora.add_argument("--attention-type", type=str, default="both", choices=["self", "cross", "both"], help="Attention layers to target (default: both)")
++    g_lora.add_argument(
++        "--strict-attention-scope",
++        action="store_true",
++        help="Hard-fail unless exact q/k/v/o projections cover separate self/cross attention",
++    )
+ 
+     # -- LoKR hyperparams ---------------------------------------------------
+     g_lokr = parser.add_argument_group("LoKR (used when --adapter-type=lokr)")
 diff --git a/acestep/training_v2/cli/config_builder.py b/acestep/training_v2/cli/config_builder.py
-index 5c3436a..053ca24 100644
+index 5c3436a..d964b90 100644
 --- a/acestep/training_v2/cli/config_builder.py
 +++ b/acestep/training_v2/cli/config_builder.py
-@@ -164,6 +164,9 @@ def build_configs(args: argparse.Namespace) -> Tuple[AdapterConfig, TrainingConf
+@@ -118,6 +118,7 @@ def build_configs(args: argparse.Namespace) -> Tuple[AdapterConfig, TrainingConf
+             target_modules=resolved_modules,
+             bias=args.bias,
+             attention_type=attention_type,
++            strict_attention_scope=getattr(args, "strict_attention_scope", False),
+         )
+ 
+     # -- Clamp DataLoader flags when num_workers <= 0 -----------------------
+@@ -164,6 +165,10 @@ def build_configs(args: argparse.Namespace) -> Tuple[AdapterConfig, TrainingConf
          model_variant=args.model_variant,
          checkpoint_dir=args.checkpoint_dir,
          dataset_dir=args.dataset_dir,
 +        validation_dataset_dir=getattr(args, "validation_dataset_dir", None),
 +        validate_every_n_epochs=getattr(args, "validate_every", 5),
 +        early_stopping_patience=getattr(args, "early_stopping_patience", 5),
++        max_optimizer_steps=getattr(args, "max_optimizer_steps", None),
          device=gpu_info.device,
          precision=gpu_info.precision,
          num_devices=getattr(args, "num_devices", 1),
+diff --git a/acestep/training_v2/cli/train_fixed.py b/acestep/training_v2/cli/train_fixed.py
+index 252135e..5a15cbf 100644
+--- a/acestep/training_v2/cli/train_fixed.py
++++ b/acestep/training_v2/cli/train_fixed.py
+@@ -110,12 +110,13 @@ def run_fixed(args: argparse.Namespace) -> int:
+                 device=train_cfg.device,
+             )
+ 
+-            # -- Summary ------------------------------------------------------
+-            show_summary(
+-                stats=stats,
+-                output_dir=train_cfg.output_dir,
+-                log_dir=str(train_cfg.effective_log_dir),
+-            )
++            # -- Summary (rank zero only under DDP) ---------------------------
++            if getattr(getattr(trainer, "fabric", None), "global_rank", 0) == 0:
++                show_summary(
++                    stats=stats,
++                    output_dir=train_cfg.output_dir,
++                    log_dir=str(train_cfg.effective_log_dir),
++                )
+         except KeyboardInterrupt:
+             show_info("Training interrupted by user (Ctrl+C)")
+             return 130
 diff --git a/acestep/training_v2/cli/validation.py b/acestep/training_v2/cli/validation.py
-index dd22cfe..3fd77a1 100644
+index dd22cfe..44add7e 100644
 --- a/acestep/training_v2/cli/validation.py
 +++ b/acestep/training_v2/cli/validation.py
-@@ -49,6 +49,17 @@ def validate_paths(args: argparse.Namespace) -> bool:
+@@ -49,6 +49,21 @@ def validate_paths(args: argparse.Namespace) -> bool:
          print(f"[FAIL] Dataset directory not found: {ds_dir}", file=sys.stderr)
          return False
  
@@ -277,6 +376,10 @@ index dd22cfe..3fd77a1 100644
 +        return False
 +    if getattr(args, "early_stopping_patience", 0) < 0:
 +        print("[FAIL] --early-stopping-patience cannot be negative", file=sys.stderr)
++        return False
++    max_steps = getattr(args, "max_optimizer_steps", None)
++    if max_steps is not None and max_steps <= 0:
++        print("[FAIL] --max-steps must be positive", file=sys.stderr)
 +        return False
 +
      # Resume path
@@ -324,10 +427,24 @@ index 0000000..48536a4
 +if __name__ == "__main__":
 +    unittest.main()
 diff --git a/acestep/training_v2/configs.py b/acestep/training_v2/configs.py
-index 1f9680a..93de121 100644
+index 1f9680a..8d9dfac 100644
 --- a/acestep/training_v2/configs.py
 +++ b/acestep/training_v2/configs.py
-@@ -165,6 +165,15 @@ class TrainingConfigV2(TrainingConfig):
+@@ -37,9 +37,13 @@ class LoRAConfigV2(LoRAConfig):
+     attention_type: str = "both"
+     """Which attention layers to target: 'self', 'cross', or 'both'."""
+ 
++    strict_attention_scope: bool = False
++    """Hard-fail unless shared q/k/v/o projections cover self and cross paths."""
++
+     def to_dict(self) -> dict:
+         base = super().to_dict()
+         base["attention_type"] = self.attention_type
++        base["strict_attention_scope"] = self.strict_attention_scope
+         return base
+ 
+     # --- Data loading (declared here for compatibility with base packages
+@@ -165,6 +169,18 @@ class TrainingConfigV2(TrainingConfig):
      dataset_dir: str = ""
      """Directory containing preprocessed .pt tensor files."""
  
@@ -340,16 +457,20 @@ index 1f9680a..93de121 100644
 +    early_stopping_patience: int = 5
 +    """Stop after this many validation checks without improvement; 0 disables."""
 +
++    max_optimizer_steps: Optional[int] = None
++    """Optional exact optimizer-step limit, used by smoke and final retraining."""
++
      # --- Device / precision -------------------------------------------------
      device: str = "auto"
      """Device selection: 'auto', 'cuda', 'cuda:0', 'mps', 'xpu', 'cpu'."""
-@@ -265,6 +274,9 @@ class TrainingConfigV2(TrainingConfig):
+@@ -265,6 +281,10 @@ class TrainingConfigV2(TrainingConfig):
                  "model_variant": self.model_variant,
                  "checkpoint_dir": self.checkpoint_dir,
                  "dataset_dir": self.dataset_dir,
 +                "validation_dataset_dir": self.validation_dataset_dir,
 +                "validate_every_n_epochs": self.validate_every_n_epochs,
 +                "early_stopping_patience": self.early_stopping_patience,
++                "max_optimizer_steps": self.max_optimizer_steps,
                  "device": self.device,
                  "precision": self.precision,
                  "num_devices": self.num_devices,
@@ -388,6 +509,211 @@ index cad0c65..2f928a6 100644
 +        if record_loss:
 +            self.training_losses.append(diffusion_loss.item())
          return diffusion_loss
+diff --git a/acestep/training_v2/lora_scope.py b/acestep/training_v2/lora_scope.py
+new file mode 100644
+index 0000000..90a42e9
+--- /dev/null
++++ b/acestep/training_v2/lora_scope.py
+@@ -0,0 +1,99 @@
++"""Strictly verify ACE-Step self- and cross-attention LoRA scope."""
++
++from __future__ import annotations
++
++import inspect
++import re
++from typing import Any
++
++import torch.nn as nn
++
++
++REQUIRED_PROJECTIONS = {"q_proj", "k_proj", "v_proj", "o_proj"}
++ATTENTION_PARAMETER = re.compile(
++    r"(?:^|\.)(self_attn|cross_attn)\.(q_proj|k_proj|v_proj|o_proj)\.lora_"
++)
++
++
++def _is_linear_projection(module: nn.Module) -> bool:
++    """Accept a raw Linear or PEFT's Linear wrapper around one."""
++    return isinstance(module, nn.Linear) or isinstance(
++        getattr(module, "base_layer", None), nn.Linear
++    )
++
++
++def verify_shared_attention_scope(model: nn.Module, config: Any) -> dict[str, Any]:
++    """Verify exact q/k/v/o LoRA coverage on XL self and cross attention."""
++    requested = {str(value).rsplit(".", 1)[-1] for value in config.target_modules}
++    if requested != REQUIRED_PROJECTIONS:
++        raise ValueError(
++            "strict attention scope requires exactly q_proj,k_proj,v_proj,o_proj; "
++            f"received {sorted(requested)}"
++        )
++
++    scope_blocks: dict[str, list[str]] = {"self_attn": [], "cross_attn": []}
++    unexpected_blocks: list[str] = []
++    missing_lora: list[str] = []
++    for name, module in model.named_modules():
++        projections = {field: getattr(module, field, None) for field in REQUIRED_PROJECTIONS}
++        if not all(_is_linear_projection(value) for value in projections.values()):
++            continue
++        scope = name.rsplit(".", 1)[-1]
++        if scope not in scope_blocks:
++            unexpected_blocks.append(name)
++            continue
++        parameters = inspect.signature(module.forward).parameters
++        if "encoder_hidden_states" not in parameters:
++            raise RuntimeError(f"attention block {name} lacks encoder_hidden_states input")
++        scope_blocks[scope].append(name)
++        for projection, layer in projections.items():
++            if not any(
++                "lora_" in parameter_name and parameter.requires_grad
++                for parameter_name, parameter in layer.named_parameters()
++            ):
++                missing_lora.append(f"{name}.{projection}")
++
++    if unexpected_blocks:
++        raise RuntimeError(f"q/k/v/o projection block outside attention scope: {unexpected_blocks[:10]}")
++    self_count = len(scope_blocks["self_attn"])
++    cross_count = len(scope_blocks["cross_attn"])
++    if self_count == 0 or cross_count == 0 or self_count != cross_count:
++        raise RuntimeError(
++            "incomplete self/cross attention block coverage: "
++            f"self={self_count}, cross={cross_count}"
++        )
++    if missing_lora:
++        raise RuntimeError(f"attention projections missing trainable LoRA: {missing_lora[:10]}")
++
++    trainable = [name for name, parameter in model.named_parameters() if parameter.requires_grad]
++    unexpected = [name for name in trainable if "lora_" not in name]
++    if unexpected:
++        raise RuntimeError(f"non-LoRA parameters are trainable: {unexpected[:10]}")
++    wrong_scope = [name for name in trainable if ATTENTION_PARAMETER.search(name) is None]
++    if wrong_scope:
++        raise RuntimeError(f"trainable LoRA outside self/cross q/k/v/o scope: {wrong_scope[:10]}")
++
++    observed = {
++        (match.group(1), match.group(2))
++        for name in trainable
++        if (match := ATTENTION_PARAMETER.search(name)) is not None
++    }
++    expected = {
++        (scope, projection)
++        for scope in scope_blocks
++        for projection in REQUIRED_PROJECTIONS
++    }
++    if observed != expected:
++        raise RuntimeError(
++            "LoRA trainable scope mismatch: "
++            f"missing={sorted(expected - observed)}, extra={sorted(observed - expected)}"
++        )
++    return {
++        "attention_blocks": self_count + cross_count,
++        "self_attention_blocks": self_count,
++        "cross_attention_blocks": cross_count,
++        "projection_modules": (self_count + cross_count) * len(REQUIRED_PROJECTIONS),
++        "target_modules": sorted(REQUIRED_PROJECTIONS),
++        "attention_semantics": "separate_self_and_cross_attention_projections",
++        "trainable_parameter_tensors": len(trainable),
++    }
+diff --git a/acestep/training_v2/lora_scope_test.py b/acestep/training_v2/lora_scope_test.py
+new file mode 100644
+index 0000000..af03796
+--- /dev/null
++++ b/acestep/training_v2/lora_scope_test.py
+@@ -0,0 +1,67 @@
++"""Tests for strict self- and cross-attention LoRA verification."""
++
++from __future__ import annotations
++
++import unittest
++from types import SimpleNamespace
++
++import torch
++import torch.nn as nn
++
++from acestep.training_v2.lora_scope import verify_shared_attention_scope
++
++
++class PeftLikeLinear(nn.Module):
++    """Minimal PEFT-style wrapper used to reproduce the XL runtime shape."""
++
++    def __init__(self) -> None:
++        super().__init__()
++        self.base_layer = nn.Linear(2, 2)
++        self.base_layer.requires_grad_(False)
++        self.lora_A = nn.ParameterDict({"adapter": nn.Parameter(torch.ones(1))})
++
++
++class Attention(nn.Module):
++    def __init__(self) -> None:
++        super().__init__()
++        for name in ("q_proj", "k_proj", "v_proj", "o_proj"):
++            setattr(self, name, PeftLikeLinear())
++
++    def forward(self, hidden_states, encoder_hidden_states=None):
++        return hidden_states
++
++
++def complete_model() -> nn.Module:
++    return nn.ModuleDict({
++        "layers": nn.ModuleDict({
++            "0": nn.ModuleDict({
++                "self_attn": Attention(),
++                "cross_attn": Attention(),
++            })
++        })
++    })
++
++
++class LoraScopeTest(unittest.TestCase):
++    def test_accepts_peft_wrapped_self_and_cross_attention(self) -> None:
++        config = SimpleNamespace(target_modules=["q_proj", "k_proj", "v_proj", "o_proj"])
++        info = verify_shared_attention_scope(complete_model(), config)
++        self.assertEqual(1, info["self_attention_blocks"])
++        self.assertEqual(1, info["cross_attention_blocks"])
++        self.assertEqual(8, info["projection_modules"])
++
++    def test_rejects_incomplete_projection_set(self) -> None:
++        config = SimpleNamespace(target_modules=["q_proj", "v_proj"])
++        with self.assertRaisesRegex(ValueError, "requires exactly"):
++            verify_shared_attention_scope(complete_model(), config)
++
++    def test_rejects_missing_cross_attention(self) -> None:
++        model = complete_model()
++        del model["layers"]["0"]["cross_attn"]
++        config = SimpleNamespace(target_modules=["q_proj", "k_proj", "v_proj", "o_proj"])
++        with self.assertRaisesRegex(RuntimeError, "incomplete self/cross"):
++            verify_shared_attention_scope(model, config)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/acestep/training_v2/metrics_history.py b/acestep/training_v2/metrics_history.py
+new file mode 100644
+index 0000000..e23ff91
+--- /dev/null
++++ b/acestep/training_v2/metrics_history.py
+@@ -0,0 +1,21 @@
++"""Append machine-readable training events for release evaluation."""
++
++from __future__ import annotations
++
++import json
++from datetime import datetime, timezone
++from pathlib import Path
++from typing import Any
++
++
++def append_metric(output_dir: Path, event: str, **values: Any) -> None:
++    """Append one JSONL event from rank zero."""
++    output_dir.mkdir(parents=True, exist_ok=True)
++    record = {
++        "timestamp": datetime.now(timezone.utc).isoformat(),
++        "event": event,
++        **values,
++    }
++    with (output_dir / "metrics_history.jsonl").open("a", encoding="utf-8") as handle:
++        handle.write(json.dumps(record, sort_keys=True) + "\n")
++        handle.flush()
 diff --git a/acestep/training_v2/preprocess.py b/acestep/training_v2/preprocess.py
 index 8cc3bcc..4688b64 100644
 --- a/acestep/training_v2/preprocess.py
@@ -531,11 +857,121 @@ index 8cc3bcc..4688b64 100644
                  if torch.cuda.is_available():
                      torch.cuda.empty_cache()
  
+diff --git a/acestep/training_v2/prompt_tracking.py b/acestep/training_v2/prompt_tracking.py
+new file mode 100644
+index 0000000..950d811
+--- /dev/null
++++ b/acestep/training_v2/prompt_tracking.py
+@@ -0,0 +1,67 @@
++"""Track random caption selections without changing the training batch."""
++
++from __future__ import annotations
++
++import json
++from pathlib import Path
++from typing import Any
++
++import torch
++
++
++def count_selected_variants(batch: dict[str, Any], counts: torch.Tensor) -> None:
++    """Add selected caption indices from a collated batch to *counts*."""
++    metadata = batch.get("metadata", [])
++    if isinstance(metadata, dict):
++        items = [metadata]
++    elif isinstance(metadata, (list, tuple)):
++        items = metadata
++    else:
++        return
++    for item in items:
++        if not isinstance(item, dict):
++            continue
++        selected = item.get("selected_caption_variant")
++        if selected is None:
++            continue
++        if torch.is_tensor(selected):
++            values = selected.reshape(-1).tolist()
++        elif isinstance(selected, (list, tuple)):
++            values = selected
++        else:
++            values = [selected]
++        for value in values:
++            index = int(value)
++            if 0 <= index < counts.numel():
++                counts[index] += 1
++
++
++def save_prompt_counts(
++    output_dir: Path,
++    epoch: int,
++    epoch_counts: list[int],
++    cumulative_counts: list[int],
++) -> None:
++    """Atomically save prompt-selection evidence for smoke and full runs."""
++    path = output_dir / "prompt_selection_counts.json"
++    history = []
++    if path.is_file():
++        try:
++            history = json.loads(path.read_text(encoding="utf-8")).get("epochs", [])
++        except (OSError, json.JSONDecodeError):
++            history = []
++    history = [item for item in history if int(item.get("epoch", -1)) != epoch]
++    history.append({"epoch": epoch, "counts": epoch_counts})
++    cumulative_counts = [
++        sum(int(item.get("counts", [0, 0, 0])[index]) for item in history)
++        for index in range(3)
++    ]
++    value = {
++        "caption_variant_types": ["canonical", "composition", "production"],
++        "selection": "uniform_random_per_load",
++        "epochs": sorted(history, key=lambda item: int(item["epoch"])),
++        "cumulative_counts": cumulative_counts,
++    }
++    temporary = path.with_suffix(".json.tmp")
++    temporary.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
++    temporary.replace(path)
+diff --git a/acestep/training_v2/prompt_tracking_test.py b/acestep/training_v2/prompt_tracking_test.py
+new file mode 100644
+index 0000000..8d42c2e
+--- /dev/null
++++ b/acestep/training_v2/prompt_tracking_test.py
+@@ -0,0 +1,31 @@
++"""Tests for prompt selection tracking after ACE-Step batch collation."""
++
++from __future__ import annotations
++
++import unittest
++
++import torch
++
++from acestep.training_v2.prompt_tracking import count_selected_variants
++
++
++class PromptTrackingTest(unittest.TestCase):
++    def test_counts_collated_metadata_list(self) -> None:
++        counts = torch.zeros(3, dtype=torch.int64)
++        batch = {"metadata": [
++            {"selected_caption_variant": 0},
++            {"selected_caption_variant": 2},
++            {"selected_caption_variant": 2},
++        ]}
++        count_selected_variants(batch, counts)
++        self.assertEqual([1, 0, 2], counts.tolist())
++
++    def test_counts_legacy_dictionary_tensor(self) -> None:
++        counts = torch.zeros(3, dtype=torch.int64)
++        batch = {"metadata": {"selected_caption_variant": torch.tensor([0, 1, 2])}}
++        count_selected_variants(batch, counts)
++        self.assertEqual([1, 1, 1], counts.tolist())
++
++
++if __name__ == "__main__":
++    unittest.main()
 diff --git a/acestep/training_v2/tensorboard_utils.py b/acestep/training_v2/tensorboard_utils.py
-index 64705cc..b7147ec 100644
+index 64705cc..96f153e 100644
 --- a/acestep/training_v2/tensorboard_utils.py
 +++ b/acestep/training_v2/tensorboard_utils.py
-@@ -72,6 +72,10 @@ class TrainingLogger:
+@@ -72,9 +72,23 @@ class TrainingLogger:
      def log_epoch_loss(self, loss: float, epoch: int) -> None:
          self.log_scalar("train/epoch_loss", loss, epoch)
  
@@ -546,11 +982,33 @@ index 64705cc..b7147ec 100644
      def log_grad_norm(self, norm: float, step: int) -> None:
          self.log_scalar("train/grad_norm", norm, step)
  
++    def log_epoch_runtime(self, seconds: float, eta_seconds: float, epoch: int) -> None:
++        """Log epoch wall time and projected remaining wall time."""
++        self.log_scalar("runtime/epoch_seconds", seconds, epoch)
++        self.log_scalar("runtime/eta_seconds", eta_seconds, epoch)
++
++    def log_vram(self, allocated_gib: float, reserved_gib: float, step: int) -> None:
++        """Log CUDA memory allocated and reserved by the rank-zero process."""
++        self.log_scalar("system/vram_allocated_gib", allocated_gib, step)
++        self.log_scalar("system/vram_reserved_gib", reserved_gib, step)
++
+     # ------------------------------------------------------------------
+     # Per-layer gradient norms (heavy)
+     # ------------------------------------------------------------------
 diff --git a/acestep/training_v2/trainer_fixed.py b/acestep/training_v2/trainer_fixed.py
-index 9de3c55..023e167 100644
+index 9de3c55..0eb5847 100644
 --- a/acestep/training_v2/trainer_fixed.py
 +++ b/acestep/training_v2/trainer_fixed.py
-@@ -51,6 +51,11 @@ from acestep.training_v2.trainer_helpers import (
+@@ -32,6 +32,8 @@ from acestep.training.data_module import PreprocessedDataModule
+ from acestep.training_v2.configs import TrainingConfigV2
+ from acestep.training_v2.tensorboard_utils import TrainingLogger
+ from acestep.training_v2.ui import TrainingUpdate
++from acestep.training_v2.metrics_history import append_metric
++from acestep.training_v2.prompt_tracking import count_selected_variants, save_prompt_counts
+ 
+ # Split-out modules
+ from acestep.training_v2.fixed_lora_module import (
+@@ -51,6 +53,11 @@ from acestep.training_v2.trainer_helpers import (
      verify_saved_adapter,
  )
  from acestep.training_v2.trainer_basic_loop import run_basic_training_loop
@@ -562,7 +1020,7 @@ index 9de3c55..023e167 100644
  
  logger = logging.getLogger(__name__)
  
-@@ -152,6 +157,7 @@ class FixedLoRATrainer:
+@@ -152,6 +159,7 @@ class FixedLoRATrainer:
                  prefetch_factor=cfg.prefetch_factor if num_workers > 0 else None,
                  persistent_workers=cfg.persistent_workers if num_workers > 0 else False,
                  pin_memory_device=cfg.pin_memory_device,
@@ -570,7 +1028,7 @@ index 9de3c55..023e167 100644
              )
              data_module.setup("fit")
  
-@@ -160,6 +166,13 @@ class FixedLoRATrainer:
+@@ -160,6 +168,13 @@ class FixedLoRATrainer:
                  return
  
              yield TrainingUpdate(0, 0.0, f"[OK] Loaded {len(data_module.train_dataset)} preprocessed samples", kind="info")
@@ -584,7 +1042,7 @@ index 9de3c55..023e167 100644
  
              # -- Dispatch to Fabric or basic loop ---------------------------
              if _FABRIC_AVAILABLE:
-@@ -298,6 +311,9 @@ class FixedLoRATrainer:
+@@ -298,6 +313,9 @@ class FixedLoRATrainer:
          # -- Dataloader -----------------------------------------------------
          train_loader = data_module.train_dataloader()
          train_loader = self.fabric.setup_dataloaders(train_loader)
@@ -594,28 +1052,148 @@ index 9de3c55..023e167 100644
  
          # -- Trainable params / optimizer -----------------------------------
          trainable_params = [p for p in self.module.model.parameters() if p.requires_grad]
-@@ -397,6 +413,14 @@ class FixedLoRATrainer:
+@@ -323,7 +341,8 @@ class FixedLoRATrainer:
+ 
+         # -- Scheduler -------------------------------------------------------
+         steps_per_epoch = max(1, math.ceil(len(train_loader) / cfg.gradient_accumulation_steps))
+-        total_steps = steps_per_epoch * cfg.max_epochs
++        configured_max_steps = getattr(cfg, "max_optimizer_steps", None)
++        total_steps = configured_max_steps or (steps_per_epoch * cfg.max_epochs)
+ 
+         scheduler_type = getattr(cfg, "scheduler_type", "cosine")
+         scheduler = build_scheduler(
+@@ -397,16 +416,31 @@ class FixedLoRATrainer:
                  start_epoch = 0
                  global_step = 0
  
 +        best_val_loss = float("inf")
 +        best_val_epoch = 0
++        best_val_step = 0
 +        stale_validation_checks = 0
 +        if cfg.resume_from:
-+            best_val_loss, best_val_epoch, stale_validation_checks = load_validation_state(
-+                output_dir
-+            )
++            (
++                best_val_loss,
++                best_val_epoch,
++                best_val_step,
++                stale_validation_checks,
++            ) = load_validation_state(output_dir)
 +
          # -- Training loop --------------------------------------------------
          accumulation_step = 0
          accumulated_loss = 0.0
-@@ -511,6 +535,50 @@ class FixedLoRATrainer:
+         optimizer.zero_grad(set_to_none=True)
+         self.module.model.decoder.train()
++        cumulative_prompt_counts = torch.zeros(3, device=self.fabric.device, dtype=torch.int64)
+ 
+         for epoch in range(start_epoch, cfg.max_epochs):
+             epoch_loss = 0.0
+             num_updates = 0
+             epoch_start = time.time()
++            epoch_prompt_counts = torch.zeros(3, device=self.fabric.device, dtype=torch.int64)
++            reached_step_limit = False
+ 
+             for _batch_idx, batch in enumerate(train_loader):
+                 # Stop signal
+@@ -420,6 +454,8 @@ class FixedLoRATrainer:
+                         tb.close()
+                     return
+ 
++                count_selected_variants(batch, epoch_prompt_counts)
++
+                 # In DDP with gradient accumulation, skip gradient sync on
+                 # intermediate steps for better performance.  Both forward
+                 # and backward must run inside the context so DDP hooks are
+@@ -452,6 +488,14 @@ class FixedLoRATrainer:
+                     if is_main and global_step % cfg.log_every == 0:
+                         tb.log_loss(avg_loss, global_step)
+                         tb.log_lr(_lr, global_step)
++                        append_metric(
++                            output_dir,
++                            "train_step",
++                            epoch=epoch + 1,
++                            optimizer_step=global_step,
++                            loss=avg_loss,
++                            learning_rate=_lr,
++                        )
+                         yield TrainingUpdate(
+                             step=global_step, loss=avg_loss,
+                             msg=f"Epoch {epoch + 1}/{cfg.max_epochs}, Step {global_step}, Loss: {avg_loss:.4f}",
+@@ -460,7 +504,15 @@ class FixedLoRATrainer:
+                         )
+ 
+                     if is_main and global_step % cfg.log_heavy_every == 0:
+-                        tb.log_per_layer_grad_norms(self.module.model, global_step)
++                        norms = tb.log_per_layer_grad_norms(self.module.model, global_step)
++                        total_grad_norm = math.sqrt(sum(value * value for value in norms.values()))
++                        tb.log_grad_norm(total_grad_norm, global_step)
++                        append_metric(
++                            output_dir,
++                            "gradient_norm",
++                            optimizer_step=global_step,
++                            total_norm=total_grad_norm,
++                        )
+ 
+                     optimizer.zero_grad(set_to_none=True)
+                     epoch_loss += avg_loss
+@@ -473,8 +525,12 @@ class FixedLoRATrainer:
+                     if torch.cuda.is_available() and global_step % cfg.log_every == 0:
+                         torch.cuda.empty_cache()
+ 
++                    if configured_max_steps is not None and global_step >= configured_max_steps:
++                        reached_step_limit = True
++                        break
++
+             # Flush remainder
+-            if accumulation_step > 0:
++            if accumulation_step > 0 and not reached_step_limit:
+                 self.fabric.clip_gradients(
+                     self.module.model.decoder, optimizer, max_norm=cfg.max_grad_norm,
+                 )
+@@ -503,18 +559,113 @@ class FixedLoRATrainer:
+             # End of epoch
+             epoch_time = time.time() - epoch_start
+             avg_epoch_loss = epoch_loss / max(num_updates, 1)
++            global_prompt_counts = self.fabric.all_reduce(epoch_prompt_counts, reduce_op="sum")
++            cumulative_prompt_counts += global_prompt_counts
+             if is_main:
+                 tb.log_epoch_loss(avg_epoch_loss, epoch + 1)
++                remaining_steps = max(total_steps - global_step, 0)
++                eta_seconds = epoch_time * remaining_steps / max(num_updates, 1)
++                tb.log_epoch_runtime(epoch_time, eta_seconds, epoch + 1)
++                allocated_gib = 0.0
++                reserved_gib = 0.0
++                if torch.cuda.is_available():
++                    allocated_gib = torch.cuda.max_memory_allocated() / (1024 ** 3)
++                    reserved_gib = torch.cuda.max_memory_reserved() / (1024 ** 3)
++                    tb.log_vram(allocated_gib, reserved_gib, global_step)
++                save_prompt_counts(
++                    output_dir,
++                    epoch + 1,
++                    [int(value) for value in global_prompt_counts.cpu().tolist()],
++                    [int(value) for value in cumulative_prompt_counts.cpu().tolist()],
++                )
++                append_metric(
++                    output_dir,
++                    "train_epoch",
++                    epoch=epoch + 1,
++                    optimizer_step=global_step,
++                    epoch_loss=avg_epoch_loss,
++                    epoch_seconds=epoch_time,
++                    eta_seconds=eta_seconds,
++                    vram_allocated_gib=allocated_gib,
++                    vram_reserved_gib=reserved_gib,
++                    prompt_counts=[int(value) for value in global_prompt_counts.cpu().tolist()],
++                )
+                 yield TrainingUpdate(
+                     step=global_step, loss=avg_epoch_loss,
+                     msg=f"[OK] Epoch {epoch + 1}/{cfg.max_epochs} in {epoch_time:.1f}s, Loss: {avg_epoch_loss:.4f}",
                      kind="epoch", epoch=epoch + 1, max_epochs=cfg.max_epochs, epoch_time=epoch_time,
                  )
  
 +            should_stop_early = False
 +            validate_every = max(1, getattr(cfg, "validate_every_n_epochs", 5))
-+            if val_loader is not None and (epoch + 1) % validate_every == 0:
++            validation_due = (epoch + 1) % validate_every == 0 or reached_step_limit
++            if val_loader is not None and validation_due:
 +                val_loss = run_fabric_validation(
 +                    self.module,
 +                    val_loader,
@@ -626,6 +1204,7 @@ index 9de3c55..023e167 100644
 +                if improved:
 +                    best_val_loss = val_loss
 +                    best_val_epoch = epoch + 1
++                    best_val_step = global_step
 +                    stale_validation_checks = 0
 +                    if is_main:
 +                        best_dir = str(output_dir / "checkpoints" / "best_val")
@@ -640,15 +1219,27 @@ index 9de3c55..023e167 100644
 +                        output_dir,
 +                        best_val_loss,
 +                        best_val_epoch,
++                        best_val_step,
 +                        stale_validation_checks,
 +                        val_loss,
++                    )
++                    append_metric(
++                        output_dir,
++                        "validation",
++                        epoch=epoch + 1,
++                        optimizer_step=global_step,
++                        loss=val_loss,
++                        best_loss=best_val_loss,
++                        best_epoch=best_val_epoch,
++                        best_optimizer_step=best_val_step,
 +                    )
 +                    yield TrainingUpdate(
 +                        step=global_step,
 +                        loss=val_loss,
 +                        msg=(
 +                            f"[OK] Validation epoch {epoch + 1}: {val_loss:.4f}; "
-+                            f"best {best_val_loss:.4f} at epoch {best_val_epoch}"
++                            f"best {best_val_loss:.4f} at epoch {best_val_epoch}, "
++                            f"step {best_val_step}"
 +                        ),
 +                        kind="info",
 +                        epoch=epoch + 1,
@@ -658,21 +1249,36 @@ index 9de3c55..023e167 100644
 +                should_stop_early = patience > 0 and stale_validation_checks >= patience
 +
              # Checkpoint (only rank 0)
-             if is_main and (epoch + 1) % cfg.save_every_n_epochs == 0:
+-            if is_main and (epoch + 1) % cfg.save_every_n_epochs == 0:
++            checkpoint_due = (epoch + 1) % cfg.save_every_n_epochs == 0 or reached_step_limit
++            if is_main and checkpoint_due:
                  ckpt_dir = str(output_dir / "checkpoints" / f"epoch_{epoch + 1}_loss_{avg_epoch_loss:.4f}")
-@@ -526,6 +594,21 @@ class FixedLoRATrainer:
+                 self._save_checkpoint(optimizer, scheduler, epoch + 1, global_step, ckpt_dir)
++                append_metric(
++                    output_dir,
++                    "checkpoint",
++                    epoch=epoch + 1,
++                    optimizer_step=global_step,
++                    path=ckpt_dir,
++                )
+                 yield TrainingUpdate(
+                     step=global_step, loss=avg_epoch_loss,
+                     msg=f"[OK] Checkpoint saved at epoch {epoch + 1}",
+@@ -526,6 +677,23 @@ class FixedLoRATrainer:
              if world_size > 1:
                  self.fabric.barrier()
  
-+            if should_stop_early:
++            if should_stop_early or reached_step_limit:
 +                if is_main:
++                    reason = (
++                        f"Reached exact optimizer-step limit {configured_max_steps}"
++                        if reached_step_limit
++                        else f"Early stopping after {stale_validation_checks} validation checks without improvement"
++                    )
 +                    yield TrainingUpdate(
 +                        step=global_step,
 +                        loss=best_val_loss,
-+                        msg=(
-+                            f"[OK] Early stopping after {stale_validation_checks} "
-+                            f"validation checks without improvement"
-+                        ),
++                        msg=f"[OK] {reason}",
 +                        kind="complete",
 +                        epoch=epoch + 1,
 +                        max_epochs=cfg.max_epochs,
@@ -682,12 +1288,85 @@ index 9de3c55..023e167 100644
              # Clear CUDA cache AFTER checkpoint save so serialization
              # temporaries are also freed.
              if torch.cuda.is_available():
+@@ -563,5 +731,5 @@ class FixedLoRATrainer:
+                     f"[OK] Training complete! {adapter_label} saved to {final_path}\n"
+                     f"     For inference, set your LoRA path to: {final_path}"
+                 ),
+-                kind="complete",
++                kind="complete", epoch=epoch + 1, max_epochs=cfg.max_epochs,
+             )
+diff --git a/acestep/training_v2/trainer_helpers.py b/acestep/training_v2/trainer_helpers.py
+index b5de03d..eb5ed5e 100644
+--- a/acestep/training_v2/trainer_helpers.py
++++ b/acestep/training_v2/trainer_helpers.py
+@@ -247,12 +247,21 @@ def verify_saved_adapter(output_dir: str) -> None:
+     a warning if the weights appear to be all zeros (which would mean
+     the LoRA has no effect during inference).
+     """
+-    safetensors_path = os.path.join(output_dir, "adapter_model.safetensors")
+-    config_path = os.path.join(output_dir, "adapter_config.json")
++    # PEFT stores a non-default named adapter one level below output_dir.
++    # Accept both its named layout and the legacy flat layout.
++    adapter_dir = output_dir
++    nested_dir = os.path.join(output_dir, "adapter")
++    if (
++        not os.path.exists(os.path.join(adapter_dir, "adapter_model.safetensors"))
++        and os.path.isdir(nested_dir)
++    ):
++        adapter_dir = nested_dir
++    safetensors_path = os.path.join(adapter_dir, "adapter_model.safetensors")
++    config_path = os.path.join(adapter_dir, "adapter_config.json")
+ 
+     # LoKR uses a different file name
+     if not os.path.exists(safetensors_path):
+-        lokr_path = os.path.join(output_dir, "lokr_weights.safetensors")
++        lokr_path = os.path.join(adapter_dir, "lokr_weights.safetensors")
+         if os.path.exists(lokr_path):
+             logger.info("[OK] LoKR weights saved: %s", lokr_path)
+             return
+diff --git a/acestep/training_v2/trainer_helpers_test.py b/acestep/training_v2/trainer_helpers_test.py
+index b8e850b..4640ce3 100644
+--- a/acestep/training_v2/trainer_helpers_test.py
++++ b/acestep/training_v2/trainer_helpers_test.py
+@@ -5,9 +5,13 @@ The save_adapter_flat function only needs attribute-level duck-typing, so
+ plain MagicMock objects work as stand-ins for nn.Module subclasses.
+ """
+ 
++import tempfile
+ import unittest
++from pathlib import Path
+ from unittest.mock import MagicMock, patch
+ 
++import torch
++
+ 
+ def _make_fabric_wrapper(inner: MagicMock) -> MagicMock:
+     """Return a mock that looks like a Fabric _FabricModule wrapping *inner*."""
+@@ -69,6 +73,18 @@ class TestSaveAdapterFlatLora(unittest.TestCase):
+         # The full model's save_pretrained must NOT have been called.
+         trainer.module.model.save_pretrained.assert_not_called()
+ 
++    def test_verify_accepts_named_peft_adapter_subdirectory(self):
++        """PEFT may place a non-default adapter in output_dir/adapter."""
++        from acestep.training_v2.trainer_helpers import verify_saved_adapter
++
++        with tempfile.TemporaryDirectory() as tmp:
++            adapter = Path(tmp) / "adapter"
++            adapter.mkdir()
++            (adapter / "adapter_model.safetensors").touch()
++            (adapter / "adapter_config.json").write_text("{}", encoding="utf-8")
++            with patch("safetensors.torch.load_file", return_value={"weight": torch.ones(2)}):
++                verify_saved_adapter(tmp)
++
+     def test_unwraps_fabric_wrapper_before_saving(self):
+         """When Fabric wraps the decoder, save_pretrained is still called on the PeftModel."""
+         peft_decoder = _make_peft_decoder()
 diff --git a/acestep/training_v2/validation_loop.py b/acestep/training_v2/validation_loop.py
 new file mode 100644
-index 0000000..ba48991
+index 0000000..bcbbb6e
 --- /dev/null
 +++ b/acestep/training_v2/validation_loop.py
-@@ -0,0 +1,61 @@
+@@ -0,0 +1,68 @@
 +"""Deterministic validation helpers for fixed ACE-Step training."""
 +
 +from __future__ import annotations
@@ -723,19 +1402,25 @@ index 0000000..ba48991
 +    return float((totals[0] / totals[1]).item())
 +
 +
-+def load_validation_state(output_dir: Path) -> tuple[float, int, int]:
-+    """Load best loss, best epoch, and stale-check count for resume."""
++def load_validation_state(output_dir: Path) -> tuple[float, int, int, int]:
++    """Load best loss/epoch/step and stale-check count for resume."""
 +    path = output_dir / "validation_state.json"
 +    if not path.is_file():
-+        return float("inf"), 0, 0
++        return float("inf"), 0, 0, 0
 +    data = json.loads(path.read_text(encoding="utf-8"))
-+    return float(data["best_loss"]), int(data["best_epoch"]), int(data["stale_checks"])
++    return (
++        float(data["best_loss"]),
++        int(data["best_epoch"]),
++        int(data.get("best_optimizer_step", 0)),
++        int(data["stale_checks"]),
++    )
 +
 +
 +def save_validation_state(
 +    output_dir: Path,
 +    best_loss: float,
 +    best_epoch: int,
++    best_optimizer_step: int,
 +    stale_checks: int,
 +    latest_loss: float,
 +) -> None:
@@ -745,13 +1430,14 @@ index 0000000..ba48991
 +    tmp.write_text(json.dumps({
 +        "best_loss": best_loss,
 +        "best_epoch": best_epoch,
++        "best_optimizer_step": best_optimizer_step,
 +        "stale_checks": stale_checks,
 +        "latest_loss": latest_loss,
 +    }, indent=2) + "\n", encoding="utf-8")
 +    tmp.replace(path)
 diff --git a/acestep/training_v2/validation_loop_test.py b/acestep/training_v2/validation_loop_test.py
 new file mode 100644
-index 0000000..47ca9c1
+index 0000000..d977690
 --- /dev/null
 +++ b/acestep/training_v2/validation_loop_test.py
 @@ -0,0 +1,58 @@
@@ -774,15 +1460,15 @@ index 0000000..47ca9c1
 +
 +    def test_missing_state_uses_fresh_defaults(self) -> None:
 +        with tempfile.TemporaryDirectory() as tmp:
-+            loss, epoch, stale = load_validation_state(Path(tmp))
++            loss, epoch, step, stale = load_validation_state(Path(tmp))
 +        self.assertEqual(float("inf"), loss)
-+        self.assertEqual((0, 0), (epoch, stale))
++        self.assertEqual((0, 0, 0), (epoch, step, stale))
 +
 +    def test_state_round_trip(self) -> None:
 +        with tempfile.TemporaryDirectory() as tmp:
 +            path = Path(tmp)
-+            save_validation_state(path, 0.25, 10, 2, 0.3)
-+            self.assertEqual((0.25, 10, 2), load_validation_state(path))
++            save_validation_state(path, 0.25, 10, 130, 2, 0.3)
++            self.assertEqual((0.25, 10, 130, 2), load_validation_state(path))
 +
 +    def test_validation_averages_batches_without_cfg_dropout(self) -> None:
 +        calls = []

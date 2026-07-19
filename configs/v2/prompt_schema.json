@@ -1,0 +1,37 @@
+{
+  "schema_version": "2.0",
+  "caption_variants": [
+    {
+      "index": 0,
+      "type": "canonical",
+      "purpose": "whole-track summary",
+      "audible_body_word_range": [40, 80]
+    },
+    {
+      "index": 1,
+      "type": "composition",
+      "purpose": "melody, motif, harmony and arrangement; fused from old prompt plus new MOSS evidence",
+      "audible_body_word_range": [25, 80]
+    },
+    {
+      "index": 2,
+      "type": "production",
+      "purpose": "instruments, synths, bass, drums, texture and space; fused from old prompt plus new MOSS evidence",
+      "audible_body_word_range": [25, 80]
+    }
+  ],
+  "training": {
+    "audio_latents_per_record": 1,
+    "prompt_embeddings_per_record": 3,
+    "required_style_reference_prefix": "Instrumental music in the characteristic style of {artist}, drawing on the musical character of the reference track \"{title}\".",
+    "style_reference_revision": "artist-track-style-reference-v2",
+    "style_reference_scope": "prepended to canonical, composition and production after audio-only validation",
+    "selection": "uniform random on every load",
+    "cfg_dropout": 0.15
+  },
+  "validation": {
+    "selection": "canonical index 0 only",
+    "cfg_dropout": 0.0
+  },
+  "separate_fields": ["bpm", "keyscale", "timesignature", "sections"]
+}

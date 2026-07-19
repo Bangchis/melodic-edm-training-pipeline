@@ -1,0 +1,20 @@
+#!/bin/bash
+set -euo pipefail
+
+utils=/opt/supervisor-scripts/utils
+. "${utils}/logging.sh" ""
+. "${utils}/environment.sh"
+
+export CUDA_VISIBLE_DEVICES=0
+project=/workspace/melodic_edm_training_pipeline
+ace="$project/vendor/ACE-Step-1.5-v2"
+export PYTHONPATH="$ace${PYTHONPATH:+:$PYTHONPATH}"
+cd "$project"
+exec "$ace/.venv/bin/python" -u scripts/evaluate_v2_checkpoints.py \
+  --project-root "$project" \
+  --final-only \
+  --ace-lm-thinking \
+  --prompt-id cinematic_glitch \
+  --seed-offsets 1,2,3 \
+  --duration-override 60 \
+  --evaluation-dir outputs/v2/cinematic-retry-evaluation

@@ -1,0 +1,11 @@
+{
+  "phase": "final-all-data",
+  "initialization": "fresh_xl_base_and_fresh_rank32_lora",
+  "resume_from_train_validation": false,
+  "records": 231,
+  "unique_audio_records": 217,
+  "validation": false,
+  "step_formula": "round(best_val_optimizer_step * 217 / 184)",
+  "configuration_source": "configs/v2/train_val.json",
+  "output": "outputs/v2/final-all-data"
+}

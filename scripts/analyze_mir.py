@@ -43,6 +43,9 @@ def map_sections(segments: list[Any]) -> list[dict[str, Any]]:
         "inst": "Theme",
         "solo": "Theme",
         "verse": "Theme",
+        "pre-chorus": "Build",
+        "prechorus": "Build",
+        "pre_chorus": "Build",
         "chorus": "Drop",
         "start": "Intro",
         "end": "Outro",
@@ -67,6 +70,15 @@ def infer_timesignature(beat_positions: list[int], downbeats: list[float]) -> st
         return None
     valid = sum(value in {1, 2, 3, 4} for value in positions) / len(positions)
     return "4" if valid >= 0.90 and max(positions) == 4 else None
+
+
+def normalize_edm_bpm(raw_bpm: int) -> tuple[int | None, str | None]:
+    """Normalize an unambiguous half-time estimate for this EDM-only corpus."""
+    if not 40 <= raw_bpm <= 250:
+        return None, None
+    if raw_bpm < 80 and raw_bpm * 2 <= 250:
+        return raw_bpm * 2, "double_half_time_below_80"
+    return raw_bpm, None
 
 
 def estimate_key(audio_path: Path, threshold: float) -> tuple[str | None, float]:
@@ -144,6 +156,7 @@ def main() -> int:
         # original audio bytes through a hard link. A symlink is not sufficient:
         # allin1 resolves symlinks before deriving the basename.
         paths = prepare_unique_inputs(pending, input_dir)
+        all_cached = all((allin1_dir / f"{row['sample_id']}.json").is_file() for row in pending)
         results = allin1.analyze(
             paths,
             out_dir=allin1_dir,
@@ -151,7 +164,11 @@ def main() -> int:
             device=args.device,
             demix_dir=demix_dir,
             spec_dir=spec_dir,
-            keep_byproducts=False,
+            # allin1 1.1.0 references an uninitialized demix_paths variable when
+            # every result is cached and cleanup is requested. Retain byproducts
+            # for this fast cache-only pass; the runbook removes work dirs after
+            # final MIR validation.
+            keep_byproducts=all_cached,
             overwrite=args.overwrite,
             multiprocess=False,
         )
@@ -167,13 +184,16 @@ def main() -> int:
                 keyscale, key_confidence = estimate_key(
                     Path(row["training_audio_path"]), args.key_confidence_threshold
                 )
-                bpm = int(result.bpm) if 40 <= int(result.bpm) <= 250 else None
+                raw_bpm = int(result.bpm)
+                bpm, bpm_normalization = normalize_edm_bpm(raw_bpm)
                 record = {
                     "sample_id": sid,
                     "record_key": row["record_key"],
                     "training_audio_path": row["training_audio_path"],
                     "analysis_status": "complete",
                     "bpm": bpm,
+                    "bpm_raw": raw_bpm,
+                    "bpm_normalization": bpm_normalization,
                     "keyscale": keyscale,
                     "key_confidence": round(key_confidence, 6),
                     "timesignature": infer_timesignature(result.beat_positions, result.downbeats),
