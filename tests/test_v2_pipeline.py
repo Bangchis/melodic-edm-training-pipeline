@@ -600,7 +600,7 @@ class V2PipelineTest(unittest.TestCase):
     def test_uncertain_claim_may_be_omitted_instead_of_forced_into_caption(self) -> None:
         source = (SCRIPTS / "repair_v2_annotations_moss.py").read_text(encoding="utf-8")
         self.assertNotIn("uncertain_claim_qualified_token_missing", source)
-        self.assertIn("claim_name_mentioned(normalized, claim)", source)
+        self.assertIn("claim_name_mentioned(scoped_text, claim)", source)
 
     def test_present_claim_is_evidence_not_a_required_caption_keyword(self) -> None:
         decisions = [

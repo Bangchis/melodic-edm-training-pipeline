@@ -18,7 +18,7 @@ from annotate_openrouter import parse_json_content, sanitize_annotation, sanitiz
 from build_acestep_dataset import choose_splits, choose_window, render_audio  # noqa: E402
 from merge_tensors import write_loader_manifest  # noqa: E402
 from prompt_enhancer import compile_caption  # noqa: E402
-from repair_v2_annotations_moss import parse_repair  # noqa: E402
+from repair_v2_annotations_moss import parse_repair, validate_claim_constraints  # noqa: E402
 from enhance_prompt_openrouter import (  # noqa: E402
     attach_inference_style_reference,
     contains_required_term,
@@ -211,6 +211,32 @@ class RecordPreservingTests(unittest.TestCase):
         reparsed, resume_errors = parse_repair(normalized)
         self.assertEqual([], resume_errors)
         self.assertEqual(normalized, reparsed)
+
+    def test_specific_present_claim_does_not_trigger_overlapping_uncertain_claim(self) -> None:
+        decisions = [
+            {
+                "claim": "orchestral percussion",
+                "decision": "present",
+                "audible_alternative": "",
+            },
+            {
+                "claim": "percussion",
+                "decision": "uncertain",
+                "audible_alternative": "orchestral percussion",
+            },
+        ]
+        self.assertEqual(
+            [],
+            validate_claim_constraints(
+                "Dramatic orchestral percussion accents support the transition.",
+                decisions,
+            ),
+        )
+        errors = validate_claim_constraints(
+            "Dramatic orchestral percussion and crisp percussion support the transition.",
+            decisions,
+        )
+        self.assertIn("uncertain_claim_asserted_as_exact:percussion", errors)
 
     def test_release_delivery_sources_are_present(self) -> None:
         required = (

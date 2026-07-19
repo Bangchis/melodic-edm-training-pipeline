@@ -159,6 +159,32 @@ def claim_name_mentioned(text: str, claim: str) -> bool:
     return bool(pattern.search(text.casefold()))
 
 
+def without_supported_specific_claims(
+    text: str,
+    claim: str,
+    item: dict[str, Any],
+    decisions: list[dict[str, Any]],
+) -> str:
+    """Mask allowed longer phrases before validating an overlapping broad claim."""
+    protected: set[str] = set()
+    alternative = str(item.get("audible_alternative") or "").strip().casefold()
+    if alternative and alternative != claim and claim_name_mentioned(alternative, claim):
+        protected.add(alternative)
+    for candidate in decisions:
+        candidate_claim = str(candidate.get("claim") or "").strip().casefold()
+        if (
+            str(candidate.get("decision") or "").strip().casefold() == "present"
+            and candidate_claim != claim
+            and claim_name_mentioned(candidate_claim, claim)
+        ):
+            protected.add(candidate_claim)
+    masked = text.casefold()
+    for phrase in sorted(protected, key=len, reverse=True):
+        pattern = re.compile(rf"(?<![a-z]){re.escape(phrase)}(?![a-z])")
+        masked = pattern.sub(" " * len(phrase), masked)
+    return masked
+
+
 def validate_claim_constraints(
     text: str, decisions: list[dict[str, Any]]
 ) -> list[str]:
@@ -176,14 +202,17 @@ def validate_claim_constraints(
         if not claim or decision not in {"present", "absent", "uncertain"}:
             errors.append("invalid_claim_decision")
             continue
-        if decision == "absent" and claim_name_mentioned(normalized, claim):
+        scoped_text = without_supported_specific_claims(
+            normalized, claim, item, decisions
+        )
+        if decision == "absent" and claim_name_mentioned(scoped_text, claim):
             errors.append(f"verified_absent_claim_retained:{claim}")
-        if decision == "uncertain" and exact_claim_asserted(normalized, claim):
+        if decision == "uncertain" and exact_claim_asserted(scoped_text, claim):
             errors.append(f"uncertain_claim_asserted_as_exact:{claim}")
         if (
             decision == "uncertain"
-            and claim_name_mentioned(normalized, claim)
-            and not qualified_claim_mentioned(normalized, claim)
+            and claim_name_mentioned(scoped_text, claim)
+            and not qualified_claim_mentioned(scoped_text, claim)
         ):
             errors.append(f"uncertain_claim_missing_qualifier:{claim}")
     for claim in unverified_new_claims(normalized, decisions):
