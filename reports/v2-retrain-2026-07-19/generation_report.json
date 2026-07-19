@@ -1,0 +1,403 @@
+{
+  "status": "pass",
+  "fixed_prompt_count": 3,
+  "checkpoint_count": 6,
+  "checkpoint_mode": "all_candidates",
+  "ace_lm_thinking": false,
+  "ace_lm_model": null,
+  "structure_conditioning": "per_prompt_training_vocabulary_sections_v3",
+  "prompt_filter": null,
+  "seed_offsets": [
+    0
+  ],
+  "duration_override": null,
+  "prompts_file": "/workspace/melodic_edm_training_pipeline/configs/v2/fixed_eval_prompts.json",
+  "prompt_document_sha256": "07163be0f68ce1fbc3c12f574e9bd235badfe8bbd23719f6a55ac5e263ac408c",
+  "checkpoint_selection_sha256": null,
+  "lora_scales": [
+    0.5
+  ],
+  "expected_outputs": 18,
+  "generated_outputs": 18,
+  "results": [
+    {
+      "checkpoint": "epoch_010_scale_0.50",
+      "checkpoint_base": "epoch_010",
+      "lora_scale": 0.5,
+      "adapter_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/train-validation/checkpoints/epoch_10_loss_0.7682/adapter",
+      "epoch": 10,
+      "optimizer_step": 120,
+      "prompt_id": "chinese_synth_electronic",
+      "source_prompt_id": "chinese_synth_electronic",
+      "prompt": "Instrumental music in the characteristic style of YUAN / 徐梦圆, drawing on the musical character of the reference track \"China-Future\". Bright electronic EDM centered on a sharp synth-lead motif above punchy electronic drums and bass. A rhythmic opening expands through layered electronic textures, then a brief breakdown creates contrast before the beat and filtered lead return with changed timbre and stronger energy. Keep the melody fully instrumental, with clear sectional development.",
+      "lyrics": "[Intro]\n[Instrumental]\n\n[Theme]\n[Instrumental]\n\n[Build]\n[Instrumental]\n\n[Drop]\n[Instrumental]\n\n[Break]\n[Instrumental]\n\n[Final Drop]\n[Instrumental]\n\n[Outro]\n[Instrumental]\n",
+      "duration": 180.0,
+      "seed": 2026071810,
+      "audio_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/checkpoint-evaluation/audio/epoch_010_scale_0.50/chinese_synth_electronic/b61cd165-10fd-bb8f-efa1-015dc51bcde6.wav",
+      "probe": {
+        "duration": 180.0,
+        "sample_rate": "48000",
+        "channels": 2
+      },
+      "status": "pass"
+    },
+    {
+      "checkpoint": "epoch_010_scale_0.50",
+      "checkpoint_base": "epoch_010",
+      "lora_scale": 0.5,
+      "adapter_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/train-validation/checkpoints/epoch_10_loss_0.7682/adapter",
+      "epoch": 10,
+      "optimizer_step": 120,
+      "prompt_id": "zither_melodic_edm",
+      "source_prompt_id": "zither_melodic_edm",
+      "prompt": "Instrumental music in the characteristic style of Xomu, drawing on the musical character of the reference track \"Mannenzakura\". Energetic melodic EDM combining a nimble plucked zither-like motif with modern synth leads. Electronic drums and deep sub-bass support an uplifting progression through a restrained opening, rising build, full melodic drop, contrasting break and denser final return with expanded synth chords. Keep every section fully instrumental.",
+      "lyrics": "[Intro]\n[Instrumental]\n\n[Theme]\n[Instrumental]\n\n[Build]\n[Instrumental]\n\n[Drop]\n[Instrumental]\n\n[Break]\n[Instrumental]\n\n[Final Drop]\n[Instrumental]\n\n[Outro]\n[Instrumental]\n",
+      "duration": 180.0,
+      "seed": 2026071820,
+      "audio_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/checkpoint-evaluation/audio/epoch_010_scale_0.50/zither_melodic_edm/3ed75ece-226e-006f-8ac6-d036e87d6116.wav",
+      "probe": {
+        "duration": 180.0,
+        "sample_rate": "48000",
+        "channels": 2
+      },
+      "status": "pass"
+    },
+    {
+      "checkpoint": "epoch_010_scale_0.50",
+      "checkpoint_base": "epoch_010",
+      "lora_scale": 0.5,
+      "adapter_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/train-validation/checkpoints/epoch_10_loss_0.7682/adapter",
+      "epoch": 10,
+      "optimizer_step": 120,
+      "prompt_id": "high_energy_melodic_dance",
+      "source_prompt_id": "high_energy_melodic_dance",
+      "prompt": "Instrumental music in the characteristic style of TheFatRat, drawing on the musical character of the reference track \"Time Lapse\". High-energy melodic electronic dance music led by bright synth melodies and thick layered supersaw chords. Punchy electronic drums and deep sub-bass drive distinct atmospheric breaks and intense drops, with the main motif returning in a fuller final section. Keep the arrangement fully instrumental and forward-moving.",
+      "lyrics": "[Intro]\n[Instrumental]\n\n[Theme]\n[Instrumental]\n\n[Build]\n[Instrumental]\n\n[Drop]\n[Instrumental]\n\n[Break]\n[Instrumental]\n\n[Final Drop]\n[Instrumental]\n\n[Outro]\n[Instrumental]\n",
+      "duration": 180.0,
+      "seed": 2026071830,
+      "audio_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/checkpoint-evaluation/audio/epoch_010_scale_0.50/high_energy_melodic_dance/2729b271-8ea5-fee8-fbea-571288735050.wav",
+      "probe": {
+        "duration": 180.0,
+        "sample_rate": "48000",
+        "channels": 2
+      },
+      "status": "pass"
+    },
+    {
+      "checkpoint": "epoch_015_scale_0.50",
+      "checkpoint_base": "epoch_015",
+      "lora_scale": 0.5,
+      "adapter_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/train-validation/checkpoints/epoch_15_loss_0.7577/adapter",
+      "epoch": 15,
+      "optimizer_step": 180,
+      "prompt_id": "chinese_synth_electronic",
+      "source_prompt_id": "chinese_synth_electronic",
+      "prompt": "Instrumental music in the characteristic style of YUAN / 徐梦圆, drawing on the musical character of the reference track \"China-Future\". Bright electronic EDM centered on a sharp synth-lead motif above punchy electronic drums and bass. A rhythmic opening expands through layered electronic textures, then a brief breakdown creates contrast before the beat and filtered lead return with changed timbre and stronger energy. Keep the melody fully instrumental, with clear sectional development.",
+      "lyrics": "[Intro]\n[Instrumental]\n\n[Theme]\n[Instrumental]\n\n[Build]\n[Instrumental]\n\n[Drop]\n[Instrumental]\n\n[Break]\n[Instrumental]\n\n[Final Drop]\n[Instrumental]\n\n[Outro]\n[Instrumental]\n",
+      "duration": 180.0,
+      "seed": 2026071810,
+      "audio_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/checkpoint-evaluation/audio/epoch_015_scale_0.50/chinese_synth_electronic/806324e7-dc2e-ba39-206f-97b1e36acb68.wav",
+      "probe": {
+        "duration": 180.0,
+        "sample_rate": "48000",
+        "channels": 2
+      },
+      "status": "pass"
+    },
+    {
+      "checkpoint": "epoch_015_scale_0.50",
+      "checkpoint_base": "epoch_015",
+      "lora_scale": 0.5,
+      "adapter_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/train-validation/checkpoints/epoch_15_loss_0.7577/adapter",
+      "epoch": 15,
+      "optimizer_step": 180,
+      "prompt_id": "zither_melodic_edm",
+      "source_prompt_id": "zither_melodic_edm",
+      "prompt": "Instrumental music in the characteristic style of Xomu, drawing on the musical character of the reference track \"Mannenzakura\". Energetic melodic EDM combining a nimble plucked zither-like motif with modern synth leads. Electronic drums and deep sub-bass support an uplifting progression through a restrained opening, rising build, full melodic drop, contrasting break and denser final return with expanded synth chords. Keep every section fully instrumental.",
+      "lyrics": "[Intro]\n[Instrumental]\n\n[Theme]\n[Instrumental]\n\n[Build]\n[Instrumental]\n\n[Drop]\n[Instrumental]\n\n[Break]\n[Instrumental]\n\n[Final Drop]\n[Instrumental]\n\n[Outro]\n[Instrumental]\n",
+      "duration": 180.0,
+      "seed": 2026071820,
+      "audio_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/checkpoint-evaluation/audio/epoch_015_scale_0.50/zither_melodic_edm/afb66a62-2391-6257-cab6-3a147f0b6bf4.wav",
+      "probe": {
+        "duration": 180.0,
+        "sample_rate": "48000",
+        "channels": 2
+      },
+      "status": "pass"
+    },
+    {
+      "checkpoint": "epoch_015_scale_0.50",
+      "checkpoint_base": "epoch_015",
+      "lora_scale": 0.5,
+      "adapter_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/train-validation/checkpoints/epoch_15_loss_0.7577/adapter",
+      "epoch": 15,
+      "optimizer_step": 180,
+      "prompt_id": "high_energy_melodic_dance",
+      "source_prompt_id": "high_energy_melodic_dance",
+      "prompt": "Instrumental music in the characteristic style of TheFatRat, drawing on the musical character of the reference track \"Time Lapse\". High-energy melodic electronic dance music led by bright synth melodies and thick layered supersaw chords. Punchy electronic drums and deep sub-bass drive distinct atmospheric breaks and intense drops, with the main motif returning in a fuller final section. Keep the arrangement fully instrumental and forward-moving.",
+      "lyrics": "[Intro]\n[Instrumental]\n\n[Theme]\n[Instrumental]\n\n[Build]\n[Instrumental]\n\n[Drop]\n[Instrumental]\n\n[Break]\n[Instrumental]\n\n[Final Drop]\n[Instrumental]\n\n[Outro]\n[Instrumental]\n",
+      "duration": 180.0,
+      "seed": 2026071830,
+      "audio_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/checkpoint-evaluation/audio/epoch_015_scale_0.50/high_energy_melodic_dance/e803cabb-fa7a-40ac-30e7-bf3d6603a4f7.wav",
+      "probe": {
+        "duration": 180.0,
+        "sample_rate": "48000",
+        "channels": 2
+      },
+      "status": "pass"
+    },
+    {
+      "checkpoint": "epoch_020_scale_0.50",
+      "checkpoint_base": "epoch_020",
+      "lora_scale": 0.5,
+      "adapter_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/train-validation/checkpoints/epoch_20_loss_0.7635/adapter",
+      "epoch": 20,
+      "optimizer_step": 240,
+      "prompt_id": "chinese_synth_electronic",
+      "source_prompt_id": "chinese_synth_electronic",
+      "prompt": "Instrumental music in the characteristic style of YUAN / 徐梦圆, drawing on the musical character of the reference track \"China-Future\". Bright electronic EDM centered on a sharp synth-lead motif above punchy electronic drums and bass. A rhythmic opening expands through layered electronic textures, then a brief breakdown creates contrast before the beat and filtered lead return with changed timbre and stronger energy. Keep the melody fully instrumental, with clear sectional development.",
+      "lyrics": "[Intro]\n[Instrumental]\n\n[Theme]\n[Instrumental]\n\n[Build]\n[Instrumental]\n\n[Drop]\n[Instrumental]\n\n[Break]\n[Instrumental]\n\n[Final Drop]\n[Instrumental]\n\n[Outro]\n[Instrumental]\n",
+      "duration": 180.0,
+      "seed": 2026071810,
+      "audio_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/checkpoint-evaluation/audio/epoch_020_scale_0.50/chinese_synth_electronic/51d112c0-2351-4783-5e69-b60dd1b027fa.wav",
+      "probe": {
+        "duration": 180.0,
+        "sample_rate": "48000",
+        "channels": 2
+      },
+      "status": "pass"
+    },
+    {
+      "checkpoint": "epoch_020_scale_0.50",
+      "checkpoint_base": "epoch_020",
+      "lora_scale": 0.5,
+      "adapter_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/train-validation/checkpoints/epoch_20_loss_0.7635/adapter",
+      "epoch": 20,
+      "optimizer_step": 240,
+      "prompt_id": "zither_melodic_edm",
+      "source_prompt_id": "zither_melodic_edm",
+      "prompt": "Instrumental music in the characteristic style of Xomu, drawing on the musical character of the reference track \"Mannenzakura\". Energetic melodic EDM combining a nimble plucked zither-like motif with modern synth leads. Electronic drums and deep sub-bass support an uplifting progression through a restrained opening, rising build, full melodic drop, contrasting break and denser final return with expanded synth chords. Keep every section fully instrumental.",
+      "lyrics": "[Intro]\n[Instrumental]\n\n[Theme]\n[Instrumental]\n\n[Build]\n[Instrumental]\n\n[Drop]\n[Instrumental]\n\n[Break]\n[Instrumental]\n\n[Final Drop]\n[Instrumental]\n\n[Outro]\n[Instrumental]\n",
+      "duration": 180.0,
+      "seed": 2026071820,
+      "audio_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/checkpoint-evaluation/audio/epoch_020_scale_0.50/zither_melodic_edm/63935356-d4bd-f301-2107-41a6f08fe975.wav",
+      "probe": {
+        "duration": 180.0,
+        "sample_rate": "48000",
+        "channels": 2
+      },
+      "status": "pass"
+    },
+    {
+      "checkpoint": "epoch_020_scale_0.50",
+      "checkpoint_base": "epoch_020",
+      "lora_scale": 0.5,
+      "adapter_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/train-validation/checkpoints/epoch_20_loss_0.7635/adapter",
+      "epoch": 20,
+      "optimizer_step": 240,
+      "prompt_id": "high_energy_melodic_dance",
+      "source_prompt_id": "high_energy_melodic_dance",
+      "prompt": "Instrumental music in the characteristic style of TheFatRat, drawing on the musical character of the reference track \"Time Lapse\". High-energy melodic electronic dance music led by bright synth melodies and thick layered supersaw chords. Punchy electronic drums and deep sub-bass drive distinct atmospheric breaks and intense drops, with the main motif returning in a fuller final section. Keep the arrangement fully instrumental and forward-moving.",
+      "lyrics": "[Intro]\n[Instrumental]\n\n[Theme]\n[Instrumental]\n\n[Build]\n[Instrumental]\n\n[Drop]\n[Instrumental]\n\n[Break]\n[Instrumental]\n\n[Final Drop]\n[Instrumental]\n\n[Outro]\n[Instrumental]\n",
+      "duration": 180.0,
+      "seed": 2026071830,
+      "audio_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/checkpoint-evaluation/audio/epoch_020_scale_0.50/high_energy_melodic_dance/6523ddbd-b537-5533-872f-814bf1ffb6c5.wav",
+      "probe": {
+        "duration": 180.0,
+        "sample_rate": "48000",
+        "channels": 2
+      },
+      "status": "pass"
+    },
+    {
+      "checkpoint": "epoch_025_scale_0.50",
+      "checkpoint_base": "epoch_025",
+      "lora_scale": 0.5,
+      "adapter_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/train-validation/checkpoints/epoch_25_loss_0.7319/adapter",
+      "epoch": 25,
+      "optimizer_step": 300,
+      "prompt_id": "chinese_synth_electronic",
+      "source_prompt_id": "chinese_synth_electronic",
+      "prompt": "Instrumental music in the characteristic style of YUAN / 徐梦圆, drawing on the musical character of the reference track \"China-Future\". Bright electronic EDM centered on a sharp synth-lead motif above punchy electronic drums and bass. A rhythmic opening expands through layered electronic textures, then a brief breakdown creates contrast before the beat and filtered lead return with changed timbre and stronger energy. Keep the melody fully instrumental, with clear sectional development.",
+      "lyrics": "[Intro]\n[Instrumental]\n\n[Theme]\n[Instrumental]\n\n[Build]\n[Instrumental]\n\n[Drop]\n[Instrumental]\n\n[Break]\n[Instrumental]\n\n[Final Drop]\n[Instrumental]\n\n[Outro]\n[Instrumental]\n",
+      "duration": 180.0,
+      "seed": 2026071810,
+      "audio_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/checkpoint-evaluation/audio/epoch_025_scale_0.50/chinese_synth_electronic/0946cee5-101b-7593-8063-0286669085b0.wav",
+      "probe": {
+        "duration": 180.0,
+        "sample_rate": "48000",
+        "channels": 2
+      },
+      "status": "pass"
+    },
+    {
+      "checkpoint": "epoch_025_scale_0.50",
+      "checkpoint_base": "epoch_025",
+      "lora_scale": 0.5,
+      "adapter_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/train-validation/checkpoints/epoch_25_loss_0.7319/adapter",
+      "epoch": 25,
+      "optimizer_step": 300,
+      "prompt_id": "zither_melodic_edm",
+      "source_prompt_id": "zither_melodic_edm",
+      "prompt": "Instrumental music in the characteristic style of Xomu, drawing on the musical character of the reference track \"Mannenzakura\". Energetic melodic EDM combining a nimble plucked zither-like motif with modern synth leads. Electronic drums and deep sub-bass support an uplifting progression through a restrained opening, rising build, full melodic drop, contrasting break and denser final return with expanded synth chords. Keep every section fully instrumental.",
+      "lyrics": "[Intro]\n[Instrumental]\n\n[Theme]\n[Instrumental]\n\n[Build]\n[Instrumental]\n\n[Drop]\n[Instrumental]\n\n[Break]\n[Instrumental]\n\n[Final Drop]\n[Instrumental]\n\n[Outro]\n[Instrumental]\n",
+      "duration": 180.0,
+      "seed": 2026071820,
+      "audio_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/checkpoint-evaluation/audio/epoch_025_scale_0.50/zither_melodic_edm/2c0b4a1c-cb0a-e5ee-0a45-2f07396aea67.wav",
+      "probe": {
+        "duration": 180.0,
+        "sample_rate": "48000",
+        "channels": 2
+      },
+      "status": "pass"
+    },
+    {
+      "checkpoint": "epoch_025_scale_0.50",
+      "checkpoint_base": "epoch_025",
+      "lora_scale": 0.5,
+      "adapter_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/train-validation/checkpoints/epoch_25_loss_0.7319/adapter",
+      "epoch": 25,
+      "optimizer_step": 300,
+      "prompt_id": "high_energy_melodic_dance",
+      "source_prompt_id": "high_energy_melodic_dance",
+      "prompt": "Instrumental music in the characteristic style of TheFatRat, drawing on the musical character of the reference track \"Time Lapse\". High-energy melodic electronic dance music led by bright synth melodies and thick layered supersaw chords. Punchy electronic drums and deep sub-bass drive distinct atmospheric breaks and intense drops, with the main motif returning in a fuller final section. Keep the arrangement fully instrumental and forward-moving.",
+      "lyrics": "[Intro]\n[Instrumental]\n\n[Theme]\n[Instrumental]\n\n[Build]\n[Instrumental]\n\n[Drop]\n[Instrumental]\n\n[Break]\n[Instrumental]\n\n[Final Drop]\n[Instrumental]\n\n[Outro]\n[Instrumental]\n",
+      "duration": 180.0,
+      "seed": 2026071830,
+      "audio_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/checkpoint-evaluation/audio/epoch_025_scale_0.50/high_energy_melodic_dance/7a2029d3-e198-65a9-6a3f-d1e2214876a3.wav",
+      "probe": {
+        "duration": 180.0,
+        "sample_rate": "48000",
+        "channels": 2
+      },
+      "status": "pass"
+    },
+    {
+      "checkpoint": "epoch_030_scale_0.50",
+      "checkpoint_base": "epoch_030",
+      "lora_scale": 0.5,
+      "adapter_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/train-validation/checkpoints/epoch_30_loss_0.7440/adapter",
+      "epoch": 30,
+      "optimizer_step": 360,
+      "prompt_id": "chinese_synth_electronic",
+      "source_prompt_id": "chinese_synth_electronic",
+      "prompt": "Instrumental music in the characteristic style of YUAN / 徐梦圆, drawing on the musical character of the reference track \"China-Future\". Bright electronic EDM centered on a sharp synth-lead motif above punchy electronic drums and bass. A rhythmic opening expands through layered electronic textures, then a brief breakdown creates contrast before the beat and filtered lead return with changed timbre and stronger energy. Keep the melody fully instrumental, with clear sectional development.",
+      "lyrics": "[Intro]\n[Instrumental]\n\n[Theme]\n[Instrumental]\n\n[Build]\n[Instrumental]\n\n[Drop]\n[Instrumental]\n\n[Break]\n[Instrumental]\n\n[Final Drop]\n[Instrumental]\n\n[Outro]\n[Instrumental]\n",
+      "duration": 180.0,
+      "seed": 2026071810,
+      "audio_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/checkpoint-evaluation/audio/epoch_030_scale_0.50/chinese_synth_electronic/2c6ba741-7921-4a5a-27e2-5e64d26fc787.wav",
+      "probe": {
+        "duration": 180.0,
+        "sample_rate": "48000",
+        "channels": 2
+      },
+      "status": "pass"
+    },
+    {
+      "checkpoint": "epoch_030_scale_0.50",
+      "checkpoint_base": "epoch_030",
+      "lora_scale": 0.5,
+      "adapter_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/train-validation/checkpoints/epoch_30_loss_0.7440/adapter",
+      "epoch": 30,
+      "optimizer_step": 360,
+      "prompt_id": "zither_melodic_edm",
+      "source_prompt_id": "zither_melodic_edm",
+      "prompt": "Instrumental music in the characteristic style of Xomu, drawing on the musical character of the reference track \"Mannenzakura\". Energetic melodic EDM combining a nimble plucked zither-like motif with modern synth leads. Electronic drums and deep sub-bass support an uplifting progression through a restrained opening, rising build, full melodic drop, contrasting break and denser final return with expanded synth chords. Keep every section fully instrumental.",
+      "lyrics": "[Intro]\n[Instrumental]\n\n[Theme]\n[Instrumental]\n\n[Build]\n[Instrumental]\n\n[Drop]\n[Instrumental]\n\n[Break]\n[Instrumental]\n\n[Final Drop]\n[Instrumental]\n\n[Outro]\n[Instrumental]\n",
+      "duration": 180.0,
+      "seed": 2026071820,
+      "audio_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/checkpoint-evaluation/audio/epoch_030_scale_0.50/zither_melodic_edm/9debc3ed-7fb3-36d7-08d9-35ea816d30e5.wav",
+      "probe": {
+        "duration": 180.0,
+        "sample_rate": "48000",
+        "channels": 2
+      },
+      "status": "pass"
+    },
+    {
+      "checkpoint": "epoch_030_scale_0.50",
+      "checkpoint_base": "epoch_030",
+      "lora_scale": 0.5,
+      "adapter_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/train-validation/checkpoints/epoch_30_loss_0.7440/adapter",
+      "epoch": 30,
+      "optimizer_step": 360,
+      "prompt_id": "high_energy_melodic_dance",
+      "source_prompt_id": "high_energy_melodic_dance",
+      "prompt": "Instrumental music in the characteristic style of TheFatRat, drawing on the musical character of the reference track \"Time Lapse\". High-energy melodic electronic dance music led by bright synth melodies and thick layered supersaw chords. Punchy electronic drums and deep sub-bass drive distinct atmospheric breaks and intense drops, with the main motif returning in a fuller final section. Keep the arrangement fully instrumental and forward-moving.",
+      "lyrics": "[Intro]\n[Instrumental]\n\n[Theme]\n[Instrumental]\n\n[Build]\n[Instrumental]\n\n[Drop]\n[Instrumental]\n\n[Break]\n[Instrumental]\n\n[Final Drop]\n[Instrumental]\n\n[Outro]\n[Instrumental]\n",
+      "duration": 180.0,
+      "seed": 2026071830,
+      "audio_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/checkpoint-evaluation/audio/epoch_030_scale_0.50/high_energy_melodic_dance/96b0099c-b6ee-dd82-af03-bb7bf2237a63.wav",
+      "probe": {
+        "duration": 180.0,
+        "sample_rate": "48000",
+        "channels": 2
+      },
+      "status": "pass"
+    },
+    {
+      "checkpoint": "epoch_005_scale_0.50",
+      "checkpoint_base": "epoch_005",
+      "lora_scale": 0.5,
+      "adapter_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/train-validation/checkpoints/epoch_5_loss_0.8801/adapter",
+      "epoch": 5,
+      "optimizer_step": 60,
+      "prompt_id": "chinese_synth_electronic",
+      "source_prompt_id": "chinese_synth_electronic",
+      "prompt": "Instrumental music in the characteristic style of YUAN / 徐梦圆, drawing on the musical character of the reference track \"China-Future\". Bright electronic EDM centered on a sharp synth-lead motif above punchy electronic drums and bass. A rhythmic opening expands through layered electronic textures, then a brief breakdown creates contrast before the beat and filtered lead return with changed timbre and stronger energy. Keep the melody fully instrumental, with clear sectional development.",
+      "lyrics": "[Intro]\n[Instrumental]\n\n[Theme]\n[Instrumental]\n\n[Build]\n[Instrumental]\n\n[Drop]\n[Instrumental]\n\n[Break]\n[Instrumental]\n\n[Final Drop]\n[Instrumental]\n\n[Outro]\n[Instrumental]\n",
+      "duration": 180.0,
+      "seed": 2026071810,
+      "audio_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/checkpoint-evaluation/audio/epoch_005_scale_0.50/chinese_synth_electronic/292433a6-867f-0b7f-56e2-282d25ff3cf8.wav",
+      "probe": {
+        "duration": 180.0,
+        "sample_rate": "48000",
+        "channels": 2
+      },
+      "status": "pass"
+    },
+    {
+      "checkpoint": "epoch_005_scale_0.50",
+      "checkpoint_base": "epoch_005",
+      "lora_scale": 0.5,
+      "adapter_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/train-validation/checkpoints/epoch_5_loss_0.8801/adapter",
+      "epoch": 5,
+      "optimizer_step": 60,
+      "prompt_id": "zither_melodic_edm",
+      "source_prompt_id": "zither_melodic_edm",
+      "prompt": "Instrumental music in the characteristic style of Xomu, drawing on the musical character of the reference track \"Mannenzakura\". Energetic melodic EDM combining a nimble plucked zither-like motif with modern synth leads. Electronic drums and deep sub-bass support an uplifting progression through a restrained opening, rising build, full melodic drop, contrasting break and denser final return with expanded synth chords. Keep every section fully instrumental.",
+      "lyrics": "[Intro]\n[Instrumental]\n\n[Theme]\n[Instrumental]\n\n[Build]\n[Instrumental]\n\n[Drop]\n[Instrumental]\n\n[Break]\n[Instrumental]\n\n[Final Drop]\n[Instrumental]\n\n[Outro]\n[Instrumental]\n",
+      "duration": 180.0,
+      "seed": 2026071820,
+      "audio_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/checkpoint-evaluation/audio/epoch_005_scale_0.50/zither_melodic_edm/c8e6841c-e0bd-8a15-92a6-0e1dd98ccd1d.wav",
+      "probe": {
+        "duration": 180.0,
+        "sample_rate": "48000",
+        "channels": 2
+      },
+      "status": "pass"
+    },
+    {
+      "checkpoint": "epoch_005_scale_0.50",
+      "checkpoint_base": "epoch_005",
+      "lora_scale": 0.5,
+      "adapter_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/train-validation/checkpoints/epoch_5_loss_0.8801/adapter",
+      "epoch": 5,
+      "optimizer_step": 60,
+      "prompt_id": "high_energy_melodic_dance",
+      "source_prompt_id": "high_energy_melodic_dance",
+      "prompt": "Instrumental music in the characteristic style of TheFatRat, drawing on the musical character of the reference track \"Time Lapse\". High-energy melodic electronic dance music led by bright synth melodies and thick layered supersaw chords. Punchy electronic drums and deep sub-bass drive distinct atmospheric breaks and intense drops, with the main motif returning in a fuller final section. Keep the arrangement fully instrumental and forward-moving.",
+      "lyrics": "[Intro]\n[Instrumental]\n\n[Theme]\n[Instrumental]\n\n[Build]\n[Instrumental]\n\n[Drop]\n[Instrumental]\n\n[Break]\n[Instrumental]\n\n[Final Drop]\n[Instrumental]\n\n[Outro]\n[Instrumental]\n",
+      "duration": 180.0,
+      "seed": 2026071830,
+      "audio_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/checkpoint-evaluation/audio/epoch_005_scale_0.50/high_energy_melodic_dance/e8d8cd81-1e4e-aa14-e841-392a2cca1c1f.wav",
+      "probe": {
+        "duration": 180.0,
+        "sample_rate": "48000",
+        "channels": 2
+      },
+      "status": "pass"
+    }
+  ],
+  "errors": []
+}

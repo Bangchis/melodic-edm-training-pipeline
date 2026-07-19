@@ -25,16 +25,17 @@ No token or secret is stored in GitHub, this document, or the uploaded evidence.
 
 The lowest validation loss does not by itself make epoch 20 the final selected checkpoint. The 18 generated files still need listening scores and the absolute quality/alignment gate.
 
-## Work that was running when this handoff was written
+## Final evaluation state
 
-`edm-v2-score-moss` was scoring the 18 fixed checkpoint outputs. If the old instance survives, `edm-v2-orchestrator` continues automatically. If it is destroyed, restore the repository and HF backup on a new GPU server, then resume from checkpoint listening rather than retraining the completed 30-epoch train-validation run.
+MOSS completed all 18 fixed checkpoint scores. The formal selector returned:
 
-Required continuation:
+```text
+status: failed
+quality_accepted: false
+selected_checkpoint: null
+error: no_checkpoint_passed_absolute_listening_quality
+```
 
-1. Run MOSS listening scoring for the 18 fixed outputs.
-2. Select the quality-gated checkpoint across epochs 5/10/15/20/25/30.
-3. Run paired five-seed LoRA-versus-XL-Base robustness evaluation across all three held-out prompt families.
-4. If the robust quality gate passes, scale the selected optimizer step to all 217 unique audio records and retrain a fresh rank-32 LoRA from XL-Base.
-5. Evaluate the final adapter, upload the final model/audio/metrics, and publish the final Colab inference package.
+Pristine XL-Base averaged 3.33 alignment, 3.67 melody, 3.67 structure and 4.33 technical quality on the same three prompts. The best relative LoRA checkpoint was epoch 15 at 2.67 / 2.67 / 3.00 / 4.67, which remained below the absolute gate. Epoch 30 produced the only static-loop failure.
 
-The final all-data adapter does not exist yet. Do not label the current train-validation checkpoint set as the final model.
+The final all-data adapter does not exist. This is intentional: the pipeline refused to amplify a train-validation adapter that underperformed XL-Base. Full machine-readable evidence and the diagnosis are in `reports/v2-retrain-2026-07-19/` on GitHub. A future retrain must be a newly approved experiment with a changed conditioning/training design, not a continuation of these checkpoints.

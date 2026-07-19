@@ -1,0 +1,120 @@
+{
+  "status": "pass",
+  "judge": "MOSS-Music-8B-Thinking audio-grounded fixed-prompt scoring",
+  "scorer_revision": "fixed-prompt-audio-judge-v2.3",
+  "score_scale": [
+    1,
+    5
+  ],
+  "dimensions": [
+    "prompt_alignment",
+    "melody",
+    "structure",
+    "audio_quality"
+  ],
+  "results": [
+    {
+      "checkpoint": "base_xl_no_lora",
+      "epoch": 0,
+      "optimizer_step": 0,
+      "prompt_id": "chinese_synth_electronic",
+      "source_prompt_id": "chinese_synth_electronic",
+      "seed": 2026071810,
+      "duration": 180.0,
+      "lora_scale": null,
+      "audio_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/baseline-xl-base/audio/chinese_synth_electronic/61ab0102-20f8-0c80-4158-aac83da03199.wav",
+      "audio_sha256": "9bad537ffadebabde5c59690095db9a5ee17417e698f619a0226ee84b0077d1d",
+      "prompt_sha256": "755bcba90d1e08329bcaab832617e68c410c9bee78064405d8675f98204724aa",
+      "scorer_revision": "fixed-prompt-audio-judge-v2.3",
+      "judge_model": "OpenMOSS-Team/MOSS-Music-8B-Thinking",
+      "judge_model_revision": "2ce899988b94b8ecc5dd0dacbc5ce1874d3500e3",
+      "scores": {
+        "prompt_alignment": 5,
+        "melody": 5,
+        "structure": 5,
+        "audio_quality": 5
+      },
+      "evidence": {
+        "prompt_alignment": "The audio perfectly matches the description of a bright, electronic EDM track. It features a sharp synth-lead motif, punchy electronic drums, a driving bassline, and follows the described structure of a rhythmic opening, a breakdown, and a high-energy drop.",
+        "melody": "The melody is highly repetitive, catchy, and instrumental, as requested. It is carried by a prominent synth lead that remains the focal point throughout the track.",
+        "structure": "The track follows a clear EDM structure: it begins with a rhythmic intro, moves into a breakdown that strips back the beat, and then drops back in with a more intense, filtered version of the lead.",
+        "audio_quality": "The audio is clean, professionally mixed, and free from any distortion, clipping, or harsh artifacts. The electronic textures are well-defined and balanced."
+      },
+      "failure_modes": {
+        "distorted": false,
+        "collapsed": false,
+        "static_loop": false,
+        "intelligible_vocals": false
+      }
+    },
+    {
+      "checkpoint": "base_xl_no_lora",
+      "epoch": 0,
+      "optimizer_step": 0,
+      "prompt_id": "zither_melodic_edm",
+      "source_prompt_id": "zither_melodic_edm",
+      "seed": 2026071820,
+      "duration": 180.0,
+      "lora_scale": null,
+      "audio_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/baseline-xl-base/audio/zither_melodic_edm/31153a27-b6b2-a9da-ebba-b3ae21b7fe1d.wav",
+      "audio_sha256": "15a1804087bbd43967e66fc23dc74e31b5c1f21cd43ceffd6ebd77447dc7f188",
+      "prompt_sha256": "371219f0d0347509af5dbfa4b353b1f401bdf842e2ba31da19b15151a3d5a736",
+      "scorer_revision": "fixed-prompt-audio-judge-v2.3",
+      "judge_model": "OpenMOSS-Team/MOSS-Music-8B-Thinking",
+      "judge_model_revision": "2ce899988b94b8ecc5dd0dacbc5ce1874d3500e3",
+      "scores": {
+        "prompt_alignment": 3,
+        "melody": 3,
+        "structure": 3,
+        "audio_quality": 4
+      },
+      "evidence": {
+        "prompt_alignment": "The track is instrumental and electronic, but it lacks the specific traditional Japanese plucked string (zither/shamisen) sound requested. The overall style is more generic EDM than the specific 'Mannenzakura' style.",
+        "melody": "The melody is repetitive and catchy but does not closely match the specific phrasing and character of the 'Mannenzakura' track.",
+        "structure": "It follows a basic EDM structure (intro, build, drop, break, final section) but the transitions and section lengths are not identical to the reference.",
+        "audio_quality": "The mix is clean, well-balanced, and free of distortion or technical issues."
+      },
+      "failure_modes": {
+        "distorted": false,
+        "collapsed": false,
+        "static_loop": false,
+        "intelligible_vocals": false
+      }
+    },
+    {
+      "checkpoint": "base_xl_no_lora",
+      "epoch": 0,
+      "optimizer_step": 0,
+      "prompt_id": "high_energy_melodic_dance",
+      "source_prompt_id": "high_energy_melodic_dance",
+      "seed": 2026071830,
+      "duration": 180.0,
+      "lora_scale": null,
+      "audio_path": "/workspace/melodic_edm_training_pipeline/outputs/v2/baseline-xl-base/audio/high_energy_melodic_dance/9b58cfcc-6693-ba63-1001-e0e2bc73cf91.wav",
+      "audio_sha256": "bad545e0fd0402c6e36876d4033ff3c469b3c1d1e646c07948f26f635a70ba52",
+      "prompt_sha256": "39d092fcbd67a4d4fa115c1c0958547938c75d06865ab4ccbe211fce592176c9",
+      "scorer_revision": "fixed-prompt-audio-judge-v2.3",
+      "judge_model": "OpenMOSS-Team/MOSS-Music-8B-Thinking",
+      "judge_model_revision": "2ce899988b94b8ecc5dd0dacbc5ce1874d3500e3",
+      "scores": {
+        "prompt_alignment": 2,
+        "melody": 3,
+        "structure": 3,
+        "audio_quality": 4
+      },
+      "evidence": {
+        "prompt_alignment": "The track is in the EDM genre but does not capture the specific melodic and stylistic characteristics of TheFatRat's 'Time Lapse'. The synths and drops sound generic rather than distinct.",
+        "melody": "The melodies are present but lack the specific memorable quality and characteristic sound requested in the prompt.",
+        "structure": "The track follows a standard EDM structure with build-ups, drops, and a breakdown, but the transitions and section contrasts are not as distinct as described.",
+        "audio_quality": "The audio is clean, well-mixed, and professionally produced with no technical issues."
+      },
+      "failure_modes": {
+        "distorted": false,
+        "collapsed": false,
+        "static_loop": false,
+        "intelligible_vocals": false
+      }
+    }
+  ],
+  "errors": []
+}
