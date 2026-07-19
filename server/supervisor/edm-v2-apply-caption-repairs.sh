@@ -5,5 +5,5 @@ utils=/opt/supervisor-scripts/utils
 . "${utils}/environment.sh"
 project=/workspace/melodic_edm_training_pipeline
 cd "$project"
-"$project/.venv/bin/python" -u scripts/apply_v2_annotation_repairs.py --project-root "$project"
-"$project/.venv/bin/python" -u scripts/audit_v2_annotation_quality.py --project-root "$project"
+python3 -u scripts/apply_v2_annotation_repairs.py --project-root "$project"
+python3 -u scripts/audit_v2_annotation_quality.py --project-root "$project"

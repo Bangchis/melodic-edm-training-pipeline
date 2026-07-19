@@ -52,6 +52,15 @@ class RecordPreservingTests(unittest.TestCase):
             self.assertIn('ace="$project/vendor/ACE-Step-1.5-v2"', source, name)
             self.assertIn('export PYTHONPATH="$ace${PYTHONPATH:+:$PYTHONPATH}"', source, name)
 
+    def test_lightweight_v2_gates_do_not_require_a_missing_project_venv(self) -> None:
+        for name in (
+            "edm-v2-apply-caption-repairs.sh",
+            "edm-v2-quality-final.sh",
+        ):
+            source = (ROOT / "server" / "supervisor" / name).read_text(encoding="utf-8")
+            self.assertNotIn('$project/.venv/bin/python', source, name)
+            self.assertIn("python3 -u", source, name)
+
     def test_prompt_compiler_uses_only_structured_musical_facts(self) -> None:
         caption = compile_caption({
             "genre": "Chinese melodic gaming EDM",
