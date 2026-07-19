@@ -18,6 +18,7 @@ from annotate_openrouter import parse_json_content, sanitize_annotation, sanitiz
 from build_acestep_dataset import choose_splits, choose_window, render_audio  # noqa: E402
 from merge_tensors import write_loader_manifest  # noqa: E402
 from prompt_enhancer import compile_caption  # noqa: E402
+from repair_v2_annotations_moss import parse_repair  # noqa: E402
 from enhance_prompt_openrouter import (  # noqa: E402
     attach_inference_style_reference,
     contains_required_term,
@@ -184,6 +185,32 @@ class RecordPreservingTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "must be set together"):
             attach_inference_style_reference(body, "Xomu", "")
+
+    def test_normalized_caption_repair_is_resume_valid(self) -> None:
+        raw = {
+            "audible_fidelity": 4,
+            "specificity": 4,
+            "melody_arrangement_accuracy": 4,
+            "production_accuracy": 4,
+            "evidence": {
+                "audible_fidelity": "The described lead and rhythm are audible.",
+                "specificity": "The description is specific to the track.",
+                "melody_arrangement_accuracy": "The motif and section development match.",
+                "production_accuracy": "The bass, drums and space match the mix.",
+            },
+            "unsupported_claims": [],
+            "recommendation": "revise",
+            "corrected_captions": {
+                "canonical": "Instrumental melodic electronic dance music with an uplifting mood and a compact recurring synth hook. The arrangement develops from a restrained opening through a gradual build into a clear four-on-the-floor drop, then returns with denser layers and stronger rhythmic energy.",
+                "composition": "A short rising melodic motif repeats with altered endings over steady chord movement. Layers enter gradually through the build, recede during a contrasting break, and return in a fuller final drop with a supporting countermelody.",
+                "production": "Bright layered synthesizers sit above controlled sub bass and punchy electronic drums. Crisp transients, moderate sidechain movement, a wide stereo field and spacious reverb preserve clarity while the drop gains density and impact.",
+            },
+        }
+        normalized, errors = parse_repair(raw)
+        self.assertEqual([], errors)
+        reparsed, resume_errors = parse_repair(normalized)
+        self.assertEqual([], resume_errors)
+        self.assertEqual(normalized, reparsed)
 
     def test_release_delivery_sources_are_present(self) -> None:
         required = (

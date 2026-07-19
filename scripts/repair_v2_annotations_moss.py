@@ -418,14 +418,15 @@ def openrouter_generate(
 
 
 def parse_repair(value: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
-    """Validate one repair response and its corrected captions."""
+    """Validate a raw response or an already normalized cached repair."""
     errors: list[str] = []
     scores: dict[str, int] = {}
+    score_source = value.get("scores") if isinstance(value.get("scores"), dict) else value
     evidence = value.get("evidence") if isinstance(value.get("evidence"), dict) else {}
     normalized_evidence: dict[str, str] = {}
     for field in SCORE_FIELDS:
         try:
-            score = int(value.get(field))
+            score = int(score_source.get(field))
         except (TypeError, ValueError):
             score = 0
         if not 1 <= score <= 5:
