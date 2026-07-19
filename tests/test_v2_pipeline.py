@@ -40,6 +40,7 @@ from audit_v2_annotation_fidelity_moss import (  # noqa: E402
 from repair_v2_fidelity_failures_openrouter import (  # noqa: E402
     needs_fidelity_repair,
     request_for as fidelity_repair_request,
+    validate_fidelity_caption_policy,
 )
 from repair_v2_annotations_moss import (  # noqa: E402
     exact_claim_asserted,
@@ -435,6 +436,12 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn("Synth lead, not pipa.", prompt)
         self.assertIn('"pipa"', prompt)
         self.assertNotIn("Secret Artist", prompt)
+
+    def test_fidelity_repair_rejects_static_recurrence_wording(self) -> None:
+        captions = {name: words(name, 45) for name in CAPTION_TYPES}
+        captions["composition"] = words("A motif repeats throughout the track", 45)
+        errors = validate_fidelity_caption_policy(captions)
+        self.assertIn("composition_contains_unqualified_full_track_repetition", errors)
 
     def test_caption_repair_requires_three_valid_corrected_captions(self) -> None:
         value = {

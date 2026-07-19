@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -49,6 +50,17 @@ def needs_fidelity_repair(result: dict[str, Any]) -> bool:
     )
 
 
+def validate_fidelity_caption_policy(captions: dict[str, str]) -> list[str]:
+    """Reject wording that turns a real recurring motif into a static-loop instruction."""
+    errors = validate_training_caption_policy(captions)
+    for name, text in captions.items():
+        if re.search(r"\bstandard\s+electronic\s+structure\b", text, re.IGNORECASE):
+            errors.append(f"{name}_contains_generic_electronic_structure")
+        if re.search(r"\brepeats?\s+throughout\b", text, re.IGNORECASE):
+            errors.append(f"{name}_contains_unqualified_full_track_repetition")
+    return errors
+
+
 def request_for(captions: dict[str, str], audit: dict[str, Any]) -> str:
     """Build a text-only repair request grounded in the final listening evidence."""
     evidence_packet = {
@@ -67,6 +79,8 @@ def request_for(captions: dict[str, str], audit: dict[str, Any]) -> str:
         "rhythm, sectional development and mix texture that the evidence actually supports. Avoid "
         "generic praise and the words clean, polished, masterpiece, professional, repetitive, "
         "cyclical, hypnotic, unchanging, or static loop. Canonical must contain 40-80 English words; "
+        "Never write that a motif repeats throughout the track. When recurrence is audible, describe "
+        "how it returns after a contrast, transition, changed ending, or layer change. "
         "composition and production must each contain 25-80 English words. The three views must be "
         "consistent but distinct. Return JSON only with integer scores 1-5 for audible_fidelity, "
         "specificity, melody_arrangement_accuracy and production_accuracy; an evidence object with "
@@ -180,7 +194,7 @@ def main() -> int:
                     args.timeout,
                 )
                 repair, errors = parse_repair(extract_json_object(response))
-                errors.extend(validate_training_caption_policy(repair["corrected_captions"]))
+                errors.extend(validate_fidelity_caption_policy(repair["corrected_captions"]))
                 if errors:
                     raise ValueError(",".join(errors))
                 selected_captions = attach_track_style_reference(
