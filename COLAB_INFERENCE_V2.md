@@ -1,6 +1,6 @@
 # Colab Pro inference for Melodic EDM Core V2
 
-This path is inference-only. It does not install MOSS, load the training tensors or continue LoRA training. Before final retraining completes, the notebook automatically uses the published `best-val` preview. After `final-all-data` is present, it becomes the default while `best-val` remains available for comparison.
+This path is inference-only. It does not install MOSS, load the training tensors or continue LoRA training. The completed rank-32 experiment did not pass its release quality gate, so the notebook now defaults to pristine XL-Base (`USE_LORA = False`). The experimental adapter remains downloadable only for controlled same-seed A/B tests; it is not presented as a final model.
 
 ## How Colab Pro is authenticated
 
@@ -59,12 +59,12 @@ Use `notebooks/melodic_edm_core_v2_colab.ipynb`. It performs these gates in orde
 5. Download the core ACE-Step checkpoints and pinned XL-Base weights.
 6. Resolve the private V2 release to one immutable commit and download exactly that revision.
 7. Verify every release file with `SHA256SUMS`.
-8. Load `final-all-data` when present, otherwise fall back explicitly to the verified `best-val` preview.
+8. Download and verify the experimental adapter package, while leaving LoRA disabled by default because it did not pass the release gate.
 9. Either enhance the free-form idea through OpenRouter or use the direct caption unchanged, according to one switch.
 10. Pass every user-selected sampling/output setting to ACE-Step, then validate each generated audio file.
 11. Inspect and play the result inside Colab.
 
-Inference first passes the free-form idea through `scripts/enhance_prompt_openrouter.py`. The default route is `~google/gemini-flash-latest`, configurable with an exact OpenRouter model slug. OpenRouter returns exactly five strict JSON description fields; the included deterministic `prompt_enhancer.py` then enforces a 40–300 word caption. ACE-Step itself runs with `thinking=False`, so the ACE 5 Hz language model is not used for prompt planning. BPM, key, time signature and instrumental section markers remain explicit separate conditions and are never overwritten by the LLM.
+When enabled, the optional enhancer passes the free-form idea through `scripts/enhance_prompt_openrouter.py`. The available route is `~google/gemini-flash-latest`, configurable with an exact OpenRouter model slug. OpenRouter returns exactly five strict JSON description fields; the included deterministic `prompt_enhancer.py` then enforces a 40–300 word caption. The notebook defaults to direct-caption mode, so no OpenRouter request is made unless you turn the switch on. ACE-Step itself runs with `thinking=False`, so the ACE 5 Hz language model is not used for prompt planning. BPM, key, time signature and instrumental section markers remain explicit separate conditions and are never overwritten by the LLM.
 
 ```text
 free-form idea + explicit BPM/key/time/sections
@@ -85,7 +85,7 @@ Edit only the notebook cell titled **All generation controls**. It contains the 
 For a controlled diagnosis, keep the prompt and seed unchanged and compare:
 
 ```python
-USE_LORA = False   # pristine XL-Base baseline
+USE_LORA = False   # recommended current default: pristine XL-Base
 
 USE_LORA = True
 LORA_SCALE = 0.25
@@ -94,7 +94,7 @@ USE_LORA = True
 LORA_SCALE = 0.5
 
 USE_LORA = True
-LORA_SCALE = 0.5  # validated safe default; the packaged selection report may override it
+LORA_SCALE = 1.0  # optional stress test only; the adapter failed the release gate
 ```
 
 If the base output is coherent while higher LoRA scales become noisy, the adapter is the cause; mastering or normalization will not repair it. If the base is also broken, investigate the pinned base/checkpoint/sampling path first.
@@ -106,15 +106,15 @@ The enhancer accepts up to 300 words including the optional deterministic artist
 The notebook accepts a free-form idea plus optional fixed conditions:
 
 ```python
-USER_IDEA = "EDM Trung Hoa không lời với hook pipa dễ nhớ, dizi đối đáp và drop mạnh"
+USER_IDEA = "Melodic EDM không lời, không khí đèn lồng đêm hoài niệm nhưng tươi sáng"
 EXPLICIT_CONDITIONS = {
-    "reference_artist": "YUAN / 徐梦圆",
-    "reference_track": "China-Future",
+    "reference_artist": "Xomu",
+    "reference_track": "Lanterns",
     "bpm": 128,
     "keyscale": "F# minor",
     "timesignature": "4",
-    "sections": ["Intro", "Theme", "Build", "Drop", "Break", "Final Drop", "Outro"],
-    "required_terms": ["pipa", "dizi"],
+    "sections": ["Atmospheric Intro", "Main Theme", "Emotional Build", "Melodic Drop", "Spacious Breakdown", "Final Drop", "Outro"],
+    "required_terms": [],
 }
 enhancement = enhance_prompt(
     USER_IDEA,
@@ -126,10 +126,11 @@ enhancement = enhance_prompt(
 
 ```python
 caption = (
-    "Instrumental Chinese melodic gaming EDM with an uplifting and adventurous mood. "
-    "A memorable two-bar minor-pentatonic pipa hook is answered by airy dizi phrases "
-    "and doubled by a bright synth pluck. A short build opens into a four-on-the-floor "
-    "drop with wide supersaw chords, clean sub bass, punchy drums and spacious fantasy reverb."
+    "Instrumental melodic electronic dance music with a nostalgic yet uplifting lantern-lit "
+    "night atmosphere. A memorable synthesized plucked-string lead carries an original bright "
+    "motif over shimmering arpeggios, airy pads and wide supersaw chords. An atmospheric intro "
+    "and emotional build open into a clean four-on-the-floor melodic drop with deep sub bass, "
+    "punchy electronic drums, a spacious breakdown and no vocals."
 )
 bpm = 128
 keyscale = "F# minor"
@@ -163,8 +164,9 @@ Use instrumental structure text:
 
 ## Adapter choice
 
-- `final-all-data`: recommended default, trained fresh on all 231 records for the scaled number of optimizer steps.
-- `best-val`: preserves the exact validation-selected checkpoint from the 196/35 run and is useful for A/B comparison.
+- `USE_LORA = False`: recommended current default; use pristine XL-Base.
+- `experimental-r32`: optional diagnostic adapter. It was fully evaluated but did not pass the release gate, so do not treat it as a final model.
+- `best-val` and `final-all-data`: reserved names for a future run that actually passes selection; they are not claimed to exist for this failed experiment.
 
 Use the same prompt and seed when comparing adapters. A different seed changes the composition and makes the comparison less meaningful.
 
