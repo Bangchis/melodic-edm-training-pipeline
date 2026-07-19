@@ -1072,6 +1072,12 @@ class V2PipelineTest(unittest.TestCase):
         selection = (SCRIPTS / "select_v2_checkpoint.py").read_text(encoding="utf-8")
         self.assertIn('"selected_lora_scale": selected["lora_scale"]', selection)
 
+    def test_moss_retry_separates_style_alignment_from_melody_coherence(self) -> None:
+        scorer = (SCRIPTS / "score_v2_checkpoints_moss.py").read_text(encoding="utf-8")
+        self.assertIn('"melody_score_contradicts_coherent_evidence" in last_error', scorer)
+        self.assertIn("belongs only in prompt_alignment", scorer)
+        self.assertIn('"at least 3 unless the audio itself is melodically incoherent', scorer)
+
     def test_v2_preview_and_final_packages_include_prompt_enhancer(self) -> None:
         for name in ("package_v2_preview.py", "package_v2_release.py"):
             source = (SCRIPTS / name).read_text(encoding="utf-8")

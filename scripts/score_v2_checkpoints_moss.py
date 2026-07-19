@@ -189,7 +189,16 @@ def main() -> int:
                 break
             except (ValueError, KeyError, TypeError) as exc:
                 last_error = f"{type(exc).__name__}:{exc}"
-                request += "\nPrevious response failed validation: " + last_error + ". Return corrected JSON only."
+                correction = "Previous response failed validation: " + last_error + "."
+                if "melody_score_contradicts_coherent_evidence" in last_error:
+                    correction += (
+                        " Your own evidence described the melody as coherent. Under this rubric, "
+                        "genre or instrumentation mismatch belongs only in prompt_alignment and "
+                        "must not lower melody. Keep low alignment if warranted, but give melody "
+                        "at least 3 unless the audio itself is melodically incoherent, fragmentary, "
+                        "or unmemorable and the evidence explicitly says so."
+                    )
+                request += "\n" + correction + " Return corrected JSON only."
         else:
             errors.append({
                 "checkpoint": record["checkpoint"],
