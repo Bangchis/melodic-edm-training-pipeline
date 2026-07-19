@@ -62,6 +62,10 @@ class RecordPreservingTests(unittest.TestCase):
             self.assertNotIn('$project/.venv/bin/python', source, name)
             self.assertIn("python3 -u", source, name)
 
+    def test_supervisor_direct_repo_wrappers_are_executable(self) -> None:
+        wrapper = ROOT / "server" / "supervisor" / "edm-v2-audit-annotation-fidelity.sh"
+        self.assertTrue(os.access(wrapper, os.X_OK))
+
     def test_prompt_compiler_uses_only_structured_musical_facts(self) -> None:
         caption = compile_caption({
             "genre": "Chinese melodic gaming EDM",
