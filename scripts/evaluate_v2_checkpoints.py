@@ -90,7 +90,14 @@ def candidates(
         "epoch": int(validation["best_epoch"]),
         "optimizer_step": int(validation["best_optimizer_step"]),
     }
-    selected.append(best_candidate)
+    selected_identities = {
+        (int(candidate.get("epoch", 0)), int(candidate.get("optimizer_step", 0)))
+        for candidate in selected
+    }
+    best_identity = (best_candidate["epoch"], best_candidate["optimizer_step"])
+    if best_identity not in selected_identities:
+        selected.append(best_candidate)
+        selected_identities.add(best_identity)
     if best_only:
         return [best_candidate]
     if not eligible_states:
@@ -99,7 +106,12 @@ def candidates(
     final_candidate = {"label": "last", "path": output / "final", **last_state}
     if final_only:
         return [final_candidate]
-    selected.append(final_candidate)
+    final_identity = (
+        int(final_candidate.get("epoch", 0)),
+        int(final_candidate.get("optimizer_step", 0)),
+    )
+    if final_identity not in selected_identities:
+        selected.append(final_candidate)
     return selected
 
 

@@ -1068,7 +1068,7 @@ class V2PipelineTest(unittest.TestCase):
         launcher = (
             SCRIPTS.parent / "server" / "supervisor" / "edm-v2-evaluate-checkpoints.sh"
         ).read_text(encoding="utf-8")
-        self.assertIn("--final-only", launcher)
+        self.assertNotIn("--final-only", launcher)
         selection = (SCRIPTS / "select_v2_checkpoint.py").read_text(encoding="utf-8")
         self.assertIn('"selected_lora_scale": selected["lora_scale"]', selection)
 
