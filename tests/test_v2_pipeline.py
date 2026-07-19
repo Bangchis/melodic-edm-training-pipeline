@@ -37,6 +37,10 @@ from audit_v2_annotation_fidelity_moss import (  # noqa: E402
     parse_review,
     stratified_rows,
 )
+from repair_v2_fidelity_failures_openrouter import (  # noqa: E402
+    needs_fidelity_repair,
+    request_for as fidelity_repair_request,
+)
 from repair_v2_annotations_moss import (  # noqa: E402
     exact_claim_asserted,
     fusion_source_material,
@@ -399,6 +403,38 @@ class V2PipelineTest(unittest.TestCase):
 
     def test_annotation_fidelity_allows_thinking_model_to_finish_json(self) -> None:
         self.assertGreaterEqual(DEFAULT_MAX_TOKENS, 1800)
+
+    def test_fidelity_repair_targets_only_absolute_gate_failures(self) -> None:
+        passing = {
+            "scores": {
+                "audible_fidelity": 3,
+                "specificity": 2,
+                "melody_arrangement_accuracy": 2,
+                "production_accuracy": 2,
+            },
+            "recommendation": "revise",
+        }
+        failing = {**passing, "scores": {**passing["scores"], "production_accuracy": 1}}
+        self.assertFalse(needs_fidelity_repair(passing))
+        self.assertTrue(needs_fidelity_repair(failing))
+
+    def test_fidelity_repair_prompt_uses_listening_evidence_without_identity(self) -> None:
+        prompt = fidelity_repair_request(
+            {name: words(name, 45) for name in CAPTION_TYPES},
+            {
+                "scores": {field: 1 for field in (
+                    "audible_fidelity", "specificity",
+                    "melody_arrangement_accuracy", "production_accuracy",
+                )},
+                "evidence": {"audible_fidelity": "Synth lead, not pipa."},
+                "unsupported_claims": ["pipa"],
+                "recommendation": "revise",
+            },
+        )
+        self.assertIn("authoritative", prompt)
+        self.assertIn("Synth lead, not pipa.", prompt)
+        self.assertIn('"pipa"', prompt)
+        self.assertNotIn("Secret Artist", prompt)
 
     def test_caption_repair_requires_three_valid_corrected_captions(self) -> None:
         value = {
