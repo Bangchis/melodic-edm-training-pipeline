@@ -113,10 +113,23 @@ def main() -> int:
             commits.append(commit)
 
     deadline = time.monotonic() + args.max_minutes * 60
-    previous_count = -1
+    previous_signature: tuple[object, ...] | None = None
     while time.monotonic() < deadline:
         wavs = sorted((evaluation / "audio").rglob("*.wav")) if evaluation.is_dir() else []
-        if len(wavs) != previous_count:
+        report_paths = [
+            evaluation / "generation_report.json",
+            evaluation / "listening_scores.json",
+            evaluation / "selection.json",
+        ]
+        signature = (
+            len(wavs),
+            *(
+                (path.stat().st_size, path.stat().st_mtime_ns)
+                if path.is_file() else None
+                for path in report_paths
+            ),
+        )
+        if signature != previous_signature:
             commit = upload_folder_if_present(
                 api,
                 source=evaluation,
@@ -126,7 +139,7 @@ def main() -> int:
             )
             if commit:
                 commits.append(commit)
-            previous_count = len(wavs)
+            previous_signature = signature
         generation_path = evaluation / "generation_report.json"
         generation = (
             json.loads(generation_path.read_text(encoding="utf-8"))
@@ -134,13 +147,34 @@ def main() -> int:
             else {}
         )
         expected = int(generation.get("expected_outputs") or 0)
-        complete = generation.get("status") == "pass" and expected > 0 and len(wavs) == expected
+        listening_path = evaluation / "listening_scores.json"
+        listening = (
+            json.loads(listening_path.read_text(encoding="utf-8"))
+            if listening_path.is_file()
+            else {}
+        )
+        selection_path = evaluation / "selection.json"
+        selection = (
+            json.loads(selection_path.read_text(encoding="utf-8"))
+            if selection_path.is_file()
+            else {}
+        )
+        generation_complete = (
+            generation.get("status") == "pass" and expected > 0 and len(wavs) == expected
+        )
+        listening_terminal = listening.get("status") in {"pass", "failed"}
+        selection_terminal = selection.get("status") in {"pass", "failed"}
+        complete = generation_complete and listening_terminal and selection_terminal
         state = {
             "status": "pass" if complete else "running",
             "repo_id": args.repo_id,
             "checkpoint_prefixes": [remote for _, remote in checkpoint_sources],
             "audio_uploaded": len(wavs),
             "audio_expected": expected or None,
+            "listening_status": listening.get("status"),
+            "listening_results": len(listening.get("results") or []),
+            "selection_status": selection.get("status"),
+            "selected_checkpoint": selection.get("selected_checkpoint"),
             "commits": commits,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
