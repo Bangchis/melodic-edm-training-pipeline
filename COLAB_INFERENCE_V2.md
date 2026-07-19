@@ -1,6 +1,6 @@
 # Colab Pro inference for Melodic EDM Core V2
 
-This path is inference-only. It does not install MOSS, load the training tensors or continue LoRA training. The completed rank-32 experiment did not pass its release quality gate, so the notebook now defaults to pristine XL-Base (`USE_LORA = False`). The experimental adapter remains downloadable only for controlled same-seed A/B tests; it is not presented as a final model.
+This path is inference-only. It does not install MOSS, load the training tensors or continue LoRA training. At the owner's request, the notebook now defaults to the packaged epoch-30 rank-32 adapter (`USE_LORA = True`, `LORA_SCALE = 0.5`) with a Xomu — Lanterns reference preset. The adapter remains experimental because it did not pass the general release quality gate; this opt-in testing default is not a claim that it is better than pristine XL-Base.
 
 ## How Colab Pro is authenticated
 
@@ -59,7 +59,7 @@ Use `notebooks/melodic_edm_core_v2_colab.ipynb`. It performs these gates in orde
 5. Download the core ACE-Step checkpoints and pinned XL-Base weights.
 6. Resolve the private V2 release to one immutable commit and download exactly that revision.
 7. Verify every release file with `SHA256SUMS`.
-8. Download and verify the experimental adapter package, while leaving LoRA disabled by default because it did not pass the release gate.
+8. Download and verify the epoch-30 experimental adapter package, then enable it at scale `0.5` for the requested reference-oriented preset.
 9. Either enhance the free-form idea through OpenRouter or use the direct caption unchanged, according to one switch.
 10. Pass every user-selected sampling/output setting to ACE-Step, then validate each generated audio file.
 11. Inspect and play the result inside Colab.
@@ -82,10 +82,18 @@ The LLM is the optional enhancer; the deterministic stage is only a safety/forma
 
 Edit only the notebook cell titled **All generation controls**. It contains the adapter choice, LoRA enable/scale, enhancer switch, musical conditions, duration, seed(s), diffusion steps, guidance, shift, ADG/CFG interval, ODE/SDE method, Euler/Heun sampler, velocity controls, custom timesteps, DCW controls, normalization, fades, latent post-processing, batch size and output encoding. The inference script validates and uses those values; it does not replace them with hidden quality settings.
 
-For a controlled diagnosis, keep the prompt and seed unchanged and compare:
+The requested starter state is:
 
 ```python
-USE_LORA = False   # recommended current default: pristine XL-Base
+ADAPTER_CHOICE = "experimental-r32"  # epoch 30 / step 360
+USE_LORA = True
+LORA_SCALE = 0.5
+```
+
+For a controlled diagnosis, keep the prompt and seed unchanged and compare it with:
+
+```python
+USE_LORA = False   # pristine XL-Base comparison
 
 USE_LORA = True
 LORA_SCALE = 0.25
@@ -111,9 +119,9 @@ EXPLICIT_CONDITIONS = {
     "reference_artist": "Xomu",
     "reference_track": "Lanterns",
     "bpm": 128,
-    "keyscale": "F# minor",
+    "keyscale": "A minor",
     "timesignature": "4",
-    "sections": ["Atmospheric Intro", "Main Theme", "Emotional Build", "Melodic Drop", "Spacious Breakdown", "Final Drop", "Outro"],
+    "sections": ["Filtered Intro", "Theme Development", "First Build", "First Progressive-House Drop", "Atmospheric Breakdown", "Second Build", "Final Euphoric Drop", "Filtered Outro"],
     "required_terms": [],
 }
 enhancement = enhance_prompt(
@@ -126,14 +134,14 @@ enhancement = enhance_prompt(
 
 ```python
 caption = (
-    "Instrumental melodic electronic dance music with a nostalgic yet uplifting lantern-lit "
-    "night atmosphere. A memorable synthesized plucked-string lead carries an original bright "
-    "motif over shimmering arpeggios, airy pads and wide supersaw chords. An atmospheric intro "
-    "and emotional build open into a clean four-on-the-floor melodic drop with deep sub bass, "
-    "punchy electronic drums, a spacious breakdown and no vocals."
+    "Instrumental Oriental progressive house with a nostalgic, nocturnal and uplifting lantern-lit "
+    "atmosphere. A bright glassy pluck lead performs an original memorable minor-pentatonic motif, "
+    "joined by delicate piano, sparkling arpeggios and airy East Asian-inspired ornaments. Clean "
+    "four-on-the-floor drums, warm rolling bass and wide side-chained synth chords build gradually "
+    "into a euphoric melodic drop, spacious breakdown and fuller final return with no vocals."
 )
 bpm = 128
-keyscale = "F# minor"
+keyscale = "A minor"
 timesignature = "4"
 ```
 
@@ -164,8 +172,9 @@ Use instrumental structure text:
 
 ## Adapter choice
 
-- `USE_LORA = False`: recommended current default; use pristine XL-Base.
-- `experimental-r32`: optional diagnostic adapter. It was fully evaluated but did not pass the release gate, so do not treat it as a final model.
+- `USE_LORA = True`, `LORA_SCALE = 0.5`: requested notebook default using epoch 30.
+- `USE_LORA = False`: pristine XL-Base comparison mode.
+- `experimental-r32`: the packaged epoch-30 diagnostic adapter. It was fully evaluated but did not pass the release gate, so do not treat it as a final model.
 - `best-val` and `final-all-data`: reserved names for a future run that actually passes selection; they are not claimed to exist for this failed experiment.
 
 Use the same prompt and seed when comparing adapters. A different seed changes the composition and makes the comparison less meaningful.
