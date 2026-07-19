@@ -12,9 +12,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 try:
-    from v2_common import CAPTION_COMPILER_REVISION
+    from v2_common import CAPTION_COMPILER_REVISION, object_sha256
 except ModuleNotFoundError:  # package import used by local unit tests
-    from scripts.v2_common import CAPTION_COMPILER_REVISION
+    from scripts.v2_common import CAPTION_COMPILER_REVISION, object_sha256
 
 PROMPT_REVISION = "audio-blind-v2.2"
 
@@ -125,6 +125,25 @@ def archive_stale_training_outputs(root: Path) -> dict[str, object]:
     temporary.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     os.replace(temporary, target)
     return report
+
+
+def archive_stale_baseline(root: Path) -> Path | None:
+    """Archive baseline outputs when the fixed prompt document changes."""
+    prompt_path = root / "configs" / "v2" / "fixed_eval_prompts.json"
+    prompt_document = json.loads(prompt_path.read_text(encoding="utf-8"))
+    expected = object_sha256(prompt_document)
+    baseline = root / "outputs" / "v2" / "baseline-xl-base"
+    report = baseline / "generation_report.json"
+    if json_value(report, "prompt_document_sha256") == expected:
+        return None
+    if not baseline.exists():
+        return None
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    archive = root / "outputs" / "archive" / f"baseline-before-prompt-{timestamp}"
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    os.replace(baseline, archive)
+    print(f"[baseline] archived stale prompt lineage at {archive}", flush=True)
+    return archive
 
 
 def require_json_pass(path: Path, label: str) -> None:
@@ -296,6 +315,7 @@ def main() -> int:
         check=False,
     )
     require_json_pass(runtime_audit_gate, "two-gpu-trainer-runtime")
+    archive_stale_baseline(root)
     run_stage(
         "edm-v2-evaluate-baseline",
         root / "outputs" / "v2" / "baseline-xl-base" / "generation_report.json",

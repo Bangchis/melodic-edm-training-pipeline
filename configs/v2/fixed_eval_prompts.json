@@ -1,33 +1,51 @@
 {
-  "schema_version": "2.0",
-  "seed": 20260718,
+  "schema_version": "3.0",
+  "purpose": "Long-form fixed baseline and checkpoint evaluation with held-out artist/track style references and audio-grounded descriptions.",
   "prompts": [
     {
-      "id": "chinese_fantasy_drop",
-      "caption": "Instrumental Chinese melodic EDM with an adventurous minor-pentatonic pipa hook, airy dizi responses, a focused buildup and a bright four-on-the-floor drop with wide synth chords, clean sub bass and spacious fantasy ambience.",
+      "id": "chinese_synth_electronic",
+      "conditioning_mode": "held_out_artist_track_style_reference",
+      "reference_split": "validation",
+      "reference_sample_id": "starling_edm__008",
+      "reference_artist": "YUAN / 徐梦圆",
+      "reference_track": "China-Future",
+      "caption": "Instrumental music in the characteristic style of YUAN / 徐梦圆, drawing on the musical character of the reference track \"China-Future\". Bright electronic EDM centered on a sharp synth-lead motif above punchy electronic drums and bass. A rhythmic opening expands through layered electronic textures, then a brief breakdown creates contrast before the beat and filtered lead return with changed timbre and stronger energy. Keep the melody fully instrumental, with clear sectional development.",
+      "lyrics": "[Intro]\n[Instrumental]\n\n[Theme]\n[Instrumental]\n\n[Build]\n[Instrumental]\n\n[Drop]\n[Instrumental]\n\n[Break]\n[Instrumental]\n\n[Final Drop]\n[Instrumental]\n\n[Outro]\n[Instrumental]\n",
       "bpm": 128,
       "keyscale": "F# minor",
       "timesignature": "4",
-      "duration": 45,
-      "seed": 2026071801
+      "duration": 180,
+      "seed": 2026071810
     },
     {
-      "id": "gaming_progressive",
-      "caption": "Instrumental melodic gaming progressive house with a concise rising synth motif, energetic chord movement, crisp electronic drums and a clear arrangement that expands from an atmospheric intro into an uplifting layered final drop.",
+      "id": "zither_melodic_edm",
+      "conditioning_mode": "held_out_artist_track_style_reference",
+      "reference_split": "validation",
+      "reference_sample_id": "xomu__012",
+      "reference_artist": "Xomu",
+      "reference_track": "Mannenzakura",
+      "caption": "Instrumental music in the characteristic style of Xomu, drawing on the musical character of the reference track \"Mannenzakura\". Energetic melodic EDM combining a nimble plucked zither-like motif with modern synth leads. Electronic drums and deep sub-bass support an uplifting progression through a restrained opening, rising build, full melodic drop, contrasting break and denser final return with expanded synth chords. Keep every section fully instrumental.",
+      "lyrics": "[Intro]\n[Instrumental]\n\n[Theme]\n[Instrumental]\n\n[Build]\n[Instrumental]\n\n[Drop]\n[Instrumental]\n\n[Break]\n[Instrumental]\n\n[Final Drop]\n[Instrumental]\n\n[Outro]\n[Instrumental]\n",
       "bpm": 126,
       "keyscale": "A minor",
       "timesignature": "4",
-      "duration": 45,
-      "seed": 2026071802
+      "duration": 180,
+      "seed": 2026071820
     },
     {
-      "id": "cinematic_glitch",
-      "caption": "Instrumental cinematic glitch-hop with a playful syncopated lead motif, short call-and-response phrases, punchy halftime drums, controlled sub bass, orchestral accents and a contrasting breakdown before a denser melodic return.",
+      "id": "high_energy_melodic_dance",
+      "conditioning_mode": "held_out_artist_track_style_reference",
+      "reference_split": "validation",
+      "reference_sample_id": "thefatrat__009",
+      "reference_artist": "TheFatRat",
+      "reference_track": "Time Lapse",
+      "caption": "Instrumental music in the characteristic style of TheFatRat, drawing on the musical character of the reference track \"Time Lapse\". High-energy melodic electronic dance music led by bright synth melodies and thick layered supersaw chords. Punchy electronic drums and deep sub-bass drive distinct atmospheric breaks and intense drops, with the main motif returning in a fuller final section. Keep the arrangement fully instrumental and forward-moving.",
+      "lyrics": "[Intro]\n[Instrumental]\n\n[Theme]\n[Instrumental]\n\n[Build]\n[Instrumental]\n\n[Drop]\n[Instrumental]\n\n[Break]\n[Instrumental]\n\n[Final Drop]\n[Instrumental]\n\n[Outro]\n[Instrumental]\n",
       "bpm": 110,
       "keyscale": "D minor",
       "timesignature": "4",
-      "duration": 45,
-      "seed": 2026071803
+      "duration": 180,
+      "seed": 2026071830
     }
   ]
 }

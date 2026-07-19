@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from evaluate_v2_checkpoints import DEFAULT_LYRICS, audio_path, probe
-from v2_common import atomic_json
+from v2_common import atomic_json, object_sha256
 
 
 def main() -> int:
@@ -16,9 +16,10 @@ def main() -> int:
     parser.add_argument("--project-root", default=".")
     args = parser.parse_args()
     root = Path(args.project_root).resolve()
-    prompts = json.loads(
+    prompt_document = json.loads(
         (root / "configs" / "v2" / "fixed_eval_prompts.json").read_text(encoding="utf-8")
-    )["prompts"]
+    )
+    prompts = prompt_document["prompts"]
 
     from acestep.handler import AceStepHandler
     from acestep.inference import GenerationConfig, GenerationParams, generate_music
@@ -98,6 +99,8 @@ def main() -> int:
         "status": "pass" if not errors and len(results) == len(prompts) else "failed",
         "adapter": "none",
         "base_model": "ACE-Step 1.5 XL-Base",
+        "prompts_file": "configs/v2/fixed_eval_prompts.json",
+        "prompt_document_sha256": object_sha256(prompt_document),
         "fixed_prompt_count": len(prompts),
         "generated_outputs": len(results),
         "sampling": {

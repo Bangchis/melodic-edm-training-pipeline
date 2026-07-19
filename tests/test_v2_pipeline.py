@@ -62,7 +62,12 @@ from verify_v2_audio_claims_moss import (  # noqa: E402
     migrate_cached_consensus,
     parse_claim_review,
 )
-from orchestrate_v2 import archive_stale_training_outputs, json_pass, json_value  # noqa: E402
+from orchestrate_v2 import (  # noqa: E402
+    archive_stale_baseline,
+    archive_stale_training_outputs,
+    json_pass,
+    json_value,
+)
 from v2_listening_quality import summarize_quality  # noqa: E402
 from validate_v2_listening_quality import compare_prompt_alignment  # noqa: E402
 from summarize_v2_seed_robustness import summarize as summarize_seed_robustness  # noqa: E402
@@ -225,6 +230,41 @@ class V2PipelineTest(unittest.TestCase):
             self.assertLessEqual(words_in_caption, 80)
             self.assertGreaterEqual(prompt["duration"] / section_count, 20)
             self.assertNotIn(" - ", prompt["lyrics"])
+
+    def test_fixed_eval_prompts_use_long_form_held_out_style_references(self) -> None:
+        config = json.loads(
+            (SCRIPTS.parent / "configs" / "v2" / "fixed_eval_prompts.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(3, len(config["prompts"]))
+        for prompt in config["prompts"]:
+            section_count = prompt["lyrics"].count("[Instrumental]")
+            self.assertTrue(
+                prompt["caption"].startswith(
+                    track_style_reference(prompt["reference_artist"], prompt["reference_track"])
+                )
+            )
+            self.assertGreaterEqual(prompt["duration"] / section_count, 20)
+            self.assertIn("fully instrumental", prompt["caption"])
+
+    def test_changed_fixed_prompt_document_archives_stale_baseline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "configs" / "v2").mkdir(parents=True)
+            baseline = root / "outputs" / "v2" / "baseline-xl-base"
+            baseline.mkdir(parents=True)
+            (root / "configs" / "v2" / "fixed_eval_prompts.json").write_text(
+                json.dumps({"prompts": [{"id": "new"}]}), encoding="utf-8"
+            )
+            (baseline / "generation_report.json").write_text(
+                json.dumps({"status": "pass", "prompt_document_sha256": "old"}),
+                encoding="utf-8",
+            )
+            archived = archive_stale_baseline(root)
+            self.assertIsNotNone(archived)
+            self.assertTrue((archived / "generation_report.json").is_file())
+            self.assertFalse(baseline.exists())
 
     def test_robust_evaluation_runs_after_quality_gated_checkpoint_selection(self) -> None:
         orchestrator = (SCRIPTS / "orchestrate_v2.py").read_text(encoding="utf-8")
