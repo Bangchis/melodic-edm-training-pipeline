@@ -49,8 +49,8 @@ def main() -> int:
     parser.add_argument("--project-root", default=".")
     parser.add_argument("--model-path", required=True)
     parser.add_argument("--sample-id", action="append", required=True)
-    parser.add_argument("--max-new-tokens", type=int, default=2200)
-    parser.add_argument("--attempts", type=int, default=2)
+    parser.add_argument("--max-new-tokens", type=int, default=3600)
+    parser.add_argument("--attempts", type=int, default=3)
     args = parser.parse_args()
     root = Path(args.project_root).resolve()
     rows = {
@@ -82,14 +82,22 @@ def main() -> int:
                         args.max_new_tokens,
                     )
                     views[view] = {"attempt": attempt, "annotation": annotation}
+                    atomic_json(output_dir / f"{sample_id}.partial.json", {
+                        "status": "in_progress",
+                        "revision": ADJUDICATION_REVISION,
+                        "sample_id": sample_id,
+                        "identity_blind": True,
+                        "views": views,
+                    })
                     print(f"{sample_id} {view} PASS", flush=True)
                     break
                 except ValueError as exc:
                     error = f"{type(exc).__name__}:{exc}"
             else:
-                raise RuntimeError(f"{sample_id} {view} failed: {error}")
+                views[view] = {"status": "failed", "error": error}
+                print(f"{sample_id} {view} FAILED {error}", flush=True)
         record = {
-            "status": "pass",
+            "status": "pass" if "annotation" in views.get("full", {}) else "failed",
             "revision": ADJUDICATION_REVISION,
             "sample_id": sample_id,
             "audio_sha256": file_sha256(audio),
@@ -101,7 +109,7 @@ def main() -> int:
         atomic_json(output_dir / f"{sample_id}.json", record)
         results.append(record)
     report = {
-        "status": "pass",
+        "status": "pass" if all(item["status"] == "pass" for item in results) else "failed",
         "revision": ADJUDICATION_REVISION,
         "records": len(results),
         "sample_ids": [item["sample_id"] for item in results],
