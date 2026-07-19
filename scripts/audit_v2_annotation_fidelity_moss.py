@@ -59,7 +59,9 @@ def request_for(captions: dict[str, str]) -> str:
         "integer scores from 1 to 5 for audible_fidelity, specificity, "
         "melody_arrangement_accuracy and production_accuracy; an evidence object using the same "
         "four keys; unsupported_claims as a JSON array; and recommendation as one of keep, revise, "
-        "or reject. Required shape: "
+        "or reject. Do not emit analysis, reasoning, markdown, or a thinking block before the "
+        "object. The first output character must be { and the final output character must be }. "
+        "Required shape: "
         '{"audible_fidelity":1,"specificity":1,"melody_arrangement_accuracy":1,'
         '"production_accuracy":1,"evidence":{"audible_fidelity":"...","specificity":"...",'
         '"melody_arrangement_accuracy":"...","production_accuracy":"..."},'
@@ -180,7 +182,12 @@ def main() -> int:
                 break
             except (KeyError, TypeError, ValueError) as exc:
                 last_error = f"{type(exc).__name__}:{exc}"
-                request += "\nPrevious response failed validation: " + last_error + ". Return corrected JSON only."
+                request += (
+                    "\nPrevious response failed validation: "
+                    + last_error
+                    + ". Return corrected JSON only. Start immediately with {, end with }, and "
+                    "emit no reasoning, markdown, or thinking block outside the object."
+                )
         else:
             errors.append({"sample_id": sample_id, "reason": last_error})
     means = {

@@ -404,6 +404,11 @@ class V2PipelineTest(unittest.TestCase):
 
     def test_annotation_fidelity_allows_thinking_model_to_finish_json(self) -> None:
         self.assertGreaterEqual(DEFAULT_MAX_TOKENS, 3600)
+        source = (SCRIPTS / "audit_v2_annotation_fidelity_moss.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("first output character must be {", source)
+        self.assertIn("emit no reasoning, markdown, or thinking block", source)
 
     def test_fidelity_repair_targets_only_absolute_gate_failures(self) -> None:
         passing = {
