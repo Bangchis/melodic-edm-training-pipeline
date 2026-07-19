@@ -22,6 +22,7 @@ from v2_common import (  # noqa: E402
     detach_track_style_reference,
     extract_json_object,
     grouped_split,
+    object_sha256,
     parent_song_id,
     track_style_reference,
     validate_caption_set,
@@ -34,12 +35,14 @@ from build_v2_dedup_tensor_views import select_unique_records  # noqa: E402
 from infer_v2_release import merged_generation_settings  # noqa: E402
 from audit_v2_annotation_fidelity_moss import (  # noqa: E402
     DEFAULT_MAX_TOKENS,
+    accepted_adjudication,
     parse_review,
     stratified_rows,
 )
 from repair_v2_fidelity_failures_openrouter import (  # noqa: E402
     needs_fidelity_repair,
     request_for as fidelity_repair_request,
+    validate_adjudication_caption_policy,
     validate_fidelity_caption_policy,
 )
 from adjudicate_v2_audio_qwen import blind_prompt  # noqa: E402
@@ -442,6 +445,97 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn("Synth lead, not pipa.", prompt)
         self.assertIn('"pipa"', prompt)
         self.assertNotIn("Secret Artist", prompt)
+
+    def test_fidelity_repair_prompt_can_include_narrow_independent_adjudication(self) -> None:
+        prompt = fidelity_repair_request(
+            {name: words(name, 45) for name in CAPTION_TYPES},
+            {"scores": {}, "evidence": {}, "unsupported_claims": [], "recommendation": "reject"},
+            {"decision": "hybrid", "caption_guidance": "Use cautious hybrid wording."},
+        )
+        self.assertIn("Independent multi-source adjudication", prompt)
+        self.assertIn("Use cautious hybrid wording.", prompt)
+
+    def test_audio_adjudication_override_requires_two_blind_qwen_views_and_exact_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "configs" / "v2").mkdir(parents=True)
+            (root / "data").mkdir()
+            captions = {
+                name: "Electronic plucked synth " + words(name, 42)
+                for name in CAPTION_TYPES
+            }
+            config = {
+                "revision": "r1",
+                "samples": {
+                    "track__001": {
+                        "decision": "hybrid",
+                        "allow_gate_override": True,
+                        "required_caption_terms": ["electronic", "plucked", "synth"],
+                        "forbidden_caption_terms": ["pure orchestra"],
+                        "qwen_record": "data/qwen.json",
+                        "primary_sources": ["https://example.com/source"],
+                        "rationale": "Two independent blind views agree.",
+                    }
+                },
+            }
+            (root / "configs" / "v2" / "audio_adjudication_overrides.json").write_text(
+                json.dumps(config), encoding="utf-8"
+            )
+            qwen = {
+                "status": "pass",
+                "identity_blind": True,
+                "revision": "q1",
+                "views": {
+                    "full": {"annotation": {}},
+                    "overview_montage": {"annotation": {}},
+                },
+            }
+            (root / "data" / "qwen.json").write_text(json.dumps(qwen), encoding="utf-8")
+            result = {
+                "sample_id": "track__001",
+                "captions_sha256": object_sha256(captions),
+                "scores": {"audible_fidelity": 1},
+                "recommendation": "reject",
+            }
+            self.assertIsNotNone(
+                accepted_adjudication(root, "track__001", captions, result)
+            )
+            result["captions_sha256"] = "wrong"
+            self.assertIsNone(
+                accepted_adjudication(root, "track__001", captions, result)
+            )
+
+    def test_caption_repair_override_does_not_automatically_bypass_gate(self) -> None:
+        result = {
+            "scores": {
+                "audible_fidelity": 2,
+                "specificity": 2,
+                "melody_arrangement_accuracy": 2,
+                "production_accuracy": 2,
+            },
+            "recommendation": "revise",
+        }
+        adjudication = {
+            "force_caption_repair": True,
+            "allow_gate_override": False,
+            "required_caption_terms": ["synth"],
+            "forbidden_caption_terms": ["orchestral"],
+        }
+        self.assertTrue(needs_fidelity_repair(result, adjudication))
+        self.assertEqual(
+            validate_adjudication_caption_policy(
+                {name: "bright synth electronic arrangement" for name in CAPTION_TYPES},
+                adjudication,
+            ),
+            [],
+        )
+        self.assertIn(
+            "adjudication_forbidden_term_present:orchestral",
+            validate_adjudication_caption_policy(
+                {name: "bright synth orchestral arrangement" for name in CAPTION_TYPES},
+                adjudication,
+            ),
+        )
 
     def test_fidelity_repair_rejects_static_recurrence_wording(self) -> None:
         captions = {name: words(name, 45) for name in CAPTION_TYPES}

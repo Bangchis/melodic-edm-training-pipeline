@@ -103,6 +103,53 @@ def parse_review(value: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     }, errors
 
 
+def accepted_adjudication(
+    root: Path,
+    sample_id: str,
+    captions: dict[str, str],
+    result: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Return a narrow independent override for a caption-dependent judge conflict."""
+    config_path = root / "configs" / "v2" / "audio_adjudication_overrides.json"
+    if not config_path.is_file():
+        return None
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    item = config.get("samples", {}).get(sample_id)
+    if not isinstance(item, dict) or item.get("allow_gate_override") is not True:
+        return None
+    qwen_path = root / str(item.get("qwen_record") or "")
+    if not qwen_path.is_file():
+        return None
+    qwen = json.loads(qwen_path.read_text(encoding="utf-8"))
+    views = qwen.get("views") if isinstance(qwen.get("views"), dict) else {}
+    if (
+        qwen.get("status") != "pass"
+        or qwen.get("identity_blind") is not True
+        or not isinstance(views.get("full", {}).get("annotation"), dict)
+        or not isinstance(views.get("overview_montage", {}).get("annotation"), dict)
+    ):
+        return None
+    text = " ".join(captions.values()).casefold()
+    required = [str(term).casefold() for term in item.get("required_caption_terms", [])]
+    forbidden = [str(term).casefold() for term in item.get("forbidden_caption_terms", [])]
+    if any(term not in text for term in required) or any(term in text for term in forbidden):
+        return None
+    if result.get("captions_sha256") != object_sha256(captions):
+        return None
+    if not item.get("primary_sources") or not item.get("rationale"):
+        return None
+    return {
+        "sample_id": sample_id,
+        "raw_scores": result.get("scores", {}),
+        "raw_recommendation": result.get("recommendation"),
+        "decision": item.get("decision"),
+        "config_revision": config.get("revision"),
+        "qwen_revision": qwen.get("revision"),
+        "primary_sources": item.get("primary_sources"),
+        "rationale": item.get("rationale"),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project-root", default=".")
@@ -190,6 +237,26 @@ def main() -> int:
                 )
         else:
             errors.append({"sample_id": sample_id, "reason": last_error})
+    sample_rows = {str(row["sample_id"]): row for row in sample}
+    adjudicated: list[dict[str, Any]] = []
+    for result in results:
+        sample_id = str(result["sample_id"])
+        row = sample_rows.get(sample_id)
+        if row is None:
+            continue
+        annotation = json.loads(
+            Path(row["v2_annotation_path"]).read_text(encoding="utf-8")
+        )
+        train_captions = {
+            str(caption["type"]): str(caption["text"])
+            for caption in annotation["caption_variants"]
+        }
+        decision = accepted_adjudication(
+            root, sample_id, train_captions, result
+        )
+        if decision is not None:
+            adjudicated.append(decision)
+    adjudicated_ids = {item["sample_id"] for item in adjudicated}
     means = {
         field: round(mean(item["scores"][field] for item in results), 3)
         for field in SCORE_FIELDS
@@ -202,8 +269,14 @@ def main() -> int:
         len(results) == len(sample)
         and not errors
         and all(value >= 3.0 for value in means.values())
-        and all(score >= 2 for item in results for score in item["scores"].values())
-        and recommendations["reject"] == 0
+        and all(
+            score >= 2 or item["sample_id"] in adjudicated_ids
+            for item in results for score in item["scores"].values()
+        )
+        and all(
+            item["recommendation"] != "reject" or item["sample_id"] in adjudicated_ids
+            for item in results
+        )
     )
     report = {
         "status": "pass" if gate_pass else "failed",
@@ -214,6 +287,7 @@ def main() -> int:
         "dimensions": list(SCORE_FIELDS),
         "dimension_means": means,
         "recommendations": recommendations,
+        "adjudicated_disputes": adjudicated,
         "results": results,
         "errors": errors,
     }

@@ -23,8 +23,8 @@
   "training": {
     "audio_latents_per_record": 1,
     "prompt_embeddings_per_record": 3,
-    "required_style_reference_prefix": "Style inspired by the musical identity of {artist} and the reference track \"{title}\".",
-    "style_reference_revision": "artist-track-style-reference-v1",
+    "required_style_reference_prefix": "Instrumental music in the characteristic style of {artist}, drawing on the musical character of the reference track \"{title}\".",
+    "style_reference_revision": "artist-track-style-reference-v2",
     "style_reference_scope": "prepended to canonical, composition and production after audio-only validation",
     "selection": "uniform random on every load",
     "cfg_dropout": 0.15

@@ -36,11 +36,14 @@ from v2_common import (
 FIDELITY_REPAIR_REVISION = "stratified-listening-correction-v1"
 
 
-def needs_fidelity_repair(result: dict[str, Any]) -> bool:
+def needs_fidelity_repair(
+    result: dict[str, Any], adjudication: dict[str, Any] | None = None
+) -> bool:
     """Return whether one judged caption set violates the absolute score gate."""
     scores = result.get("scores") if isinstance(result.get("scores"), dict) else {}
     return (
-        result.get("recommendation") == "reject"
+        (adjudication or {}).get("force_caption_repair") is True
+        or result.get("recommendation") == "reject"
         or any(int(scores.get(field, 0)) < 2 for field in (
             "audible_fidelity",
             "specificity",
@@ -61,7 +64,28 @@ def validate_fidelity_caption_policy(captions: dict[str, str]) -> list[str]:
     return errors
 
 
-def request_for(captions: dict[str, str], audit: dict[str, Any]) -> str:
+def validate_adjudication_caption_policy(
+    captions: dict[str, str], adjudication: dict[str, Any] | None
+) -> list[str]:
+    """Enforce only the audible terms recorded by a targeted adjudication."""
+    if not adjudication:
+        return []
+    text = " ".join(captions.values()).casefold()
+    errors: list[str] = []
+    for term in adjudication.get("required_caption_terms", []):
+        if str(term).casefold() not in text:
+            errors.append(f"adjudication_required_term_missing:{term}")
+    for term in adjudication.get("forbidden_caption_terms", []):
+        if str(term).casefold() in text:
+            errors.append(f"adjudication_forbidden_term_present:{term}")
+    return errors
+
+
+def request_for(
+    captions: dict[str, str],
+    audit: dict[str, Any],
+    adjudication: dict[str, Any] | None = None,
+) -> str:
     """Build a text-only repair request grounded in the final listening evidence."""
     evidence_packet = {
         "scores": audit.get("scores", {}),
@@ -69,6 +93,15 @@ def request_for(captions: dict[str, str], audit: dict[str, Any]) -> str:
         "unsupported_claims": audit.get("unsupported_claims", []),
         "recommendation": audit.get("recommendation"),
     }
+    adjudication_text = ""
+    if adjudication:
+        adjudication_text = (
+            "\nIndependent multi-source adjudication: "
+            + json.dumps(adjudication, ensure_ascii=False)
+            + "\nThe caption-conditioned listener contradicted itself on this record. Where its "
+            "latest verdict conflicts with this independent adjudication, follow the adjudication "
+            "guidance while keeping wording cautious and audible."
+        )
     return (
         "Correct the three audio-only training captions for one instrumental track. The final "
         "waveform-listening audit below is authoritative over the current captions and over any "
@@ -95,6 +128,7 @@ def request_for(captions: dict[str, str], audit: dict[str, Any]) -> str:
         + json.dumps(captions, ensure_ascii=False)
         + "\nAuthoritative final listening audit: "
         + json.dumps(evidence_packet, ensure_ascii=False)
+        + adjudication_text
     )
 
 
@@ -142,6 +176,9 @@ def main() -> int:
     root = Path(args.project_root).resolve()
     audit_path = root / "data_v2" / "annotation_fidelity_audit.json"
     audit_report = json.loads(audit_path.read_text(encoding="utf-8"))
+    adjudication_path = root / "configs" / "v2" / "audio_adjudication_overrides.json"
+    adjudication_config = json.loads(adjudication_path.read_text(encoding="utf-8"))
+    adjudications = adjudication_config.get("samples", {})
     audit_results = {
         str(item["sample_id"]): item
         for item in audit_report.get("results", [])
@@ -150,7 +187,7 @@ def main() -> int:
     selected = {
         sample_id: result
         for sample_id, result in audit_results.items()
-        if needs_fidelity_repair(result)
+        if needs_fidelity_repair(result, adjudications.get(sample_id))
     }
     if not selected:
         raise RuntimeError("fidelity audit contains no below-threshold caption set to repair")
@@ -182,7 +219,8 @@ def main() -> int:
             )
             for name in CAPTION_TYPES
         }
-        request = request_for(bodies, audit)
+        adjudication = adjudications.get(sample_id)
+        request = request_for(bodies, audit, adjudication)
         last_error = ""
         for attempt in range(1, max(1, args.attempts) + 1):
             try:
@@ -195,6 +233,11 @@ def main() -> int:
                 )
                 repair, errors = parse_repair(extract_json_object(response))
                 errors.extend(validate_fidelity_caption_policy(repair["corrected_captions"]))
+                errors.extend(
+                    validate_adjudication_caption_policy(
+                        repair["corrected_captions"], adjudication
+                    )
+                )
                 if errors:
                     raise ValueError(",".join(errors))
                 selected_captions = attach_track_style_reference(
@@ -217,6 +260,10 @@ def main() -> int:
                         repair["corrected_captions"]
                     ),
                     "track_style_reference_revision": TRACK_STYLE_REFERENCE_REVISION,
+                    "adjudication_revision": (
+                        adjudication_config.get("revision") if adjudication else None
+                    ),
+                    "adjudication_sha256": object_sha256(adjudication) if adjudication else None,
                     "model_requested": metadata["requested_model"],
                     "model_resolved": metadata["resolved_model"],
                     "usage": metadata["usage"],

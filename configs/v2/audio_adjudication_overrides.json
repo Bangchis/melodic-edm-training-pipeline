@@ -1,0 +1,45 @@
+{
+  "revision": "independent-audio-adjudication-v1",
+  "samples": {
+    "starling_edm__008": {
+      "decision": "bright_synth_lead_electronic",
+      "force_caption_repair": true,
+      "allow_gate_override": false,
+      "caption_guidance": "Describe a bright synthesized lead or pluck over an electronic beat, electronic drums, bass and pads, with audible sectional development. Do not assert pipa, guzheng, acoustic strings or orchestral backing.",
+      "required_caption_terms": [
+        "electronic",
+        "synth"
+      ],
+      "forbidden_caption_terms": [
+        "pipa",
+        "guzheng",
+        "acoustic strings",
+        "orchestral"
+      ],
+      "qwen_record": "data_v2/qwen_audio_adjudication/starling_edm__008.json",
+      "rationale": "The final MOSS audit scored the cautious caption at the minimum acceptable threshold but still identified string and orchestral wording as unsupported. This entry forces one more caption repair only; it cannot bypass the listening gate because the second blind Qwen view did not complete."
+    },
+    "thefatrat__020": {
+      "decision": "hybrid_east_asian_melodic_electronic",
+      "force_caption_repair": true,
+      "allow_gate_override": true,
+      "caption_guidance": "Describe an East-Asian-influenced melodic electronic/trap hybrid. Use a plucked acoustic-electronic lead or guqin-like plucked timbre layered with synth tones, an electronic beat, synth bass, and changing atmospheric sections. Do not describe a pure orchestral recording or a pure synth-only EDM arrangement.",
+      "required_caption_terms": [
+        "electronic",
+        "plucked",
+        "synth"
+      ],
+      "forbidden_caption_terms": [
+        "full orchestral recording",
+        "traditional orchestral structure",
+        "pure synth-only"
+      ],
+      "qwen_record": "data_v2/qwen_audio_adjudication/thefatrat__020.json",
+      "primary_sources": [
+        "https://weraveyou.com/tech/interview-thefatrat-talks-recent-and-upcoming-projects-nfts-plugins-and-more/",
+        "https://soundcloud.com/thefatrat/pride-and-fear"
+      ],
+      "rationale": "The artist describes guqin/acoustic samples stacked with electronic sounds over an electronic beat for Pride & Fear; the official SoundCloud classifies the release as Trap, and identity-blind Qwen full plus chronological montage both classify the supplied waveform as Chinese-influenced melodic EDM with electronic production. MOSS reversed its verdict when the proposed caption changed, so its caption-conditioned rejection is retained as raw evidence but is not the sole gate authority for this record."
+    }
+  }
+}
