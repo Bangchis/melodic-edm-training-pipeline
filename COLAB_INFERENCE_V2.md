@@ -1,6 +1,6 @@
 # Colab Pro inference for Melodic EDM Core V2
 
-This path is inference-only. It does not install MOSS, load the training tensors or continue LoRA training. At the owner's request, the notebook now defaults to the packaged epoch-30 rank-32 adapter (`USE_LORA = True`, `LORA_SCALE = 0.5`) with a Xomu — Lanterns reference preset. The adapter remains experimental because it did not pass the general release quality gate; this opt-in testing default is not a claim that it is better than pristine XL-Base.
+This path is inference-only. It does not install MOSS, load the training tensors or continue LoRA training. At the owner's request, the notebook now defaults to the packaged epoch-30 rank-32 adapter (`USE_LORA = True`, `LORA_SCALE = 0.5`) with a text-only Xomu — Lanterns reconstruction preset. It also enables the official ACE 5 Hz 4B planner with low-temperature semantic planning. The adapter remains experimental because it did not pass the general release quality gate, and a title-conditioned text prompt cannot guarantee an exact note-for-note reconstruction.
 
 ## How Colab Pro is authenticated
 
@@ -29,7 +29,7 @@ If unattended server-side submission is required, that is a separate Google Clou
 - A browser signed into the Google account that owns the active Colab Pro subscription.
 - A Colab Pro runtime with an NVIDIA GPU. GPU type and availability are assigned dynamically by Colab and are not guaranteed.
 - At least 20 GB GPU memory is preferred for XL-Base. A 12–16 GB GPU may work with CPU offload and will be slower.
-- Roughly 35–45 GB free disk for the ACE-Step environment, XL-Base checkpoints and the private adapter release.
+- Roughly 50–65 GB free disk for the ACE-Step environment, XL-Base, the 4B LM planner and the private adapter release.
 - A Hugging Face read token stored in Colab Secrets as `HF_TOKEN`.
 - An OpenRouter API key stored in Colab Secrets as `OPENROUTER_API_KEY` only when `USE_OPENROUTER_ENHANCER = True`.
 
@@ -64,7 +64,7 @@ Use `notebooks/melodic_edm_core_v2_colab.ipynb`. It performs these gates in orde
 10. Pass every user-selected sampling/output setting to ACE-Step, then validate each generated audio file.
 11. Inspect and play the result inside Colab.
 
-When enabled, the optional enhancer passes the free-form idea through `scripts/enhance_prompt_openrouter.py`. The available route is `~google/gemini-flash-latest`, configurable with an exact OpenRouter model slug. OpenRouter returns exactly five strict JSON description fields; the included deterministic `prompt_enhancer.py` then enforces a 40–300 word caption. The notebook defaults to direct-caption mode, so no OpenRouter request is made unless you turn the switch on. ACE-Step itself runs with `thinking=False`, so the ACE 5 Hz language model is not used for prompt planning. BPM, key, time signature and instrumental section markers remain explicit separate conditions and are never overwritten by the LLM.
+When enabled, the optional enhancer passes the free-form idea through `scripts/enhance_prompt_openrouter.py`. The available route is `~google/gemini-flash-latest`, configurable with an exact OpenRouter model slug. The notebook defaults to direct-caption mode, so no OpenRouter request is made. Separately, ACE-Step runs with `thinking=True` and `acestep-5Hz-lm-4B` to create semantic music codes from the exact artist/title-conditioned caption. Caption rewriting and metadata guessing remain disabled, so the explicit 128 BPM, A minor, 4/4 and 232-second controls are preserved. This planner may improve reconstruction from model knowledge, but source-audio Cover mode would still be required to guarantee structural melody control.
 
 ```text
 free-form idea + explicit BPM/key/time/sections
@@ -88,6 +88,10 @@ The requested starter state is:
 ADAPTER_CHOICE = "experimental-r32"  # epoch 30 / step 360
 USE_LORA = True
 LORA_SCALE = 0.5
+USE_ACE_LM_THINKING = True
+ACE_LM_MODEL = "acestep-5Hz-lm-4B"
+LM_TEMPERATURE = 0.3
+GUIDANCE_SCALE = 9.0
 ```
 
 For a controlled diagnosis, keep the prompt and seed unchanged and compare it with:
@@ -134,11 +138,10 @@ enhancement = enhance_prompt(
 
 ```python
 caption = (
-    "Instrumental Oriental progressive house with a nostalgic, nocturnal and uplifting lantern-lit "
-    "atmosphere. A bright glassy pluck lead performs an original memorable minor-pentatonic motif, "
-    "joined by delicate piano, sparkling arpeggios and airy East Asian-inspired ornaments. Clean "
-    "four-on-the-floor drums, warm rolling bass and wide side-chained synth chords build gradually "
-    "into a euphoric melodic drop, spacious breakdown and fuller final return with no vocals."
+    "Match the recognizable central melody, note contour, rhythmic phrasing, chord progression, "
+    "section order and energy arc as closely as possible. Oriental progressive house with a glassy "
+    "pentatonic pluck, soft piano, sparkling arpeggios, rolling bass, side-chained synth chords, "
+    "clean four-on-the-floor drums, an atmospheric breakdown and euphoric final drop. Instrumental only."
 )
 bpm = 128
 keyscale = "A minor"
