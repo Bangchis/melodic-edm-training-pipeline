@@ -1110,6 +1110,11 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn('"ace_lm_model": "acestep-5Hz-lm-1.7B"', inference)
         self.assertIn("LLMHandler", inference)
         self.assertIn("experimental-r32", inference)
+        self.assertIn("task_type=task_type", inference)
+        self.assertIn("src_audio=str(source_audio)", inference)
+        self.assertIn("reference_audio=str(reference_audio)", inference)
+        self.assertIn("audio_cover_strength=audio_cover_strength", inference)
+        self.assertIn('TASK_TYPES = frozenset(("text2music", "cover"))', inference)
         notebook = (SCRIPTS.parent / "notebooks" / "melodic_edm_core_v2_colab.ipynb").read_text(encoding="utf-8")
         self.assertIn("'MPLBACKEND': 'Agg'", notebook)
 

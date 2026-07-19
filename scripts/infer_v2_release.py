@@ -84,6 +84,7 @@ OUTPUT_DEFAULTS: dict[str, Any] = {
 SAMPLING_KEYS = frozenset(SAMPLING_DEFAULTS)
 OUTPUT_KEYS = frozenset(OUTPUT_DEFAULTS)
 OUTPUT_FORMATS = frozenset(("mp3", "wav", "flac", "wav32", "opus", "aac"))
+TASK_TYPES = frozenset(("text2music", "cover"))
 
 
 def atomic_json(path: Path, value: Any) -> None:
@@ -234,6 +235,24 @@ def main() -> int:
     prompts = prompt_document.get("prompts", prompt_document)
     prompt = prompts[args.prompt_index]
     sampling, output_settings = merged_generation_settings(prompt_document)
+    task_type = str(prompt.get("task_type", "text2music"))
+    if task_type not in TASK_TYPES:
+        raise ValueError(f"task_type must be one of {sorted(TASK_TYPES)}")
+    source_audio: Path | None = None
+    if prompt.get("src_audio"):
+        source_audio = Path(str(prompt["src_audio"])).expanduser().resolve()
+        if not source_audio.is_file():
+            raise FileNotFoundError(f"source audio does not exist: {source_audio}")
+    if task_type == "cover" and source_audio is None:
+        raise ValueError("cover task requires src_audio")
+    reference_audio: Path | None = None
+    if prompt.get("reference_audio"):
+        reference_audio = Path(str(prompt["reference_audio"])).expanduser().resolve()
+        if not reference_audio.is_file():
+            raise FileNotFoundError(f"reference audio does not exist: {reference_audio}")
+    audio_cover_strength = float(prompt.get("audio_cover_strength", 1.0))
+    if not 0.0 <= audio_cover_strength <= 1.0:
+        raise ValueError("audio_cover_strength must be between 0 and 1")
     ace_lm_model = str(sampling.pop("ace_lm_model"))
     if output_settings["seeds"] is None and not output_settings["use_random_seed"]:
         output_settings["seeds"] = [int(prompt["seed"])] * output_settings["batch_size"]
@@ -281,6 +300,10 @@ def main() -> int:
             raise RuntimeError(scale_message)
 
     params = GenerationParams(
+        task_type=task_type,
+        src_audio=str(source_audio) if source_audio else None,
+        reference_audio=str(reference_audio) if reference_audio else None,
+        audio_cover_strength=audio_cover_strength,
         caption=prompt["caption"],
         lyrics=prompt.get("lyrics", DEFAULT_LYRICS),
         instrumental=True,
@@ -309,6 +332,10 @@ def main() -> int:
         "adapter": args.adapter_subdirectory if not args.disable_lora else "base-xl-no-lora",
         "lora_enabled": not args.disable_lora,
         "lora_scale": args.lora_scale if not args.disable_lora else 0.0,
+        "task_type": task_type,
+        "source_audio": str(source_audio) if source_audio else None,
+        "reference_audio": str(reference_audio) if reference_audio else None,
+        "audio_cover_strength": audio_cover_strength,
         "prompt_id": prompt["id"],
         "seed": prompt["seed"],
         "seeds": output_settings["seeds"],
