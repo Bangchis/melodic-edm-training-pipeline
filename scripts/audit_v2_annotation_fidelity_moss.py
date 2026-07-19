@@ -25,6 +25,7 @@ SCORE_FIELDS = (
     "melody_arrangement_accuracy",
     "production_accuracy",
 )
+DEFAULT_MAX_TOKENS = 1800
 
 
 def stratified_rows(rows: list[dict[str, Any]], per_group: int) -> list[dict[str, Any]]:
@@ -105,6 +106,7 @@ def main() -> int:
     parser.add_argument("--project-root", default=".")
     parser.add_argument("--per-group", type=int, default=6)
     parser.add_argument("--attempts", type=int, default=3)
+    parser.add_argument("--max-tokens", type=int, default=DEFAULT_MAX_TOKENS)
     args = parser.parse_args()
     root = Path(args.project_root).resolve()
     rows = read_jsonl(root / "data_v2" / "manifest.jsonl")
@@ -148,7 +150,13 @@ def main() -> int:
         request = request_for(captions)
         last_error = ""
         for attempt in range(1, max(1, args.attempts) + 1):
-            response = generate(model, processor, Path(row["final_audio_path"]), request, 900)
+            response = generate(
+                model,
+                processor,
+                Path(row["final_audio_path"]),
+                request,
+                max(900, args.max_tokens),
+            )
             try:
                 review, validation_errors = parse_review(extract_json_object(response))
                 if validation_errors:

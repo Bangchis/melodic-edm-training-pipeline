@@ -32,7 +32,11 @@ from score_v2_checkpoints_moss import parse_score  # noqa: E402
 from merge_v2_tensors import hardlink_tensor  # noqa: E402
 from build_v2_dedup_tensor_views import select_unique_records  # noqa: E402
 from infer_v2_release import merged_generation_settings  # noqa: E402
-from audit_v2_annotation_fidelity_moss import parse_review, stratified_rows  # noqa: E402
+from audit_v2_annotation_fidelity_moss import (  # noqa: E402
+    DEFAULT_MAX_TOKENS,
+    parse_review,
+    stratified_rows,
+)
 from repair_v2_annotations_moss import (  # noqa: E402
     exact_claim_asserted,
     fusion_source_material,
@@ -392,6 +396,9 @@ class V2PipelineTest(unittest.TestCase):
         })
         self.assertEqual([], errors)
         self.assertEqual(4, review["scores"]["audible_fidelity"])
+
+    def test_annotation_fidelity_allows_thinking_model_to_finish_json(self) -> None:
+        self.assertGreaterEqual(DEFAULT_MAX_TOKENS, 1800)
 
     def test_caption_repair_requires_three_valid_corrected_captions(self) -> None:
         value = {
