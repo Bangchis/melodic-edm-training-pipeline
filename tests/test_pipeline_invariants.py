@@ -65,6 +65,7 @@ class RecordPreservingTests(unittest.TestCase):
     def test_supervisor_direct_repo_wrappers_are_executable(self) -> None:
         for name in (
             "edm-v2-audit-annotation-fidelity.sh",
+            "edm-v2-adjudicate-qwen.sh",
             "edm-v2-repair-fidelity.sh",
         ):
             wrapper = ROOT / "server" / "supervisor" / name

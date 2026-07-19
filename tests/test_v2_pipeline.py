@@ -42,6 +42,7 @@ from repair_v2_fidelity_failures_openrouter import (  # noqa: E402
     request_for as fidelity_repair_request,
     validate_fidelity_caption_policy,
 )
+from adjudicate_v2_audio_qwen import blind_prompt  # noqa: E402
 from repair_v2_annotations_moss import (  # noqa: E402
     exact_claim_asserted,
     fusion_source_material,
@@ -447,6 +448,13 @@ class V2PipelineTest(unittest.TestCase):
         captions["composition"] = words("A motif repeats throughout the track", 45)
         errors = validate_fidelity_caption_policy(captions)
         self.assertIn("composition_contains_unqualified_full_track_repetition", errors)
+
+    def test_qwen_adjudication_prompt_is_identity_and_prior_caption_blind(self) -> None:
+        prompt = blind_prompt({}, {"schema": {"type": "object"}}, "full")
+        self.assertIn("Artist, title, catalog family", prompt)
+        self.assertIn("dominant production", prompt)
+        self.assertNotIn("Pride & Fear", prompt)
+        self.assertNotIn("TheFatRat", prompt)
 
     def test_caption_repair_requires_three_valid_corrected_captions(self) -> None:
         value = {
