@@ -84,8 +84,6 @@ def sections_to_lyrics(sections: list[str]) -> str:
         section = " ".join(str(raw_section).split())
         if not section:
             raise ValueError("section labels cannot be empty")
-        if len(section) > 80:
-            raise ValueError(f"section label is longer than 80 characters: {section!r}")
         if "[" in section or "]" in section:
             raise ValueError(f"section labels cannot contain '[' or ']': {section!r}")
         if any(ord(character) < 32 for character in section):

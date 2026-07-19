@@ -21,7 +21,10 @@ from v2_common import atomic_json
 
 
 CUSTOM_SECTION_FIXTURE = [
-    "Atmospheric Intro",
+    (
+        "Filtered Intro: soft piano and the main eight-bar glassy pluck motif, "
+        "minimal ambience, no full drums"
+    ),
     "Main Theme",
     "First Build",
     "First Melodic Drop",
@@ -105,7 +108,7 @@ def main() -> int:
             repo_id=args.repo_id,
             repo_type="model",
             operations=operations,
-            commit_message="Add explicit artist and track style references to Colab",
+            commit_message="Allow descriptive long-form section labels in Colab",
         )
         revision = str(commit.oid)
         clean = temporary_root / "clean"
@@ -136,7 +139,7 @@ def main() -> int:
         lyrics = sections_to_lyrics(CUSTOM_SECTION_FIXTURE)
         if (
             lyrics.count("[Instrumental]") != len(CUSTOM_SECTION_FIXTURE)
-            or "[Atmospheric Intro]" not in lyrics
+            or f"[{CUSTOM_SECTION_FIXTURE[0]}]" not in lyrics
             or "[Final Melodic Drop]" not in lyrics
         ):
             errors.append("custom_section_runtime_failed")

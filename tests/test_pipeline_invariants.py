@@ -167,6 +167,14 @@ class RecordPreservingTests(unittest.TestCase):
         )
 
     def test_custom_section_labels_reject_only_structurally_unsafe_values(self) -> None:
+        detailed = (
+            "Filtered Intro: soft piano and the main eight-bar glassy pluck motif, "
+            "minimal ambience, no full drums"
+        )
+        self.assertEqual(
+            sections_to_lyrics([detailed]),
+            f"[{detailed}]\n[Instrumental]\n",
+        )
         with self.assertRaisesRegex(ValueError, "duplicate labels"):
             sections_to_lyrics(["Main Theme", "main theme"])
         with self.assertRaisesRegex(ValueError, "cannot contain"):
