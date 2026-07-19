@@ -403,7 +403,7 @@ class V2PipelineTest(unittest.TestCase):
         self.assertEqual(4, review["scores"]["audible_fidelity"])
 
     def test_annotation_fidelity_allows_thinking_model_to_finish_json(self) -> None:
-        self.assertGreaterEqual(DEFAULT_MAX_TOKENS, 1800)
+        self.assertGreaterEqual(DEFAULT_MAX_TOKENS, 3600)
 
     def test_fidelity_repair_targets_only_absolute_gate_failures(self) -> None:
         passing = {

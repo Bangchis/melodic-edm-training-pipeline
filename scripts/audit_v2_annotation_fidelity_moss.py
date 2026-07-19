@@ -25,7 +25,7 @@ SCORE_FIELDS = (
     "melody_arrangement_accuracy",
     "production_accuracy",
 )
-DEFAULT_MAX_TOKENS = 1800
+DEFAULT_MAX_TOKENS = 3600
 
 
 def stratified_rows(rows: list[dict[str, Any]], per_group: int) -> list[dict[str, Any]]:
