@@ -63,8 +63,12 @@ class RecordPreservingTests(unittest.TestCase):
             self.assertIn("python3 -u", source, name)
 
     def test_supervisor_direct_repo_wrappers_are_executable(self) -> None:
-        wrapper = ROOT / "server" / "supervisor" / "edm-v2-audit-annotation-fidelity.sh"
-        self.assertTrue(os.access(wrapper, os.X_OK))
+        for name in (
+            "edm-v2-audit-annotation-fidelity.sh",
+            "edm-v2-repair-fidelity.sh",
+        ):
+            wrapper = ROOT / "server" / "supervisor" / name
+            self.assertTrue(os.access(wrapper, os.X_OK), name)
 
     def test_prompt_compiler_uses_only_structured_musical_facts(self) -> None:
         caption = compile_caption({
