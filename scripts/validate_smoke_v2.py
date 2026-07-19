@@ -128,8 +128,11 @@ def main() -> int:
         errors.append("loss_never_decreased_below_first_logged_value")
     if re.search(r"\b(?:OOM|out of memory|NaN|Inf)\b", log, flags=re.IGNORECASE):
         errors.append("fatal_numeric_or_memory_marker_in_log")
+    # The first phase saves epoch 5 at optimizer step 60.  The resume phase then
+    # advances that checkpoint through steps 61-66.  Requiring step 65 here
+    # incorrectly rejected a real, state-complete resume from the saved boundary.
     resume_marker = re.search(
-        r"Resumed(?: LoRA)? from epoch 5, step 65[^\n]*",
+        r"Resumed(?: LoRA)? from epoch 5, step 60[^\n]*",
         log,
     )
     if resume_marker is None:

@@ -209,6 +209,14 @@ class V2PipelineTest(unittest.TestCase):
         self.assertIn("ddp_remainder_runtime_proof_invalid", objective)
         self.assertIn("final_all_data_ddp_remainder_runtime_proof_invalid", objective)
 
+    def test_smoke_resume_validator_matches_the_saved_step_60_boundary(self) -> None:
+        validator = (SCRIPTS / "validate_smoke_v2.py").read_text(encoding="utf-8")
+        launcher = (
+            SCRIPTS.parent / "server" / "supervisor" / "edm-v2-train-smoke.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn('r"Resumed(?: LoRA)? from epoch 5, step 60', validator)
+        self.assertIn("--max-steps 66", launcher)
+
     def test_robust_eval_prompts_match_training_form_density(self) -> None:
         config = json.loads(
             (SCRIPTS.parent / "configs" / "v2" / "robust_eval_prompts.json").read_text(
